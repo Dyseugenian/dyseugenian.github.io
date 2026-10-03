@@ -8,15 +8,17 @@ import {
   Matrix4,
   Points,
   RawShaderMaterial,
+  Texture,
+  TextureLoader,
   Vector2,
 } from 'three';
+import densityUrl from '../assets/halo-density.png';
 import vertexShader from '../shaders/halo.vert';
-import fragmentShader from '../shaders/specks.frag';
+import fragmentShader from '../shaders/halo.frag';
 import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 
-const CLUSTER_SIZE = 150;
-const CLUSTER_SHARE = 0.6;
+const DENSITY_EXTENT = 252 / 140;
 const LEAN_REACH = 3;
 
 const turn = new Matrix4();
@@ -27,6 +29,7 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
   maxLean = 8;
 
   readonly uniforms;
+  readonly loaded: Promise<void>;
 
   private pointerX = new Spring(60, 15.5);
   private pointerY = new Spring(60, 15.5);
@@ -38,20 +41,20 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
   constructor(count: number) {
     const uniforms = {
       uDisc: { value: new Matrix3() },
+      uDensity: { value: new Texture() },
+      uDensityExtent: { value: DENSITY_EXTENT },
+      uDensityGain: { value: 1.5 },
+      uVariation: { value: 0.25 },
       uTime: { value: 0 },
       uPixelRatio: { value: 1 },
-      uInnerRadius: { value: 0.8 },
-      uOuterRadius: { value: 1.6 },
-      uRadialPower: { value: 1.5 },
-      uFallRadius: { value: 0.3 },
-      uThickness: { value: 0.7 },
-      uLensRadius: { value: 0.96 },
-      uOrbitSpeed: { value: 0.2 },
+      uPupilStretch: { value: 1.15 },
+      uInnerRadius: { value: 0.85 },
+      uOuterRadius: { value: 1.85 },
+      uFall: { value: 0.1 },
+      uOrbitSpeed: { value: 0.12 },
       uDrift: { value: 1 },
-      uFlicker: { value: 0.35 },
+      uFlicker: { value: 0.2 },
       uBreath: { value: 0.08 },
-      uBeaming: { value: 0.3 },
-      uBrightness: { value: 1.6 },
       uPointer: { value: new Vector2() },
       uPush: { value: 0 },
       uPushRadius: { value: 0.45 },
@@ -66,12 +69,16 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
       fragmentShader,
       uniforms,
       transparent: true,
+      depthTest: false,
       depthWrite: false,
     });
 
     super(createSpecks(count), material);
     this.uniforms = uniforms;
     this.frustumCulled = false;
+    this.loaded = new TextureLoader().loadAsync(densityUrl).then((density) => {
+      uniforms.uDensity.value = density;
+    });
   }
 
   setCount(count: number): void {
@@ -87,9 +94,12 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
     this.leanX.target = pointer ? -this.leanToward(pointer.y) : 0;
     this.leanY.target = pointer ? this.leanToward(pointer.x) : 0;
 
+    const leanX = this.leanX.update(dt);
+    const leanY = this.leanY.update(dt);
+    this.rotation.set(leanX, leanY, 0, 'YXZ');
     this.discMatrix
-      .makeRotationY(this.leanY.update(dt))
-      .multiply(turn.makeRotationX(this.leanX.update(dt)))
+      .makeRotationY(leanY)
+      .multiply(turn.makeRotationX(leanX))
       .multiply(turn.makeRotationZ(MathUtils.degToRad(this.roll)))
       .multiply(turn.makeRotationX(MathUtils.degToRad(this.tilt - 90)));
 
@@ -106,53 +116,23 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
 }
 
 function createSpecks(count: number): BufferGeometry {
-  const orbit = new Float32Array(count * 3);
+  const orbit = new Float32Array(count * 2);
   const life = new Float32Array(count * 2);
   const look = new Float32Array(count * 3);
 
-  let cluster = randomOrbit();
   for (let i = 0; i < count; i++) {
-    if (i % CLUSTER_SIZE === 0) cluster = randomOrbit();
-    const speck = Math.random() < CLUSTER_SHARE ? nearOrbit(cluster) : randomOrbit();
-    orbit.set([speck.radius, speck.angle, bellRandom()], i * 3);
-    life.set([speck.phase, speck.duration], i * 2);
-    look.set(
-      [Math.random() < 0.65 ? 1 : 2, 0.15 + Math.random() ** 2 * 0.85, Math.random()],
-      i * 3,
-    );
+    orbit.set([Math.random(), Math.random() * Math.PI * 2], i * 2);
+    life.set([Math.random(), 30 + Math.random() * 40], i * 2);
+    look.set([randomSize(), Math.random(), Math.random()], i * 3);
   }
 
   return new BufferGeometry()
-    .setAttribute('position', new BufferAttribute(orbit, 3))
+    .setAttribute('position', new BufferAttribute(orbit, 2))
     .setAttribute('aLife', new BufferAttribute(life, 2))
     .setAttribute('aLook', new BufferAttribute(look, 3));
 }
 
-interface Orbit {
-  radius: number;
-  angle: number;
-  phase: number;
-  duration: number;
-}
-
-function randomOrbit(): Orbit {
-  return {
-    radius: Math.random(),
-    angle: Math.random() * Math.PI * 2,
-    phase: Math.random(),
-    duration: 40 + Math.random() * 50,
-  };
-}
-
-function nearOrbit(cluster: Orbit): Orbit {
-  return {
-    radius: MathUtils.clamp(cluster.radius + bellRandom() * 0.04, 0, 1),
-    angle: cluster.angle + bellRandom() * 0.15,
-    phase: cluster.phase + bellRandom() * 0.01,
-    duration: cluster.duration,
-  };
-}
-
-function bellRandom(): number {
-  return (Math.random() + Math.random() + Math.random()) / 1.5 - 1;
+function randomSize(): number {
+  const roll = Math.random();
+  return roll < 0.55 ? 1 : roll < 0.85 ? 2 : 3;
 }

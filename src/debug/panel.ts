@@ -33,19 +33,17 @@ function addHaloControls(pane: Pane, halo: Halo): void {
   const { uniforms } = halo;
 
   const shape = pane.addFolder({ title: 'halo shape', expanded: false });
+  shape.addBinding(uniforms.uDensityGain, 'value', { label: 'density', min: 0.2, max: 3 });
+  shape.addBinding(uniforms.uVariation, 'value', { label: 'variation', min: 0, max: 1 });
+  shape.addBinding(uniforms.uPupilStretch, 'value', { label: 'pupil stretch', min: 0.6, max: 1.6 });
+  shape.addBinding(uniforms.uInnerRadius, 'value', { label: 'inner radius', min: 0.3, max: 1.2 });
+  shape.addBinding(uniforms.uOuterRadius, 'value', { label: 'outer radius', min: 1.2, max: 2.5 });
   shape.addBinding(halo, 'tilt', { min: 0, max: 90 });
   shape.addBinding(halo, 'roll', { min: -30, max: 30 });
-  shape.addBinding(uniforms.uLensRadius, 'value', { label: 'lens radius', min: 0, max: 1.5 });
-  shape.addBinding(uniforms.uInnerRadius, 'value', { label: 'inner radius', min: 0.05, max: 1.5 });
-  shape.addBinding(uniforms.uOuterRadius, 'value', { label: 'outer radius', min: 0.2, max: 2.5 });
-  shape.addBinding(uniforms.uRadialPower, 'value', { label: 'radial power', min: 0.1, max: 3 });
-  shape.addBinding(uniforms.uFallRadius, 'value', { label: 'fall radius', min: 0.01, max: 0.7 });
-  shape.addBinding(uniforms.uThickness, 'value', { label: 'thickness', min: 0, max: 1.5 });
-  shape.addBinding(uniforms.uBeaming, 'value', { label: 'beaming', min: 0, max: 1 });
-  shape.addBinding(uniforms.uBrightness, 'value', { label: 'brightness', min: 0.2, max: 3 });
 
   const motion = pane.addFolder({ title: 'halo motion', expanded: false });
   motion.addBinding(uniforms.uOrbitSpeed, 'value', { label: 'orbit speed', min: 0, max: 1 });
+  motion.addBinding(uniforms.uFall, 'value', { label: 'fall', min: 0, max: 0.5 });
   motion.addBinding(uniforms.uDrift, 'value', { label: 'drift', min: 0.1, max: 5 });
   motion.addBinding(uniforms.uFlicker, 'value', { label: 'flicker', min: 0, max: 1 });
   motion.addBinding(uniforms.uBreath, 'value', { label: 'breath', min: 0, max: 0.5 });

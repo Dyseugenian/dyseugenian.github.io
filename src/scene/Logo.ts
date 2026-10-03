@@ -1,7 +1,6 @@
-import { CircleGeometry, Group, Mesh, MeshBasicMaterial, Vector2 } from 'three';
+import { Group, Vector2 } from 'three';
 import wordmarkUrl from '../assets/wordmark.webp';
 import type { Input } from '../core/Input';
-import { palette } from '../core/palette';
 import { Decal } from './Decal';
 import { Eyes } from './Eyes';
 import { Halo } from './Halo';
@@ -30,7 +29,6 @@ export class Logo extends Group {
   ) {
     super();
     this.halo = new Halo(particles);
-    const pupil = new Mesh(raggedDisc(), new MeshBasicMaterial({ color: palette.void }));
 
     for (const circle of [this.outline, this.ring]) {
       circle.uniforms.uCenter.value.set(0, SPHERE.y, 0);
@@ -41,8 +39,8 @@ export class Logo extends Group {
     this.ring.uniforms.uSpin.value = RING.spin;
     this.wordmark.position.set(0.007, -2.329, 0);
 
-    this.add(pupil, this.halo, this.outline, this.ring, this.eyes, this.wordmark);
-    this.ready = Promise.all([this.eyes.loaded, this.wordmark.loaded]);
+    this.add(this.halo, this.outline, this.ring, this.eyes, this.wordmark);
+    this.ready = Promise.all([this.halo.loaded, this.eyes.loaded, this.wordmark.loaded]);
   }
 
   fit(width: number, height: number, viewHeight: number, pixelRatio: number): void {
@@ -75,16 +73,4 @@ export class Logo extends Group {
     this.ring.update(motionDt);
     this.eyes.update(dt, follow ? this.pointer : null);
   }
-}
-
-function raggedDisc(): CircleGeometry {
-  const disc = new CircleGeometry(1, 360);
-  const positions = disc.getAttribute('position');
-  for (let i = 1; i < positions.count; i++) {
-    const notch = Math.random() < 0.08 ? Math.random() * 0.05 : 0;
-    const grain = (Math.random() - 0.5) * 0.015;
-    const scale = 1 - notch + grain;
-    positions.setXY(i, positions.getX(i) * scale, positions.getY(i) * scale);
-  }
-  return disc;
 }

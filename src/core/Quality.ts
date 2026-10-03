@@ -1,9 +1,9 @@
 export type Tier = 'low' | 'medium' | 'high';
 
 export const TIERS: Record<Tier, { maxPixelRatio: number; particles: number }> = {
-  low: { maxPixelRatio: 1, particles: 20_000 },
-  medium: { maxPixelRatio: 1.5, particles: 40_000 },
-  high: { maxPixelRatio: 2, particles: 80_000 },
+  low: { maxPixelRatio: 1, particles: 40_000 },
+  medium: { maxPixelRatio: 1.5, particles: 80_000 },
+  high: { maxPixelRatio: 2, particles: 120_000 },
 };
 
 const LOWER_TIER: Record<Tier, Tier | null> = { high: 'medium', medium: 'low', low: null };
