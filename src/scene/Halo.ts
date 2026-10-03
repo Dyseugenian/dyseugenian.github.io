@@ -19,6 +19,7 @@ import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 
 const DENSITY_EXTENT = 252 / 140;
+const EDGE_REACH = 0.7;
 const LEAN_REACH = 3;
 
 const turn = new Matrix4();
@@ -45,10 +46,21 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
       uDensityExtent: { value: DENSITY_EXTENT },
       uDensityGain: { value: 1.5 },
       uVariation: { value: 0.25 },
+      uEdgeReach: { value: EDGE_REACH },
+      uPupilFade: { value: 0.2 },
+      uOuterFade: { value: 0.4 },
+      uOuterWobble: { value: 0.2 },
+      uEdgeScatter: { value: 0.25 },
+      uSpill: { value: 0.06 },
+      uSpillBelow: { value: 0.05 },
+      uSpillSides: { value: 0.06 },
+      uBottomGrowth: { value: 0.08 },
+      uSpillFalloff: { value: 0.15 },
+      uScatter: { value: 0.6 },
       uTime: { value: 0 },
       uPixelRatio: { value: 1 },
       uPupilStretch: { value: 1.15 },
-      uInnerRadius: { value: 0.85 },
+      uInnerRadius: { value: 0.75 },
       uOuterRadius: { value: 1.85 },
       uFall: { value: 0.1 },
       uOrbitSpeed: { value: 0.12 },
@@ -116,19 +128,19 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
 }
 
 function createSpecks(count: number): BufferGeometry {
-  const orbit = new Float32Array(count * 2);
-  const life = new Float32Array(count * 2);
+  const orbit = new Float32Array(count * 3);
+  const duration = new Float32Array(count);
   const look = new Float32Array(count * 3);
 
   for (let i = 0; i < count; i++) {
-    orbit.set([Math.random(), Math.random() * Math.PI * 2], i * 2);
-    life.set([Math.random(), 30 + Math.random() * 40], i * 2);
+    orbit.set([Math.random(), Math.random() * Math.PI * 2, Math.random()], i * 3);
+    duration[i] = 30 + Math.random() * 40;
     look.set([randomSize(), Math.random(), Math.random()], i * 3);
   }
 
   return new BufferGeometry()
-    .setAttribute('position', new BufferAttribute(orbit, 2))
-    .setAttribute('aLife', new BufferAttribute(life, 2))
+    .setAttribute('position', new BufferAttribute(orbit, 3))
+    .setAttribute('aDuration', new BufferAttribute(duration, 1))
     .setAttribute('aLook', new BufferAttribute(look, 3));
 }
 

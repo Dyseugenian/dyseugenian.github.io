@@ -35,6 +35,20 @@ function addHaloControls(pane: Pane, halo: Halo): void {
   const shape = pane.addFolder({ title: 'halo shape', expanded: false });
   shape.addBinding(uniforms.uDensityGain, 'value', { label: 'density', min: 0.2, max: 3 });
   shape.addBinding(uniforms.uVariation, 'value', { label: 'variation', min: 0, max: 1 });
+  shape.addBinding(uniforms.uPupilFade, 'value', { label: 'pupil fade', min: 0.01, max: 0.7 });
+  shape.addBinding(uniforms.uOuterFade, 'value', { label: 'outer fade', min: 0.01, max: 0.7 });
+  shape.addBinding(uniforms.uOuterWobble, 'value', { label: 'outer wobble', min: 0, max: 0.5 });
+  shape.addBinding(uniforms.uEdgeScatter, 'value', { label: 'edge scatter', min: 0, max: 1 });
+  shape.addBinding(uniforms.uSpill, 'value', { label: 'spill', min: 0, max: 1 });
+  shape.addBinding(uniforms.uSpillBelow, 'value', { label: 'spill below', min: 0, max: 1 });
+  shape.addBinding(uniforms.uSpillSides, 'value', { label: 'spill sides', min: 0, max: 1 });
+  shape.addBinding(uniforms.uBottomGrowth, 'value', { label: 'bottom growth', min: 0, max: 0.3 });
+  shape.addBinding(uniforms.uSpillFalloff, 'value', {
+    label: 'spill falloff',
+    min: 0.02,
+    max: 0.6,
+  });
+  shape.addBinding(uniforms.uScatter, 'value', { label: 'scatter', min: 0, max: 2 });
   shape.addBinding(uniforms.uPupilStretch, 'value', { label: 'pupil stretch', min: 0.6, max: 1.6 });
   shape.addBinding(uniforms.uInnerRadius, 'value', { label: 'inner radius', min: 0.3, max: 1.2 });
   shape.addBinding(uniforms.uOuterRadius, 'value', { label: 'outer radius', min: 1.2, max: 2.5 });
