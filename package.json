@@ -24,7 +24,7 @@
     "prettier": "^3.9.9",
     "tweakpane": "^4.0.5",
     "typescript": "^7.0.2",
-    "vite": "^8.3.2",
+    "vite": "^7.3.6",
     "vite-plugin-glsl": "^1.6.1"
   }
 }
