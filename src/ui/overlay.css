@@ -79,7 +79,7 @@ body {
 
 .tagline li {
   position: relative;
-  padding: 0 1.5ch;
+  padding: 0 3.25ch;
 }
 
 .tagline li + li::before {
