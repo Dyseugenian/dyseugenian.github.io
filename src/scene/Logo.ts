@@ -1,10 +1,9 @@
 import { Group, Vector2 } from 'three';
-import wordmarkUrl from '../assets/wordmark.webp';
 import type { Input } from '../core/Input';
-import { Decal } from './Decal';
 import { Eyes } from './Eyes';
 import { Halo } from './Halo';
 import { SprayCircle } from './SprayCircle';
+import { Wordmark } from './Wordmark';
 
 const LOGO_SIZE = { width: 0.88, height: 0.72 };
 const LOGO_CENTER_Y = 0.38;
@@ -20,7 +19,7 @@ export class Logo extends Group {
   private outline = new SprayCircle(SPHERE.radius, 2000);
   private ring = new SprayCircle(RING.radius, 2800);
   private eyes = new Eyes(0.05, 0.429);
-  private wordmark = new Decal(wordmarkUrl, 802 / 140, 174 / 140);
+  private wordmark = new Wordmark(-416 / 140, -253 / 140);
   private pointer = new Vector2();
   private lastPointer = new Vector2();
   private pointerVelocity = new Vector2();
@@ -42,7 +41,6 @@ export class Logo extends Group {
     this.ring.uniforms.uHideBehind.value = SPHERE.radius;
     this.outline.uniforms.uFlow.value = SPHERE.flow;
     this.ring.uniforms.uFlow.value = RING.flow;
-    this.wordmark.position.set(0.007, -2.329, 0);
 
     this.add(this.halo, this.outline, this.ring, this.eyes, this.wordmark);
     this.ready = Promise.all([this.halo.loaded, this.eyes.loaded, this.wordmark.loaded]);
@@ -55,6 +53,8 @@ export class Logo extends Group {
     this.position.set(0, (height / 2 - pupilY) * unitsPerPixel, 0);
     this.scale.setScalar(PUPIL.radius * size * unitsPerPixel);
     this.viewHalfSize.set((width / 2) * unitsPerPixel, viewHeight / 2);
+    this.wordmark.uniforms.uPixelSize.value =
+      PUPIL.radius * size * pixelRatio * this.wordmark.scale.x;
 
     for (const specks of [this.halo, this.outline, this.ring]) {
       specks.uniforms.uPixelRatio.value = pixelRatio;
@@ -89,5 +89,6 @@ export class Logo extends Group {
     this.outline.update(motionDt, target, this.pointerVelocity);
     this.ring.update(motionDt, target, this.pointerVelocity);
     this.eyes.update(dt, target);
+    this.wordmark.update(motionDt);
   }
 }

@@ -55,11 +55,62 @@ body {
   text-align: center;
 }
 
-.tagline {
-  margin: 0;
+.roles {
+  max-width: 100%;
   font-size: 0.875rem;
   letter-spacing: 0.08em;
-  opacity: 0.8;
+}
+
+.experience {
+  margin: 0;
+  color: var(--ochre);
+  font-size: 0.75rem;
+  opacity: 0.55;
+}
+
+.tagline {
+  display: flex;
+  justify-content: center;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  color: color-mix(in srgb, var(--cream) 80%, transparent);
+  list-style: none;
+}
+
+.tagline li {
+  position: relative;
+  padding: 0 1.5ch;
+}
+
+.tagline li + li::before {
+  content: '·';
+  content: '·' / '';
+  position: absolute;
+  left: 0;
+  transform: translateX(-50%);
+}
+
+.branch {
+  position: absolute;
+  bottom: calc(100% + 0.25rem);
+  left: 0;
+  width: 100%;
+  height: 0.625rem;
+  overflow: visible;
+  color: var(--ochre-dim);
+  opacity: 0.6;
+  shape-rendering: crispEdges;
+}
+
+.branch line {
+  stroke: currentColor;
+}
+
+.branch path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  shape-rendering: auto;
 }
 
 .links {
@@ -67,7 +118,7 @@ body {
   flex-wrap: wrap;
   justify-content: center;
   gap: 1rem 1.5rem;
-  margin: 0;
+  margin: 0 0 1rem;
   padding: 0;
   list-style: none;
 }
