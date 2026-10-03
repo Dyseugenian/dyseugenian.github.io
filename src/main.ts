@@ -11,6 +11,9 @@ if (canvas && supportsWebGL2()) {
     const { mountDebugPanel } = await import('./debug/panel');
     mountDebugPanel(app);
   }
+
+  await app.logo.ready;
+  app.setStageLive(true);
 } else {
   setPageState('no-webgl', true);
 }

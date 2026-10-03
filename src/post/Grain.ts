@@ -26,6 +26,7 @@ export class Grain extends Mesh<BufferGeometry, RawShaderMaterial> {
     super(fullscreenTriangle(), material);
     this.uniforms = uniforms;
     this.frustumCulled = false;
+    this.renderOrder = 1;
   }
 
   update(time: number): void {
