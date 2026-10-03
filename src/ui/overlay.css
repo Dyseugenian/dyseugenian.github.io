@@ -76,10 +76,34 @@ body {
   color: var(--cream);
   font-size: 0.875rem;
   text-decoration: none;
-  text-shadow: 2px 2px 0 var(--ochre-shadow);
+  text-transform: lowercase;
+  transition: color 0.12s;
 }
 
-.links a:hover {
+.links a::before,
+.links a::after {
+  color: var(--ochre-dim);
+  transition: color 0.12s;
+}
+
+.links a::before {
+  content: '[';
+  content: '[' / '';
+  margin-right: 0.5ch;
+}
+
+.links a::after {
+  content: ']';
+  content: ']' / '';
+  margin-left: 0.5ch;
+}
+
+.links a:hover,
+.links a:focus-visible,
+.links a:hover::before,
+.links a:hover::after,
+.links a:focus-visible::before,
+.links a:focus-visible::after {
   color: var(--ochre-hi);
 }
 
