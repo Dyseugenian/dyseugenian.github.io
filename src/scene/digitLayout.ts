@@ -2,7 +2,7 @@ const CELL = { width: 8, height: 12 };
 const GLYPH = { width: 3, height: 5 };
 const SMALL = { scale: 2, coverage: 0.5 };
 const BIG = { scale: 4, coverage: 0.85, chance: 0.5 };
-const CLOSE_RADIUS = 3;
+export const CLOSE_RADIUS = 3;
 const CASCADE = { digitsPerSeed: 30, seedSpread: 3 };
 
 export interface DigitLayout {
@@ -143,7 +143,7 @@ function cascadeDelays(owner: Int32Array, across: number, count: number): Float3
   return arrival.map((time) => time / latest);
 }
 
-function closeHoles(mask: Uint8Array, width: number, height: number): Uint8Array {
+export function closeHoles(mask: Uint8Array, width: number, height: number): Uint8Array {
   const sweep = (source: Uint8Array, dx: number, dy: number, all: boolean) => {
     const result = new Uint8Array(source.length);
     for (let y = 0; y < height; y++) {

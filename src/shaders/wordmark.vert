@@ -14,6 +14,8 @@ uniform vec3 uOchre;
 uniform float uTetrisEnd;
 uniform float uBinary;
 uniform float uBinaryTime;
+uniform float uMotion;
+uniform float uMotionTime;
 
 in vec3 position;
 in vec3 color;
@@ -22,6 +24,7 @@ in vec2 aGrid;
 in vec4 aPiece;
 in float aCompleted;
 in vec4 aDigit;
+in vec3 aPen;
 
 out vec3 vColor;
 
@@ -131,6 +134,19 @@ vec3 fillWithDigits(vec3 surface) {
   return mix(surface, binary, uBinary);
 }
 
+vec3 penFill(vec3 surface) {
+  float luma = dot(surface, vec3(0.299, 0.587, 0.114));
+  vec3 ghost = mix(uBackground, uCream, GHOST * luma);
+  float since = clamp((uMotionTime - aPen.z) / FLOOD_DURATION, 0.0, 1.0);
+  float eased = since < 0.5 ? 4.0 * since * since * since : 1.0 - pow(2.0 - 2.0 * since, 3.0) / 2.0;
+  float front = eased * (FLOOD_REACH + FLOOD_SOFT);
+  float flood = 1.0 - smoothstep(front - FLOOD_SOFT, front, distance(aCell, aPen.xy));
+  vec3 drawn = mix(ghost, surface, flood);
+  drawn = mix(drawn, uCream, flood * (1.0 - flood) * step(0.0, luma - 0.05));
+  vec3 pen = mix(surface, drawn, smoothstep(0.0, PEN_HOLLOW, uMotionTime));
+  return mix(surface, pen, uMotion);
+}
+
 float stepsDone(float since, float steps, float settle) {
   return min(floor(since * (steps + 1.0) / settle), steps);
 }
@@ -188,6 +204,7 @@ void main() {
   float blinking = step(0.0, sinceComplete) * step(sinceComplete, CLEAR_TICKS - 1.0) * mod(sinceComplete, 2.0);
   vColor = mix(vColor, ghost, blinking * (1.0 - sinceComplete / CLEAR_TICKS) * uTetris);
   vColor = fillWithDigits(vColor);
+  vColor = penFill(vColor);
 #endif
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(point, position.z, 1.0);

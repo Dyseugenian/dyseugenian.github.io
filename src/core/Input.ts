@@ -3,6 +3,7 @@ export class Input {
   isPointerInside = false;
   isOnSoftwareRole = false;
   isOnGamedevRole = false;
+  isOnMotionRole = false;
   readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   constructor() {
@@ -12,6 +13,9 @@ export class Input {
     const gamedevRole = document.querySelector('#gamedev-role')!;
     gamedevRole.addEventListener('pointerenter', () => (this.isOnGamedevRole = true));
     gamedevRole.addEventListener('pointerleave', () => (this.isOnGamedevRole = false));
+    const motionRole = document.querySelector('#motion-role')!;
+    motionRole.addEventListener('pointerenter', () => (this.isOnMotionRole = true));
+    motionRole.addEventListener('pointerleave', () => (this.isOnMotionRole = false));
     window.addEventListener('pointermove', (event) => this.track(event));
     window.addEventListener('pointerdown', (event) => this.track(event));
     window.addEventListener('pointerup', (event) => {

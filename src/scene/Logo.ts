@@ -13,10 +13,9 @@ const SPHERE = { y: 0.096, radius: 1.7, flow: 0.05 };
 const RING = { radius: 2.6, drop: 0.514, flow: 0.035 };
 const REDUCED_MOTION_SPEED = 0.1;
 const MAX_POINTER_SPEED = 20;
-const TETRIS_FADE = 0.3;
+const HOVER_FADE = 0.3;
 const PLANET_FADE = 0.75;
 const DUST_RETURN = 0.3;
-const BINARY_FADE = 0.3;
 
 export class Logo extends Group {
   readonly halo: Halo;
@@ -81,8 +80,14 @@ export class Logo extends Group {
   }
 
   update(dt: number): void {
-    const { pointer, isPointerInside, isOnSoftwareRole, isOnGamedevRole, reducedMotion } =
-      this.input;
+    const {
+      pointer,
+      isPointerInside,
+      isOnSoftwareRole,
+      isOnGamedevRole,
+      isOnMotionRole,
+      reducedMotion,
+    } = this.input;
     const motionDt = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
     const follow = isPointerInside && !reducedMotion;
 
@@ -109,29 +114,34 @@ export class Logo extends Group {
     this.outline.update(motionDt, target, this.pointerVelocity);
     this.ring.update(motionDt, target, this.pointerVelocity);
     this.eyes.update(dt, target);
-    const tetris = this.wordmark.uniforms.uTetris;
-    tetris.value = MathUtils.clamp(tetris.value + (isOnGamedevRole ? dt : -dt) / TETRIS_FADE, 0, 1);
-    const tetrisTime = this.wordmark.uniforms.uTetrisTime;
-    tetrisTime.value = tetris.value > 0 ? tetrisTime.value + dt : 0;
-    const binary = this.wordmark.uniforms.uBinary;
-    binary.value = MathUtils.clamp(
-      binary.value + (isOnSoftwareRole ? dt : -dt) / BINARY_FADE,
-      0,
-      1,
-    );
-    const binaryTime = this.wordmark.uniforms.uBinaryTime;
-    binaryTime.value = binary.value > 0 ? binaryTime.value + dt : 0;
-    const planetFade = PLANET_FADE * Math.max(tetris.value, binary.value);
+    const { uniforms } = this.wordmark;
+    const hovers = [
+      advanceHover(uniforms.uTetris, uniforms.uTetrisTime, isOnGamedevRole, dt),
+      advanceHover(uniforms.uBinary, uniforms.uBinaryTime, isOnSoftwareRole, dt),
+      advanceHover(uniforms.uMotion, uniforms.uMotionTime, isOnMotionRole, dt),
+    ];
+    const planetFade = PLANET_FADE * Math.max(...hovers.map((hover) => hover.amount));
     for (const part of [this.halo, this.outline, this.ring, this.eyes]) {
       part.uniforms.uOpacity.value = 1 - planetFade;
     }
-    const end = this.wordmark.uniforms.uTetrisEnd.value;
-    const running = (time: number) => 1 - MathUtils.smoothstep(time, end - DUST_RETURN, end);
-    this.wordmark.uniforms.uDustHidden.value = Math.max(
-      tetris.value * running(tetrisTime.value),
-      binary.value * running(binaryTime.value),
+    const end = uniforms.uTetrisEnd.value;
+    uniforms.uDustHidden.value = Math.max(
+      ...hovers.map(
+        ({ amount, time }) => amount * (1 - MathUtils.smoothstep(time, end - DUST_RETURN, end)),
+      ),
     );
     this.wordmark.update(motionDt, target, this.pointerVelocity);
     this.stars.update(motionDt);
   }
+}
+
+function advanceHover(
+  amount: { value: number },
+  time: { value: number },
+  hovering: boolean,
+  dt: number,
+): { amount: number; time: number } {
+  amount.value = MathUtils.clamp(amount.value + (hovering ? dt : -dt) / HOVER_FADE, 0, 1);
+  time.value = amount.value > 0 ? time.value + dt : 0;
+  return { amount: amount.value, time: time.value };
 }

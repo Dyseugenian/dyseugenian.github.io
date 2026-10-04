@@ -26,6 +26,8 @@ import { palette } from '../core/palette';
 import { Dust, createDustMaterial } from './Dust';
 import { SwipeSpecks } from './SwipeSpecks';
 import { layoutDigits } from './digitLayout';
+import { traceOutline } from './letterOutline';
+import { PEN, PenPaths, timePath, type PenPath } from './PenPaths';
 
 const LETTER_STARTS = [0, 106, 183, 259, 333, 405, 483, 552, 630, 671, 744];
 const EDGE_FALLOFF = 6;
@@ -59,6 +61,8 @@ export class Wordmark extends Group {
     uBinary: { value: 0 },
     uBinaryTime: { value: 0 },
     uDustHidden: { value: 0 },
+    uMotion: { value: 0 },
+    uMotionTime: { value: 0 },
     uCream: { value: new Color(palette.cream).convertLinearToSRGB() },
     uOchre: { value: new Color(palette.ochreHi).convertLinearToSRGB() },
   };
@@ -78,6 +82,7 @@ export class Wordmark extends Group {
   private lastKick = new Vector2();
   private isSwiping = false;
   private swipeSpecks!: SwipeSpecks;
+  private penPaths?: PenPaths;
 
   constructor(left: number, top: number) {
     super();
@@ -85,12 +90,22 @@ export class Wordmark extends Group {
     this.scale.setScalar(1 / 140);
     this.loaded = Promise.all([readImage(wordmarkUrl), readImage(dustUrl)]).then(
       ([image, dust]) => {
+        const paths: PenPath[] = [];
         LETTER_STARTS.forEach((start, index) => {
           const end = LETTER_STARTS[index + 1] ?? image.width;
           const center = { x: (start + end) / 2, y: image.height / 2 };
           const home = new Vector2(center.x, -center.y);
           const firstTick = (index * 5) % TETRIS.spawnGap;
-          const { pixels, completedTick } = createPixels(image, start, end, center, firstTick);
+          const drawStart = PEN.drawStart + index * PEN.stagger;
+          const { pixels, completedTick, path } = createPixels(
+            image,
+            start,
+            end,
+            center,
+            firstTick,
+            drawStart,
+          );
+          paths.push(path);
           this.uniforms.uTetrisEnd.value = Math.max(
             this.uniforms.uTetrisEnd.value,
             (completedTick + TETRIS.clearTicks) * TETRIS.tick,
@@ -100,6 +115,8 @@ export class Wordmark extends Group {
           this.letters.push(letter);
           this.add(letter);
         });
+        this.penPaths = new PenPaths(paths, this.uniforms);
+        this.add(this.penPaths);
         this.swipeSpecks = new SwipeSpecks(letterSources(image), this.uniforms);
         this.add(this.swipeSpecks);
         this.bounds
@@ -113,6 +130,7 @@ export class Wordmark extends Group {
     this.time += dt;
     this.uniforms.uTime.value = this.time;
     for (const letter of this.letters) letter.dust.update(this.time);
+    this.penPaths?.update(this.uniforms.uMotionTime.value);
     this.swipe(pointer, pointerVelocity);
   }
 
@@ -182,6 +200,10 @@ function createMaterial(
       TICK: TETRIS.tick.toFixed(3),
       CLEAR_TICKS: TETRIS.clearTicks.toFixed(1),
       FADE_IN_TICKS: TETRIS.fadeInTicks.toFixed(1),
+      PEN_HOLLOW: PEN.hollow.toFixed(3),
+      FLOOD_DURATION: PEN.floodDuration.toFixed(3),
+      FLOOD_REACH: PEN.floodReach.toFixed(1),
+      FLOOD_SOFT: PEN.floodSoft.toFixed(1),
       ...(falling ? { FALLING: '' } : {}),
     },
     blending: CustomBlending,
@@ -231,7 +253,8 @@ function createPixels(
   end: number,
   center: { x: number; y: number },
   firstTick: number,
-): { pixels: BufferGeometry; completedTick: number } {
+  drawStart: number,
+): { pixels: BufferGeometry; completedTick: number; path: PenPath } {
   const opaqueColumns: number[] = [];
   const opaqueRows: number[] = [];
   for (let row = 0; row < height; row++) {
@@ -263,6 +286,7 @@ function createPixels(
   const drops: number[] = [];
   const digits: number[] = [];
   const layout = layoutDigits(opaqueColumns, opaqueRows);
+  const path = timePath(traceOutline(opaqueColumns, opaqueRows), drawStart);
   const addPixel = (column: number, row: number) => {
     positions.push(column + 0.5 - center.x, center.y - row - 0.5, 0);
     cells.push(column, row);
@@ -296,11 +320,18 @@ function createPixels(
     .setAttribute(
       'aCompleted',
       new Float32BufferAttribute(new Float32Array(positions.length / 3).fill(completedTick), 1),
+    )
+    .setAttribute(
+      'aPen',
+      new Float32BufferAttribute(
+        Array.from({ length: positions.length / 3 }, () => [...path.start, path.drawEnd]).flat(),
+        3,
+      ),
     );
   for (let material = 0; material < 4; material++) {
     pixels.addGroup(0, positions.length / 3, material);
   }
-  return { pixels, completedTick };
+  return { pixels, completedTick, path };
 }
 
 function splitIntoPieces(filled: Uint8Array, columns: number): Int32Array {
