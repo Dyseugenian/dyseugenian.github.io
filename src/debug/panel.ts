@@ -39,6 +39,8 @@ function addHaloControls(pane: Pane, halo: Halo): void {
   shape.addBinding(uniforms.uBottomGrowth, 'value', { label: 'bottom growth', min: 0, max: 1 });
   shape.addBinding(uniforms.uSideGrowth, 'value', { label: 'side growth', min: 0, max: 0.5 });
   shape.addBinding(uniforms.uTopGrowth, 'value', { label: 'top growth', min: 0, max: 0.6 });
+  shape.addBinding(uniforms.uInnerBreak, 'value', { label: 'inner break', min: 0, max: 2 });
+  shape.addBinding(uniforms.uStrayReach, 'value', { label: 'stray reach', min: 0, max: 0.8 });
   shape.addBinding(uniforms.uSpillFalloff, 'value', {
     label: 'spill falloff',
     min: 0.02,

@@ -57,6 +57,8 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
       uBottomGrowth: { value: 0.3 },
       uSideGrowth: { value: 0.08 },
       uTopGrowth: { value: 0.15 },
+      uInnerBreak: { value: 1.3 },
+      uStrayReach: { value: 0.12 },
       uSpillFalloff: { value: 0.15 },
       uScatter: { value: 2.0 },
       uTime: { value: 0 },
