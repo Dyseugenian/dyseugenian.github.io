@@ -14,7 +14,9 @@ const RING = { radius: 2.6, drop: 0.514, flow: 0.035 };
 const REDUCED_MOTION_SPEED = 0.1;
 const MAX_POINTER_SPEED = 20;
 const TETRIS_FADE = 0.3;
-const TETRIS_PLANET_FADE = 0.75;
+const PLANET_FADE = 0.75;
+const DUST_RETURN = 0.3;
+const BINARY_FADE = 0.3;
 
 export class Logo extends Group {
   readonly halo: Halo;
@@ -79,7 +81,8 @@ export class Logo extends Group {
   }
 
   update(dt: number): void {
-    const { pointer, isPointerInside, isOnGamedevRole, reducedMotion } = this.input;
+    const { pointer, isPointerInside, isOnSoftwareRole, isOnGamedevRole, reducedMotion } =
+      this.input;
     const motionDt = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
     const follow = isPointerInside && !reducedMotion;
 
@@ -110,9 +113,24 @@ export class Logo extends Group {
     tetris.value = MathUtils.clamp(tetris.value + (isOnGamedevRole ? dt : -dt) / TETRIS_FADE, 0, 1);
     const tetrisTime = this.wordmark.uniforms.uTetrisTime;
     tetrisTime.value = tetris.value > 0 ? tetrisTime.value + dt : 0;
+    const binary = this.wordmark.uniforms.uBinary;
+    binary.value = MathUtils.clamp(
+      binary.value + (isOnSoftwareRole ? dt : -dt) / BINARY_FADE,
+      0,
+      1,
+    );
+    const binaryTime = this.wordmark.uniforms.uBinaryTime;
+    binaryTime.value = binary.value > 0 ? binaryTime.value + dt : 0;
+    const planetFade = PLANET_FADE * Math.max(tetris.value, binary.value);
     for (const part of [this.halo, this.outline, this.ring, this.eyes]) {
-      part.uniforms.uOpacity.value = 1 - TETRIS_PLANET_FADE * tetris.value;
+      part.uniforms.uOpacity.value = 1 - planetFade;
     }
+    const end = this.wordmark.uniforms.uTetrisEnd.value;
+    const running = (time: number) => 1 - MathUtils.smoothstep(time, end - DUST_RETURN, end);
+    this.wordmark.uniforms.uDustHidden.value = Math.max(
+      tetris.value * running(tetrisTime.value),
+      binary.value * running(binaryTime.value),
+    );
     this.wordmark.update(motionDt, target, this.pointerVelocity);
     this.stars.update(motionDt);
   }

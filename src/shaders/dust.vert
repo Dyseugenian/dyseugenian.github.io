@@ -9,9 +9,7 @@ uniform float uPixelSize;
 uniform vec3 uBackground;
 uniform float uWander;
 uniform float uFall;
-uniform float uTetris;
-uniform float uTetrisTime;
-uniform float uTetrisEnd;
+uniform float uDustHidden;
 
 in vec3 position;
 in vec3 color;
@@ -34,6 +32,5 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(point, 0.0, 1.0);
   gl_PointSize = max(uPixelSize, 1.0);
   vColor = max(color - uBackground, 0.0);
-  float ghosted = uTetris * (1.0 - smoothstep(uTetrisEnd - 0.3, uTetrisEnd, uTetrisTime));
-  vAlpha = fade * min(uPixelSize * uPixelSize, 1.0) * (1.0 - 0.8 * ghosted);
+  vAlpha = fade * min(uPixelSize * uPixelSize, 1.0) * (1.0 - 0.8 * uDustHidden);
 }

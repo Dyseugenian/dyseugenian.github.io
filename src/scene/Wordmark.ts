@@ -25,9 +25,9 @@ import fragmentShader from '../shaders/wordmark.frag';
 import { palette } from '../core/palette';
 import { Dust, createDustMaterial } from './Dust';
 import { SwipeSpecks } from './SwipeSpecks';
+import { layoutDigits } from './digitLayout';
 
 const LETTER_STARTS = [0, 106, 183, 259, 333, 405, 483, 552, 630, 671, 744];
-const LETTER_SPACING = 6;
 const EDGE_FALLOFF = 6;
 const TETRIS = {
   block: 14,
@@ -39,6 +39,7 @@ const TETRIS = {
   fadeInTicks: 5,
   clearTicks: 6,
 };
+const NEVER = 1e6;
 const SWIPE = { spacing: 14, reach: 12, minSpeed: 120 };
 const NEIGHBORS = [
   [1, 0],
@@ -55,6 +56,9 @@ export class Wordmark extends Group {
     uTetris: { value: 0 },
     uTetrisTime: { value: 0 },
     uTetrisEnd: { value: 0 },
+    uBinary: { value: 0 },
+    uBinaryTime: { value: 0 },
+    uDustHidden: { value: 0 },
     uCream: { value: new Color(palette.cream).convertLinearToSRGB() },
     uOchre: { value: new Color(palette.ochreHi).convertLinearToSRGB() },
   };
@@ -81,12 +85,10 @@ export class Wordmark extends Group {
     this.scale.setScalar(1 / 140);
     this.loaded = Promise.all([readImage(wordmarkUrl), readImage(dustUrl)]).then(
       ([image, dust]) => {
-        let sources: number[] = [];
         LETTER_STARTS.forEach((start, index) => {
           const end = LETTER_STARTS[index + 1] ?? image.width;
-          const spread = spreadOf(index);
           const center = { x: (start + end) / 2, y: image.height / 2 };
-          const home = new Vector2(center.x + spread, -center.y);
+          const home = new Vector2(center.x, -center.y);
           const firstTick = (index * 5) % TETRIS.spawnGap;
           const { pixels, completedTick } = createPixels(image, start, end, center, firstTick);
           this.uniforms.uTetrisEnd.value = Math.max(
@@ -95,17 +97,13 @@ export class Wordmark extends Group {
           );
           const specks = new Dust(findSites(dust, image, start, end, center), this.dustMaterial);
           const letter = new Letter(pixels, this.materials, home, specks);
-          sources = sources.concat(letterSources(image, start, end, spread));
           this.letters.push(letter);
           this.add(letter);
         });
-        this.swipeSpecks = new SwipeSpecks(sources, this.uniforms);
+        this.swipeSpecks = new SwipeSpecks(letterSources(image), this.uniforms);
         this.add(this.swipeSpecks);
         this.bounds
-          .set(
-            new Vector2(spreadOf(0), -image.height),
-            new Vector2(image.width + spreadOf(LETTER_STARTS.length - 1), 0),
-          )
+          .set(new Vector2(0, -image.height), new Vector2(image.width, 0))
           .expandByScalar(SWIPE.reach);
       },
     );
@@ -198,19 +196,14 @@ function createMaterial(
   });
 }
 
-function letterSources(
-  { width, height, data }: ImageData,
-  start: number,
-  end: number,
-  spread: number,
-): number[] {
+function letterSources({ width, height, data }: ImageData): number[] {
   const sources: number[] = [];
   for (let row = 0; row < height; row++) {
-    for (let column = start; column < end; column++) {
+    for (let column = 0; column < width; column++) {
       const pixel = (row * width + column) * 4;
       if (data[pixel + 3] === 0) continue;
       sources.push(
-        column + 0.5 + spread,
+        column + 0.5,
         -row - 0.5,
         data[pixel]! / 255,
         data[pixel + 1]! / 255,
@@ -219,10 +212,6 @@ function letterSources(
     }
   }
   return sources;
-}
-
-function spreadOf(index: number): number {
-  return (index - (LETTER_STARTS.length - 1) / 2) * LETTER_SPACING;
 }
 
 async function readImage(url: string): Promise<ImageData> {
@@ -272,15 +261,30 @@ function createPixels(
   const cells: number[] = [];
   const grid: number[] = [];
   const drops: number[] = [];
+  const digits: number[] = [];
+  const layout = layoutDigits(opaqueColumns, opaqueRows);
+  const addPixel = (column: number, row: number) => {
+    positions.push(column + 0.5 - center.x, center.y - row - 0.5, 0);
+    cells.push(column, row);
+    grid.push(column - left + 0.5, bottom - row + 0.5);
+  };
   opaqueColumns.forEach((column, i) => {
     const row = opaqueRows[i]!;
     const pixel = (row * width + column) * 4;
-    positions.push(column + 0.5 - center.x, center.y - row - 0.5, 0);
-    cells.push(column, row);
+    addPixel(column, row);
     colors.push(...data.subarray(pixel, pixel + 3));
-    grid.push(column - left + 0.5, bottom - row + 0.5);
     drops.push(...pieces[pieceOf[blockOf(column, row)]!]!);
+    digits.push(...(layout.digitAt(column, row) ?? [0, 0, 0, 0]));
   });
+  for (let hole = 0; hole < layout.holes.length; hole += 2) {
+    const column = layout.holes[hole]!;
+    const row = layout.holes[hole + 1]!;
+    const [x = 0, y = 0, scale = 0, delay = 0] = layout.digitAt(column, row)!;
+    addPixel(column, row);
+    colors.push(0, 0, 0);
+    drops.push(0, 0, NEVER, NEVER);
+    digits.push(x, y, -scale, delay);
+  }
 
   const pixels = new BufferGeometry()
     .setAttribute('position', new Float32BufferAttribute(positions, 3))
@@ -288,9 +292,10 @@ function createPixels(
     .setAttribute('aCell', new Float32BufferAttribute(cells, 2))
     .setAttribute('aGrid', new Float32BufferAttribute(grid, 2))
     .setAttribute('aPiece', new Float32BufferAttribute(drops, 4))
+    .setAttribute('aDigit', new Float32BufferAttribute(digits, 4))
     .setAttribute(
       'aCompleted',
-      new Float32BufferAttribute(new Float32Array(opaqueRows.length).fill(completedTick), 1),
+      new Float32BufferAttribute(new Float32Array(positions.length / 3).fill(completedTick), 1),
     );
   for (let material = 0; material < 4; material++) {
     pixels.addGroup(0, positions.length / 3, material);

@@ -11,6 +11,9 @@ uniform float uTetris;
 uniform float uTetrisTime;
 uniform vec3 uCream;
 uniform vec3 uOchre;
+uniform float uTetrisEnd;
+uniform float uBinary;
+uniform float uBinaryTime;
 
 in vec3 position;
 in vec3 color;
@@ -18,10 +21,17 @@ in vec2 aCell;
 in vec2 aGrid;
 in vec4 aPiece;
 in float aCompleted;
+in vec4 aDigit;
 
 out vec3 vColor;
 
 const float GHOST = 0.1;
+const int DIGITS[2] = int[2](0x7B6F, 0x749A);
+const float HOLLOW_END = 0.08;
+const float FILL_END = 0.7;
+const float BLINK_START = 0.82;
+const float RESTORE_START = 0.88;
+const float FLIP_RATE = 14.0;
 
 float blink(float size, float rate, float chance, float salt) {
   vec2 block = floor(aCell / size);
@@ -95,6 +105,32 @@ vec3 tintAsPiece(vec3 color) {
   return min(mix(vec3(luma), tinted, smoothstep(0.25, 0.9, tone)) * tone * mix(0.6, 1.0, smoothstep(0.25, 0.7, tone)), 1.0);
 }
 
+vec3 fillWithDigits(vec3 surface) {
+  float progress = uBinaryTime / uTetrisEnd;
+  float scale = abs(aDigit.z);
+  surface = aDigit.z < 0.0 ? uBackground : surface;
+  float luma = dot(surface, vec3(0.299, 0.587, 0.114));
+  vec3 ghost = mix(uBackground, uCream, GHOST * luma);
+  vec3 binary = mix(surface, ghost, smoothstep(0.0, HOLLOW_END, progress));
+  vec2 font = floor((aCell - aDigit.xy) / max(scale, 1.0));
+  float since = uBinaryTime - mix(HOLLOW_END, FILL_END, aDigit.w) * uTetrisEnd;
+  bool inGlyph = scale > 0.0 && since >= 0.0 && all(greaterThanEqual(font, vec2(0.0))) && font.x < 3.0 && font.y < 5.0;
+  if (inGlyph) {
+    float pick = hash13(vec3(aDigit.xy, scale));
+    float maxFlips = floor(2.0 + pick * 4.0);
+    float flips = min(floor(since * FLIP_RATE), maxFlips);
+    int value = int(floor(pick * 8.0) + flips) & 1;
+    if (((DIGITS[value] >> (int(font.y) * 3 + int(font.x))) & 1) == 1) {
+      float level = flips < maxFlips ? 1.0 : mix(0.35, 1.0, pow(hash13(vec3(aDigit.xy, 5.0)), 0.7));
+      float blinkPhase = (progress - BLINK_START) / (RESTORE_START - BLINK_START);
+      float blink = step(0.0, blinkPhase) * step(blinkPhase, 1.0) * step(0.5, fract(blinkPhase * 2.0));
+      binary = mix(uCream * level, ghost, blink);
+    }
+  }
+  binary = mix(binary, surface, smoothstep(RESTORE_START, 1.0, progress));
+  return mix(surface, binary, uBinary);
+}
+
 float stepsDone(float since, float steps, float settle) {
   return min(floor(since * (steps + 1.0) / settle), steps);
 }
@@ -151,6 +187,7 @@ void main() {
   vColor = mix(vColor, locking, uTetris * step(0.0, sinceLand) * step(sinceLand, 3.0));
   float blinking = step(0.0, sinceComplete) * step(sinceComplete, CLEAR_TICKS - 1.0) * mod(sinceComplete, 2.0);
   vColor = mix(vColor, ghost, blinking * (1.0 - sinceComplete / CLEAR_TICKS) * uTetris);
+  vColor = fillWithDigits(vColor);
 #endif
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(point, position.z, 1.0);
