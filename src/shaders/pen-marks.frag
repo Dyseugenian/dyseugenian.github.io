@@ -23,5 +23,5 @@ void main() {
   }
   float radius = length(offset);
   if (radius > vSize * 0.5) discard;
-  outColor = vec4(vKind == 2 ? uCream : uOchre, vAlpha);
+  outColor = vec4(uCream, vAlpha);
 }

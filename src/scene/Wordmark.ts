@@ -408,9 +408,15 @@ function schedulePieces(
       values.reduce((sum, value) => sum + value, 0) / values.length;
     const spawn = firstTick + piece * TETRIS.spawnGap;
     land = Math.max(spawn + TETRIS.well - Math.max(...rowsOf) - 1, land + 2);
+    const middle = [average(columnsOf) + 0.5, average(rowsOf) + 0.5];
+    const blockCenter = middle.map((value) => Math.round(value - 0.5) + 0.5);
+    const blockCorner = middle.map(Math.round);
+    const distanceTo = (pivot: number[]) =>
+      Math.hypot(pivot[0]! - middle[0]!, pivot[1]! - middle[1]!);
+    const pivot = distanceTo(blockCorner) < distanceTo(blockCenter) ? blockCorner : blockCenter;
     return [
-      (Math.round(average(columnsOf)) + 0.5) * TETRIS.block,
-      (Math.round(average(rowsOf)) + 0.5) * TETRIS.block,
+      pivot[0]! * TETRIS.block,
+      pivot[1]! * TETRIS.block,
       spawn - Math.floor(Math.random() * TETRIS.spawnSpread),
       land,
     ];
