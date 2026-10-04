@@ -129,6 +129,9 @@ export class Wordmark extends Group {
   update(dt: number, pointer: Vector2 | null, pointerVelocity: Vector2): void {
     this.time += dt;
     this.uniforms.uTime.value = this.time;
+    const falling = this.uniforms.uTetris.value > 0;
+    this.materials[2]!.visible = falling;
+    this.materials[3]!.visible = falling;
     for (const letter of this.letters) letter.dust.update(this.time);
     this.penPaths?.update(this.uniforms.uMotionTime.value);
     this.swipe(pointer, pointerVelocity);
@@ -242,7 +245,9 @@ async function readImage(url: string): Promise<ImageData> {
     colorSpaceConversion: 'none',
     premultiplyAlpha: 'none',
   });
-  const context = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d')!;
+  const context = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d', {
+    willReadFrequently: true,
+  })!;
   context.drawImage(bitmap, 0, 0);
   return context.getImageData(0, 0, bitmap.width, bitmap.height);
 }

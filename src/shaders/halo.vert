@@ -123,18 +123,26 @@ void main() {
   float wing = (1.0 - smoothstep(0.0, halfWidth, abs(wingAngle))) * smoothstep(1.15, 1.45, radius);
   density = max(density, wing * (0.7 + drift) * pow(1.0 - reach, 2.5));
 
+  float nearPupil = raised.g * uEdgeReach;
+  float stray = step(0.99, fract(aLook.z * 31.7))
+    * smoothstep(0.0, 0.05, nearPupil) * (1.0 - smoothstep(0.2, 0.35, nearPupil));
+  float strayReach = uStrayReach * (0.3 + 0.7 * valueNoise(vec3(orbit * 2.0 + aLook.z * 40.0, uTime * 0.2)));
+  float strayFade = pow(1.0 - smoothstep(0.0, uStrayReach * 0.8 + 1e-4, strayReach), 2.0);
+  float shown = max(smoothstep(aLook.y - 0.04, aLook.y + 0.04, density) * pupilFade * kept, stray * strayFade);
+  float fade = smoothstep(0.0, 0.08, age) * (1.0 - smoothstep(0.9, 1.0, age));
+  if (shown * fade * uOpacity <= 0.0) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    return;
+  }
+
   vec2 scatter = vec2(
     valueNoise(vec3(orbit * 3.0, uTime * 0.1 + aLook.z * 10.0)),
     valueNoise(vec3(orbit * 3.0 + 17.0, uTime * 0.1 + aLook.z * 10.0))
   ) - 0.5;
   float nearEdge = 1.0 - smoothstep(0.0, uOuterFade, inside);
   float spread = uScatter * outside + uEdgeScatter * nearEdge;
-  float nearPupil = raised.g * uEdgeReach;
-  float stray = step(0.99, fract(aLook.z * 31.7))
-    * smoothstep(0.0, 0.05, nearPupil) * (1.0 - smoothstep(0.2, 0.35, nearPupil));
-  float strayReach = uStrayReach * (0.3 + 0.7 * valueNoise(vec3(orbit * 2.0 + aLook.z * 40.0, uTime * 0.2)));
   vec2 inward = direction * stray * strayReach;
-  float strayFade = pow(1.0 - smoothstep(0.0, uStrayReach * 0.8 + 1e-4, strayReach), 2.0);
   vec2 apparent = (orbit - inward + scatter * spread * (1.0 - 0.6 * wing)) * vec2(uPupilStretch, 1.0);
 
   vec2 away = apparent - uPointer;
@@ -146,8 +154,6 @@ void main() {
   vDash = step(2.5, aLook.x);
   gl_PointSize = aLook.x * uPixelRatio;
 
-  float shown = max(smoothstep(aLook.y - 0.04, aLook.y + 0.04, density) * pupilFade * kept, stray * strayFade);
-  float fade = smoothstep(0.0, 0.08, age) * (1.0 - smoothstep(0.9, 1.0, age));
   float flicker = 1.0 - uFlicker * (0.5 + 0.5 * sin(uTime * (2.0 + aLook.z) + aLook.z * 7.0));
   float breath = 1.0 + uBreath * sin(uTime * 0.5);
 

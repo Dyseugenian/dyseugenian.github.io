@@ -1,17 +1,18 @@
 import {
-  BufferAttribute,
   BufferGeometry,
   GLSL3,
   Mesh,
   NoBlending,
+  PlaneGeometry,
   RawShaderMaterial,
   Vector2,
   type Texture,
 } from 'three';
-import vertexShader from '../shaders/fullscreen.vert';
+import vertexShader from '../shaders/film.vert';
 import fragmentShader from '../shaders/film.frag';
 
 const FILM_FPS = 24;
+const WARP_GRID = { columns: 160, rows: 90 };
 
 export class Film extends Mesh<BufferGeometry, RawShaderMaterial> {
   private uniforms;
@@ -37,7 +38,7 @@ export class Film extends Mesh<BufferGeometry, RawShaderMaterial> {
       depthWrite: false,
     });
 
-    super(fullscreenTriangle(), material);
+    super(new PlaneGeometry(2, 2, WARP_GRID.columns, WARP_GRID.rows), material);
     this.uniforms = uniforms;
     this.frustumCulled = false;
   }
@@ -50,9 +51,4 @@ export class Film extends Mesh<BufferGeometry, RawShaderMaterial> {
   update(time: number): void {
     this.uniforms.uTime.value = time;
   }
-}
-
-function fullscreenTriangle(): BufferGeometry {
-  const corners = new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]);
-  return new BufferGeometry().setAttribute('position', new BufferAttribute(corners, 3));
 }

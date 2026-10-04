@@ -191,21 +191,28 @@ void main() {
   vColor = mix(vColor, uBackground, 0.5 * shadow);
   vColor = mix(uBackground, vColor, uTetris * min((tick - max(aPiece.z, 0.0) + 1.0) / FADE_IN_TICKS, 1.0));
 #else
-  float sinceLand = tick - aPiece.w;
-  float sinceComplete = tick - aCompleted;
-  float luma = dot(vColor, vec3(0.299, 0.587, 0.114));
-  vec3 ghost = mix(uBackground, uCream, GHOST * luma);
-  vColor = mix(vColor, ghost, uTetris * step(sinceLand, -1.0));
-  vec3 piece = tintAsPiece(vColor);
-  vec3 locking = sinceLand == 0.0 ? mix(piece, uCream, 0.45)
-    : sinceLand <= 2.0 ? piece
-    : mix(piece, vColor, 0.5);
-  vColor = mix(vColor, locking, uTetris * step(0.0, sinceLand) * step(sinceLand, 3.0));
-  float blinking = step(0.0, sinceComplete) * step(sinceComplete, CLEAR_TICKS - 1.0) * mod(sinceComplete, 2.0);
-  vColor = mix(vColor, ghost, blinking * (1.0 - sinceComplete / CLEAR_TICKS) * uTetris);
-  vColor = fillWithDigits(vColor);
-  vColor = penFill(vColor);
+  if (uTetris > 0.0) {
+    float sinceLand = tick - aPiece.w;
+    float sinceComplete = tick - aCompleted;
+    float luma = dot(vColor, vec3(0.299, 0.587, 0.114));
+    vec3 ghost = mix(uBackground, uCream, GHOST * luma);
+    vColor = mix(vColor, ghost, uTetris * step(sinceLand, -1.0));
+    vec3 piece = tintAsPiece(vColor);
+    vec3 locking = sinceLand == 0.0 ? mix(piece, uCream, 0.45)
+      : sinceLand <= 2.0 ? piece
+      : mix(piece, vColor, 0.5);
+    vColor = mix(vColor, locking, uTetris * step(0.0, sinceLand) * step(sinceLand, 3.0));
+    float blinking = step(0.0, sinceComplete) * step(sinceComplete, CLEAR_TICKS - 1.0) * mod(sinceComplete, 2.0);
+    vColor = mix(vColor, ghost, blinking * (1.0 - sinceComplete / CLEAR_TICKS) * uTetris);
+  }
+  if (uBinary > 0.0) vColor = fillWithDigits(vColor);
+  if (uMotion > 0.0) vColor = penFill(vColor);
 #endif
 
+  if (all(lessThanEqual((vColor - uBackground) * SIGN, vec3(0.0)))) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    return;
+  }
   gl_Position = projectionMatrix * modelViewMatrix * vec4(point, position.z, 1.0);
 }

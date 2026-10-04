@@ -16,12 +16,16 @@ const MAX_POINTER_SPEED = 20;
 const HOVER_FADE = 0.3;
 const PLANET_FADE = 0.75;
 const DUST_RETURN = 0.3;
+const REFERENCE_SIZE = 670;
+const MAX_COVERAGE = 6;
+const OUTLINE_SPECKS = 2000;
+const RING_SPECKS = 3070;
 
 export class Logo extends Group {
-  readonly halo: Halo;
+  readonly halo = new Halo();
   readonly ready: Promise<unknown>;
-  private outline = new SprayCircle(SPHERE.radius, 2000);
-  private ring = new SprayCircle(RING.radius, 3070);
+  private outline = new SprayCircle(SPHERE.radius, OUTLINE_SPECKS * MAX_COVERAGE);
+  private ring = new SprayCircle(RING.radius, RING_SPECKS * MAX_COVERAGE);
   private eyes = new Eyes(0.05, 0.429);
   private wordmark = new Wordmark(-416 / 140, -253 / 140);
   private stars = new Stars(
@@ -34,13 +38,8 @@ export class Logo extends Group {
   private wasFollowing = false;
   private viewHalfSize = new Vector2();
 
-  constructor(
-    particles: number,
-    private input: Input,
-  ) {
+  constructor(private input: Input) {
     super();
-    this.halo = new Halo(particles);
-
     for (const circle of [this.outline, this.ring]) {
       circle.uniforms.uCenter.value.set(0, SPHERE.y, 0);
     }
@@ -54,7 +53,13 @@ export class Logo extends Group {
     this.ready = Promise.all([this.halo.loaded, this.eyes.loaded, this.wordmark.loaded]);
   }
 
-  fit(width: number, height: number, viewHeight: number, pixelRatio: number): void {
+  fit(
+    width: number,
+    height: number,
+    viewHeight: number,
+    pixelRatio: number,
+    particles: number,
+  ): void {
     const unitsPerPixel = viewHeight / height;
     const size = Math.min(LOGO_SIZE.width * width, LOGO_SIZE.height * height);
     const pupilY = LOGO_CENTER_Y * height + (PUPIL.y - 0.5) * size;
@@ -77,6 +82,10 @@ export class Logo extends Group {
     for (const specks of [this.stars, this.halo, this.outline, this.ring]) {
       specks.uniforms.uPixelRatio.value = pixelRatio;
     }
+    const coverage = Math.min((size / REFERENCE_SIZE) ** 2, MAX_COVERAGE);
+    this.halo.setCount(Math.round(particles * coverage));
+    this.outline.setCount(Math.round(OUTLINE_SPECKS * coverage));
+    this.ring.setCount(Math.round(RING_SPECKS * coverage));
   }
 
   update(dt: number): void {

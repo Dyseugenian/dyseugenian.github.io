@@ -2,9 +2,13 @@ import './ui/overlay.css';
 import { App, setPageState } from './core/App';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage');
+const context = canvas?.getContext('webgl2', {
+  antialias: false,
+  powerPreference: 'high-performance',
+});
 
-if (canvas && supportsWebGL2()) {
-  const app = new App(canvas);
+if (canvas && context) {
+  const app = new App(canvas, context);
   app.start();
 
   if (new URLSearchParams(location.search).has('debug')) {
@@ -13,11 +17,8 @@ if (canvas && supportsWebGL2()) {
   }
 
   await app.logo.ready;
+  await app.compile();
   app.setStageLive(true);
 } else {
   setPageState('no-webgl', true);
-}
-
-function supportsWebGL2(): boolean {
-  return document.createElement('canvas').getContext('webgl2') !== null;
 }

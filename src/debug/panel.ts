@@ -85,7 +85,7 @@ function addReferenceOverlay(pane: Pane): void {
   image.alt = '';
   image.style.cssText = `
     position: fixed; z-index: 10; pointer-events: none;
-    left: 50%; top: var(--logo-y); width: var(--logo-size);
+    left: 50%; top: calc(var(--logo-bottom) - var(--logo-size) / 2); width: var(--logo-size);
     transform: translate(-50%, -50%);`;
   document.body.append(image);
 

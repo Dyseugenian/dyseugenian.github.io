@@ -44,7 +44,9 @@ export class Eyes extends Decal {
 }
 
 function readPixels(image: HTMLImageElement): ImageData {
-  const context = new OffscreenCanvas(image.width, image.height).getContext('2d')!;
+  const context = new OffscreenCanvas(image.width, image.height).getContext('2d', {
+    willReadFrequently: true,
+  })!;
   context.drawImage(image, 0, 0);
   return context.getImageData(0, 0, image.width, image.height);
 }

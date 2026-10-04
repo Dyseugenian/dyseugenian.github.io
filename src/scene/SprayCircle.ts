@@ -128,6 +128,10 @@ export class SprayCircle extends Points<BufferGeometry, RawShaderMaterial> {
     this.frustumCulled = false;
   }
 
+  setCount(count: number): void {
+    this.geometry.setDrawRange(0, count);
+  }
+
   update(dt: number, pointer: Vector2 | null, pointerVelocity: Vector2): void {
     const time = (this.uniforms.uTime.value += dt);
     this.ripples.forEach((ripple) => this.updateRipple(ripple, time));
@@ -173,7 +177,7 @@ export class SprayCircle extends Points<BufferGeometry, RawShaderMaterial> {
   private stray(time: number): void {
     const stroke = this.geometry.getAttribute('position');
     const breaks = this.geometry.getAttribute('aBreak');
-    const i = Math.floor(Math.random() * stroke.count);
+    const i = Math.floor(Math.random() * this.geometry.drawRange.count);
     if (time - breaks.getX(i) < BREAK.scatterSeconds) return;
 
     const [ux, uy, , vx, vy] = this.uniforms.uFrame.value.elements;
@@ -195,7 +199,7 @@ export class SprayCircle extends Points<BufferGeometry, RawShaderMaterial> {
     const breaks = this.geometry.getAttribute('aBreak');
     let changed = false;
 
-    for (let i = 0; i < stroke.count; i++) {
+    for (let i = 0; i < this.geometry.drawRange.count; i++) {
       const start = stroke.getX(i);
       if (time - breaks.getX(i) < BREAK.scatterSeconds) continue;
 

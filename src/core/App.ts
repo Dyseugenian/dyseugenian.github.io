@@ -9,10 +9,12 @@ import {
 } from 'three';
 import { Input } from './Input';
 import { Loop, type Frame } from './Loop';
-import { Quality, TIERS } from './Quality';
+import { Quality } from './Quality';
 import { palette } from './palette';
 import { Film } from '../post/Film';
 import { Logo } from '../scene/Logo';
+
+const MAX_DRAWING_PIXELS = 3840 * 2160;
 
 export class App {
   readonly quality = new Quality(() => this.applyQuality());
@@ -24,10 +26,10 @@ export class App {
   private target = new WebGLRenderTarget(1, 1);
   private film = new Film(this.target.texture);
   private input = new Input();
-  readonly logo = new Logo(TIERS.high.particles, this.input);
+  readonly logo = new Logo(this.input);
 
-  constructor(canvas: HTMLCanvasElement) {
-    this.renderer = new WebGLRenderer({ canvas, alpha: true, powerPreference: 'high-performance' });
+  constructor(canvas: HTMLCanvasElement, context: WebGL2RenderingContext) {
+    this.renderer = new WebGLRenderer({ canvas, context });
     this.renderer.setClearColor(new Color(palette.bg).convertLinearToSRGB(), 0);
 
     this.camera.position.z = 10;
@@ -43,6 +45,13 @@ export class App {
 
   start(): void {
     this.loop.start();
+  }
+
+  async compile(): Promise<void> {
+    await Promise.all([
+      this.renderer.compileAsync(this.scene, this.camera),
+      this.renderer.compileAsync(this.film, this.camera),
+    ]);
   }
 
   setStageLive(live: boolean): void {
@@ -61,13 +70,18 @@ export class App {
   }
 
   private applyQuality(): void {
-    this.logo.halo.setCount(this.quality.settings.particles);
     this.resize();
   }
 
   private resize(): void {
     const { innerWidth: width, innerHeight: height, devicePixelRatio } = window;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, this.quality.settings.maxPixelRatio));
+    this.renderer.setPixelRatio(
+      Math.min(
+        devicePixelRatio,
+        this.quality.settings.maxPixelRatio,
+        Math.sqrt(MAX_DRAWING_PIXELS / (width * height)),
+      ),
+    );
     this.renderer.setSize(width, height, false);
     const { x, y } = this.renderer.getDrawingBufferSize(new Vector2());
     this.target.setSize(x, y);
@@ -77,7 +91,13 @@ export class App {
 
     const viewHeight =
       2 * this.camera.position.z * Math.tan(MathUtils.degToRad(this.camera.fov / 2));
-    this.logo.fit(width, height, viewHeight, this.renderer.getPixelRatio());
+    this.logo.fit(
+      width,
+      height,
+      viewHeight,
+      this.renderer.getPixelRatio(),
+      this.quality.settings.particles,
+    );
   }
 }
 

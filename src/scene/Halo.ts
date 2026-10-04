@@ -39,7 +39,7 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
   private leanY = new Spring(24, 9.8);
   private discMatrix = new Matrix4();
 
-  constructor(count: number) {
+  constructor() {
     const uniforms = {
       uDisc: { value: new Matrix3() },
       uDensity: { value: new Texture() },
@@ -94,7 +94,7 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
       depthWrite: false,
     });
 
-    super(createSpecks(count), material);
+    super(createSpecks(0), material);
     this.uniforms = uniforms;
     this.frustumCulled = false;
     this.loaded = new TextureLoader().loadAsync(densityUrl).then((density) => {
@@ -103,6 +103,16 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
   }
 
   setCount(count: number): void {
+    const current = this.geometry;
+    if (count > current.getAttribute('position').count) {
+      this.geometry = createSpecks(count);
+      for (const name of ['position', 'aDuration', 'aLook']) {
+        (this.geometry.getAttribute(name).array as Float32Array).set(
+          current.getAttribute(name).array,
+        );
+      }
+      current.dispose();
+    }
     this.geometry.setDrawRange(0, count);
   }
 
