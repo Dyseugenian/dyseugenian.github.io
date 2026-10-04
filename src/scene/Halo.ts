@@ -32,11 +32,11 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
   readonly uniforms;
   readonly loaded: Promise<void>;
 
-  private pointerX = new Spring(60, 15.5);
-  private pointerY = new Spring(60, 15.5);
-  private push = new Spring(20, 9);
-  private leanX = new Spring(40, 9);
-  private leanY = new Spring(40, 9);
+  private pointerX = new Spring(30, 11);
+  private pointerY = new Spring(30, 11);
+  private push = new Spring(12, 7);
+  private leanX = new Spring(24, 9.8);
+  private leanY = new Spring(24, 9.8);
   private discMatrix = new Matrix4();
 
   constructor(count: number) {

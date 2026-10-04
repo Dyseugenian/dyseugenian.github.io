@@ -139,7 +139,7 @@ void main() {
 
   vec2 away = apparent - uPointer;
   float distance = max(length(away), 1e-4);
-  apparent += away / distance * uPush * uPushStrength * exp(-distance * distance / (uPushRadius * uPushRadius));
+  apparent += away / distance * uPush * uPushStrength * exp(-pow(distance / uPushRadius, 8.0));
   float clearing = mix(1.0, smoothstep(0.0, uPushRadius, distance), uPush);
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(apparent, 0.0, 1.0);
