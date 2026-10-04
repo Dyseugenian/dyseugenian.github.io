@@ -25,8 +25,8 @@ void main() {
   vSize = max(SIZES[kind] * uPixelSize, 2.0);
   gl_PointSize = vSize;
 
-  float guides = 1.0 - smoothstep(GUIDES_FADE, GUIDES_END, t);
+  float shown = kind == 0 ? 1.0 - smoothstep(until, until + GUIDES_FADE, t) : step(t, until);
   vKind = kind;
   vFilled = kind == 0 ? 1.0 - step(arrival + LINGER, t) : 1.0;
-  vAlpha = step(arrival, t) * step(t, until) * guides * uMotion;
+  vAlpha = step(arrival, t) * shown * uMotion;
 }

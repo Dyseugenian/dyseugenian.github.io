@@ -32,11 +32,20 @@ const float GHOST = 0.1;
 const int DIGITS[2] = int[2](0x7B6F, 0x749A);
 const float HOLLOW_END = 0.08;
 const float FILL_END = 0.7;
-const float BLINK_START = 0.82;
-const float RESTORE_START = 0.88;
+const float EXIT_FIRST = 0.74;
+const float EXIT_LAST = 0.87;
+const float HARDEN = 0.04;
+const float HOLD = 0.02;
+const float DISSOLVE = 0.07;
 const float FLIP_RATE = 14.0;
 const float DIGIT_WARM = 0.4;
 const float GLIDE_TICKS = 2.0;
+
+float bayer(vec2 cell) {
+  const float ORDER[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  ivec2 p = ivec2(mod(cell, 4.0));
+  return (ORDER[p.y * 4 + p.x] + 0.5) / 16.0;
+}
 
 float blink(float size, float rate, float chance, float salt) {
   vec2 block = floor(aCell / size);
@@ -117,21 +126,25 @@ vec3 fillWithDigits(vec3 surface) {
   vec3 binary = mix(surface, ghost, smoothstep(0.0, HOLLOW_END, progress));
   vec2 font = floor((aCell - aDigit.xy) / max(scale, 1.0));
   float since = uBinaryTime - mix(HOLLOW_END, FILL_END, aDigit.w) * uTetrisEnd;
-  bool inGlyph = scale > 0.0 && since >= 0.0 && all(greaterThanEqual(font, vec2(0.0))) && font.x < 3.0 && font.y < 5.0;
-  if (inGlyph) {
+  float exit = progress - mix(EXIT_FIRST, EXIT_LAST, aDigit.w);
+  bool inBox = scale > 0.0 && all(greaterThanEqual(font, vec2(0.0))) && font.x < 3.0 && font.y < 5.0;
+  if (inBox && since >= 0.0) {
     float pick = hash13(vec3(aDigit.xy, scale));
     float maxFlips = floor(2.0 + pick * 4.0);
     float flips = min(floor(since * FLIP_RATE), maxFlips);
     int value = int(floor(pick * 8.0) + flips) & 1;
     if (((DIGITS[value] >> (int(font.y) * 3 + int(font.x))) & 1) == 1) {
       float level = flips < maxFlips ? 1.0 : mix(0.35, 1.0, pow(hash13(vec3(aDigit.xy, 5.0)), 0.7));
-      float blinkPhase = (progress - BLINK_START) / (RESTORE_START - BLINK_START);
-      float blink = step(0.0, blinkPhase) * step(blinkPhase, 1.0) * step(0.5, fract(blinkPhase * 2.0));
       float cooled = 1.0 - pow(1.0 - min(since / DIGIT_WARM, 1.0), 3.0);
-      binary = mix(mix(uOchre, uCream * level, cooled), ghost, blink);
+      binary = mix(uOchre, uCream * level, cooled);
     }
+    binary = mix(binary, uCream, step(hash13(vec3(aCell, 11.0)), exit / HARDEN));
   }
-  binary = mix(binary, surface, smoothstep(RESTORE_START, 1.0, progress));
+  float dither = bayer(floor(aCell / 2.0));
+  float restored = inBox
+    ? step(dither, (exit - HARDEN - HOLD) / DISSOLVE)
+    : step(dither, smoothstep(EXIT_FIRST, 1.0, progress));
+  binary = mix(binary, surface, restored);
   return mix(surface, binary, uBinary);
 }
 
@@ -142,8 +155,11 @@ vec3 penFill(vec3 surface) {
   float eased = since < 0.5 ? 4.0 * since * since * since : 1.0 - pow(2.0 - 2.0 * since, 3.0) / 2.0;
   float front = eased * (FLOOD_REACH + FLOOD_SOFT);
   float flood = 1.0 - smoothstep(front - FLOOD_SOFT, front, distance(aCell, aPen.xy));
-  vec3 drawn = mix(ghost, surface, flood);
-  drawn = mix(drawn, uCream, flood * (1.0 - flood) * step(0.0, luma - 0.05));
+  float threshold = bayer(floor(aCell / 2.0));
+  float lit = step(threshold, flood);
+  float fresh = lit * (1.0 - smoothstep(0.0, 0.2, flood - threshold));
+  vec3 drawn = mix(ghost, surface, lit);
+  drawn = mix(drawn, uCream, 0.6 * fresh * step(0.05, luma));
   vec3 pen = mix(surface, drawn, smoothstep(0.0, PEN_HOLLOW, uMotionTime));
   return mix(surface, pen, uMotion);
 }
@@ -197,7 +213,7 @@ void main() {
 #else
   if (uTetris > 0.0) {
     float landed = uTetrisTime / TICK - aPiece.w;
-    float sinceComplete = tick - aCompleted;
+    float sinceComplete = uTetrisTime / TICK - aCompleted;
     float luma = dot(vColor, vec3(0.299, 0.587, 0.114));
     vec3 ghost = mix(uBackground, uCream, GHOST * luma);
     vColor = mix(vColor, ghost, uTetris * (1.0 - step(0.0, landed)));
@@ -205,8 +221,8 @@ void main() {
     vec3 flashed = mix(piece, uCream, 0.45 * (1.0 - smoothstep(0.0, 2.0, landed)));
     vec3 locking = mix(flashed, vColor, smoothstep(1.5, 4.0, landed));
     vColor = mix(vColor, locking, uTetris * step(0.0, landed));
-    float blinking = step(0.0, sinceComplete) * step(sinceComplete, CLEAR_TICKS - 1.0) * mod(sinceComplete, 2.0);
-    vColor = mix(vColor, ghost, blinking * (1.0 - sinceComplete / CLEAR_TICKS) * uTetris);
+    float pulse = smoothstep(0.0, 1.5, sinceComplete) * (1.0 - smoothstep(1.5, CLEAR_TICKS, sinceComplete));
+    vColor = mix(vColor, uOchre * luma, 0.6 * pulse * uTetris);
   }
   if (uBinary > 0.0) vColor = fillWithDigits(vColor);
   if (uMotion > 0.0) vColor = penFill(vColor);

@@ -24,9 +24,10 @@ export const PEN = {
   linger: 0.35,
   floodDuration: 0.7,
   floodReach: 240,
-  floodSoft: 110,
-  guidesFade: 2.55,
-  guidesEnd: 2.95,
+  floodSoft: 60,
+  anchorSpan: 12,
+  guidesDelay: 0.3,
+  guidesFade: 0.4,
 };
 
 const ANCHOR = 0;
@@ -45,6 +46,7 @@ export interface PenPath {
   anchors: { x: number; y: number; arrival: number }[];
   start: [number, number];
   drawEnd: number;
+  guidesFade: number;
 }
 
 export function timePath(loops: Loop[], drawStart: number): PenPath {
@@ -56,7 +58,13 @@ export function timePath(loops: Loop[], drawStart: number): PenPath {
   });
   const speed = total / PEN.drawDuration;
 
-  const path: PenPath = { points: [], anchors: [], start: loops[0]![0]!, drawEnd: drawStart };
+  const path: PenPath = {
+    points: [],
+    anchors: [],
+    start: loops[0]![0]!,
+    drawEnd: drawStart,
+    guidesFade: drawStart,
+  };
   let time = drawStart;
   loops.forEach((loop, index) => {
     if (index > 0) time += (length(loops[index - 1]![0]!, loop[0]!) * PEN.liftWeight) / speed;
@@ -75,12 +83,15 @@ export function timePath(loops: Loop[], drawStart: number): PenPath {
         drawn: i > 0,
         slope: i > 0 ? Math.max(turn, 0) : 0,
       });
-      path.anchors.push({ x: point[0], y: point[1], arrival: time });
+      if (Math.max(Math.hypot(...incoming), Math.hypot(...outgoing)) >= PEN.anchorSpan) {
+        path.anchors.push({ x: point[0], y: point[1], arrival: time });
+      }
       time += length(point, next) / speed;
     });
     path.points.push({ x: loop[0]![0], y: loop[0]![1], arrival: time, drawn: true, slope: 0 });
   });
   path.drawEnd = time;
+  path.guidesFade = time + PEN.guidesDelay;
   return path;
 }
 
@@ -102,7 +113,6 @@ export class PenPaths extends Group {
     const defines = {
       LINGER: PEN.linger.toFixed(3),
       GUIDES_FADE: PEN.guidesFade.toFixed(3),
-      GUIDES_END: PEN.guidesEnd.toFixed(3),
     };
     const material = (vertexShader: string, fragmentShader: string) =>
       new RawShaderMaterial({
@@ -132,12 +142,12 @@ export class PenPaths extends Group {
       path.points.forEach((point, i) => {
         if (!point.drawn) return;
         const previous = path.points[i - 1]!;
-        const timing = [previous.arrival, point.arrival];
+        const timing = [previous.arrival, point.arrival, path.guidesFade];
         addLine(previous, timing, [0, previous.slope, point.slope]);
         addLine(point, timing, [1, previous.slope, point.slope]);
       });
       for (const anchor of path.anchors) {
-        addMark(anchor, [anchor.arrival, PEN.guidesEnd, ANCHOR]);
+        addMark(anchor, [anchor.arrival, path.guidesFade, ANCHOR]);
       }
     }
     for (const path of paths) {
@@ -147,7 +157,7 @@ export class PenPaths extends Group {
 
     const lineGeometry = new BufferGeometry()
       .setAttribute('position', new Float32BufferAttribute(lines.position, 3))
-      .setAttribute('aTiming', new Float32BufferAttribute(lines.timing, 2))
+      .setAttribute('aTiming', new Float32BufferAttribute(lines.timing, 3))
       .setAttribute('aSegment', new Float32BufferAttribute(lines.segment, 3));
     const markGeometry = new BufferGeometry()
       .setAttribute('position', new Float32BufferAttribute(marks.position, 3))

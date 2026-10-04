@@ -38,6 +38,7 @@ const TETRIS = {
   well: 24,
   spawnGap: 9,
   spawnSpread: 16,
+  minCoverage: 0.3,
   fadeInTicks: 5,
   clearTicks: 6,
 };
@@ -279,7 +280,12 @@ function createPixels(
     Math.floor((column - left) / TETRIS.block);
 
   const filled = new Uint8Array(gridColumns * gridRows);
-  opaqueColumns.forEach((column, i) => (filled[blockOf(column, opaqueRows[i]!)] = 1));
+  const coverage = new Float32Array(gridColumns * gridRows);
+  opaqueColumns.forEach((column, i) => {
+    const block = blockOf(column, opaqueRows[i]!);
+    filled[block] = 1;
+    coverage[block]! += 1 / TETRIS.block ** 2;
+  });
   const pieceOf = splitIntoPieces(filled, gridColumns);
   const pieces = schedulePieces(pieceOf, gridColumns, firstTick);
   const completedTick = Math.max(...pieces.map((piece) => piece[3]));
@@ -302,7 +308,9 @@ function createPixels(
     const pixel = (row * width + column) * 4;
     addPixel(column, row);
     colors.push(...data.subarray(pixel, pixel + 3));
-    drops.push(...pieces[pieceOf[blockOf(column, row)]!]!);
+    const block = blockOf(column, row);
+    const [x, y, spawn, land] = pieces[pieceOf[block]!]!;
+    drops.push(x, y, coverage[block]! < TETRIS.minCoverage ? land : spawn, land);
     digits.push(...(layout.digitAt(column, row) ?? [0, 0, 0, 0]));
   });
   for (let hole = 0; hole < layout.holes.length; hole += 2) {
