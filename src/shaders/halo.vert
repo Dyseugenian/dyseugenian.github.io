@@ -43,6 +43,7 @@ uniform vec2 uPointer;
 uniform float uPush;
 uniform float uPushRadius;
 uniform float uPushStrength;
+uniform float uOpacity;
 
 uniform vec3 uDim;
 uniform vec3 uOchre;
@@ -135,12 +136,11 @@ void main() {
   vec2 inward = direction * stray * strayReach;
   float strayFade = pow(1.0 - smoothstep(0.0, uStrayReach * 0.8 + 1e-4, strayReach), 2.0);
   vec2 apparent = (orbit - inward + scatter * spread * (1.0 - 0.6 * wing)) * vec2(uPupilStretch, 1.0);
+
   vec2 away = apparent - uPointer;
   float distance = max(length(away), 1e-4);
-  float push = uPush * uPushStrength * exp(-distance * distance / (uPushRadius * uPushRadius));
-  vec2 outward = normalize(apparent);
-  vec2 shove = away / distance * push;
-  apparent += shove - outward * min(dot(shove, outward), 0.0);
+  apparent += away / distance * uPush * uPushStrength * exp(-distance * distance / (uPushRadius * uPushRadius));
+  float clearing = mix(1.0, smoothstep(0.0, uPushRadius, distance), uPush);
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(apparent, 0.0, 1.0);
   vDash = step(2.5, aLook.x);
@@ -153,5 +153,5 @@ void main() {
 
   float tone = fract(aLook.z * 7.31) * density * breath;
   vColor = mix(uDim, mix(uOchre, uHi, tone), smoothstep(0.05, 0.5, density));
-  vAlpha = shown * fade * flicker;
+  vAlpha = shown * fade * flicker * clearing * uOpacity;
 }

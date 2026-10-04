@@ -18,6 +18,7 @@ uniform vec2 uBendOffsets[BENDS];
 uniform float uBendWidth;
 uniform float uTime;
 uniform float uPixelRatio;
+uniform float uOpacity;
 uniform vec3 uDim;
 uniform vec3 uBright;
 
@@ -100,5 +101,5 @@ void main() {
 
   float flicker = 0.85 + 0.15 * sin(uTime * 3.0 + aLook.z * 6.2832);
   vColor = mix(uDim, uBright, aLook.y);
-  vAlpha = aLook.y * flicker * (1.0 - covered);
+  vAlpha = aLook.y * flicker * (1.0 - covered) * uOpacity;
 }

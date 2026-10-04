@@ -7,22 +7,21 @@ uniform mat4 projectionMatrix;
 uniform float uPixelSize;
 uniform float uTime;
 uniform vec3 uBackground;
-uniform float uBinary;
+uniform float uTetris;
+uniform float uTetrisTime;
 uniform vec3 uCream;
 uniform vec3 uOchre;
 
 in vec3 position;
 in vec3 color;
 in vec2 aCell;
+in vec2 aGrid;
+in vec4 aPiece;
+in float aCompleted;
 
 out vec3 vColor;
-out float vGlyph;
-flat out int vDigit;
-flat out float vSeed;
 
-const vec2 CELL = vec2(8.0, 12.0);
-const float WORDMARK_WIDTH = 848.0;
-const float SWEEP = 1.4;
+const float GHOST = 0.1;
 
 float blink(float size, float rate, float chance, float salt) {
   vec2 block = floor(aCell / size);
@@ -81,12 +80,35 @@ float scratches() {
   return present * reveal * thin;
 }
 
+vec2 turnQuarters(vec2 offset, float quarters) {
+  float angle = -quarters * 1.5707963;
+  float c = round(cos(angle));
+  float s = round(sin(angle));
+  return mat2(c, s, -s, c) * offset;
+}
+
+vec3 tintAsPiece(vec3 color) {
+  float tone = mix(0.25, 1.15, hash13(vec3(aPiece.xy, aPiece.z + 9.0)));
+  float warmth = hash13(vec3(aPiece.xy, aPiece.z + 4.0)) * smoothstep(0.6, 1.0, tone);
+  float luma = dot(color, vec3(0.299, 0.587, 0.114));
+  vec3 tinted = mix(color, uOchre * luma, 0.25 * warmth);
+  return min(mix(vec3(luma), tinted, smoothstep(0.25, 0.9, tone)) * tone * mix(0.6, 1.0, smoothstep(0.25, 0.7, tone)), 1.0);
+}
+
+float stepsDone(float since, float steps, float settle) {
+  return min(floor(since * (steps + 1.0) / settle), steps);
+}
+
 void main() {
-  vec2 cell = floor(aCell / CELL);
-  float seed = hash13(vec3(cell, 7.0));
-  float delay = aCell.x / WORDMARK_WIDTH * 0.7 + seed * 0.3;
-  float progress = clamp(uBinary * (1.0 + SWEEP) - delay * SWEEP, 0.0, 1.0);
-  bool anchor = aCell == cell * CELL + floor(CELL / 2.0);
+  float tick = floor(uTetrisTime / TICK);
+
+#ifdef FALLING
+  if (uTetris == 0.0 || tick < aPiece.z || tick >= aPiece.w) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    return;
+  }
+#endif
 
   float flicker = blink(2.0, 2.3, 0.015, 1.0) + blink(5.0, 1.7, 0.03, 2.0) + blink(11.0, 1.2, 0.05, 3.0);
   flicker = clamp(flicker, -1.0, 1.0);
@@ -98,30 +120,38 @@ void main() {
 
   vec2 point = position.xy;
   gl_PointSize = uPixelSize + 2.0;
-  vGlyph = 0.0;
-  vSeed = seed;
-  vDigit = 0;
 
-  if (anchor && progress > 0.0) {
-    float rate = progress < 0.8 ? 14.0 : 4.0 + 10.0 * seed;
-    float clock = uTime * rate + seed * 5.0;
-    float sinceFlip = fract(clock) / rate;
-    float heat = max(1.0 - smoothstep(0.55, 1.0, progress), 1.0 - smoothstep(0.0, 0.35, sinceFlip));
-    point.y -= pow(1.0 - progress, 3.0) * 6.0;
-    gl_PointSize = CELL.y * uPixelSize + 2.0;
-    vGlyph = progress;
-    vDigit = int(step(0.5, hash13(vec3(cell, floor(clock)))));
-    float shimmer = hash13(vec3(cell, floor(uTime * 9.0 + seed * 3.0)));
-    float level = mix(0.2, 1.0, pow(hash13(vec3(cell, floor(clock) + 31.0)), 0.7));
-    vColor = mix(uCream * level * (0.7 + 0.3 * shimmer), uOchre * level, heat * mix(0.35, 0.85, step(progress, 0.8)));
-    vColor = mix(vColor, uBackground, step(shimmer, 0.18) * 0.85);
-  } else if (!anchor) {
-    float vanish = 0.3 + 0.6 * hash13(vec3(aCell, 11.0));
-    float rise = smoothstep(vanish - 0.3, vanish, progress);
-    point += vec2(hash13(vec3(aCell, 12.0)) - 0.5, 1.0 + hash13(vec3(aCell, 13.0)) * 3.0) * rise * 2.0;
-    vColor = mix(vColor, uOchre, rise * 0.6);
-    vColor = mix(vColor, uBackground, step(vanish, progress));
-  }
+#ifdef FALLING
+  float since = tick - aPiece.z;
+  float settle = max(aPiece.w - aPiece.z - 3.0, 1.0);
+  float turns = floor(hash13(vec3(aPiece.xy, aPiece.z)) * 4.0);
+  float slides = floor(hash13(vec3(aPiece.xy, aPiece.z + 5.0)) * 5.0) - 2.0;
+  float quarters = turns - stepsDone(since, turns, settle);
+  float slide = sign(slides) * (abs(slides) - stepsDone(since, abs(slides), settle * 0.8));
+  vec2 grid = aPiece.xy + turnQuarters(aGrid - aPiece.xy, quarters) + vec2(slide, aPiece.w - tick) * BLOCK;
+  point += grid - aGrid;
+
+  vec2 inBlock = mod(grid, BLOCK);
+  float shadow = float(inBlock.x > BLOCK - 2.0 || inBlock.y < 2.0);
+  float light = float(inBlock.x < 2.0 || inBlock.y > BLOCK - 2.0) * (1.0 - shadow);
+  vColor = tintAsPiece(vColor);
+  vColor = min(vColor * (1.0 + 0.6 * light), 1.0);
+  vColor = mix(vColor, uBackground, 0.5 * shadow);
+  vColor = mix(uBackground, vColor, uTetris * min((tick - max(aPiece.z, 0.0) + 1.0) / FADE_IN_TICKS, 1.0));
+#else
+  float sinceLand = tick - aPiece.w;
+  float sinceComplete = tick - aCompleted;
+  float luma = dot(vColor, vec3(0.299, 0.587, 0.114));
+  vec3 ghost = mix(uBackground, uCream, GHOST * luma);
+  vColor = mix(vColor, ghost, uTetris * step(sinceLand, -1.0));
+  vec3 piece = tintAsPiece(vColor);
+  vec3 locking = sinceLand == 0.0 ? mix(piece, uCream, 0.45)
+    : sinceLand <= 2.0 ? piece
+    : mix(piece, vColor, 0.5);
+  vColor = mix(vColor, locking, uTetris * step(0.0, sinceLand) * step(sinceLand, 3.0));
+  float blinking = step(0.0, sinceComplete) * step(sinceComplete, CLEAR_TICKS - 1.0) * mod(sinceComplete, 2.0);
+  vColor = mix(vColor, ghost, blinking * (1.0 - sinceComplete / CLEAR_TICKS) * uTetris);
+#endif
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(point, position.z, 1.0);
 }

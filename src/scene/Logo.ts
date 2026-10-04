@@ -13,7 +13,8 @@ const SPHERE = { y: 0.096, radius: 1.7, flow: 0.05 };
 const RING = { radius: 2.6, drop: 0.514, flow: 0.035 };
 const REDUCED_MOTION_SPEED = 0.1;
 const MAX_POINTER_SPEED = 20;
-const BINARY_DURATION = 1.2;
+const TETRIS_FADE = 0.3;
+const TETRIS_PLANET_FADE = 0.75;
 
 export class Logo extends Group {
   readonly halo: Halo;
@@ -61,6 +62,7 @@ export class Logo extends Group {
     this.viewHalfSize.set((width / 2) * unitsPerPixel, viewHeight / 2);
     this.wordmark.uniforms.uPixelSize.value =
       PUPIL.radius * size * pixelRatio * this.wordmark.scale.x;
+    this.eyes.pixelSize.value = this.wordmark.uniforms.uPixelSize.value;
 
     const scale = this.scale.x;
     this.stars.scatter(
@@ -77,7 +79,7 @@ export class Logo extends Group {
   }
 
   update(dt: number): void {
-    const { pointer, isPointerInside, isOnSoftwareRole, reducedMotion } = this.input;
+    const { pointer, isPointerInside, isOnGamedevRole, reducedMotion } = this.input;
     const motionDt = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
     const follow = isPointerInside && !reducedMotion;
 
@@ -104,12 +106,13 @@ export class Logo extends Group {
     this.outline.update(motionDt, target, this.pointerVelocity);
     this.ring.update(motionDt, target, this.pointerVelocity);
     this.eyes.update(dt, target);
-    const binary = this.wordmark.uniforms.uBinary;
-    binary.value = MathUtils.clamp(
-      binary.value + (isOnSoftwareRole ? dt : -dt) / BINARY_DURATION,
-      0,
-      1,
-    );
+    const tetris = this.wordmark.uniforms.uTetris;
+    tetris.value = MathUtils.clamp(tetris.value + (isOnGamedevRole ? dt : -dt) / TETRIS_FADE, 0, 1);
+    const tetrisTime = this.wordmark.uniforms.uTetrisTime;
+    tetrisTime.value = tetris.value > 0 ? tetrisTime.value + dt : 0;
+    for (const part of [this.halo, this.outline, this.ring, this.eyes]) {
+      part.uniforms.uOpacity.value = 1 - TETRIS_PLANET_FADE * tetris.value;
+    }
     this.wordmark.update(motionDt);
     this.stars.update(motionDt);
   }

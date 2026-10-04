@@ -106,6 +106,7 @@ export class SprayCircle extends Points<BufferGeometry, RawShaderMaterial> {
       uBendWidth: { value: BEND.width / radius },
       uTime: { value: 0 },
       uPixelRatio: { value: 1 },
+      uOpacity: { value: 1 },
       uDim: { value: new Color(palette.ochreDim).convertLinearToSRGB() },
       uBright: { value: new Color(palette.ochre).convertLinearToSRGB() },
     };

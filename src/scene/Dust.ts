@@ -12,7 +12,7 @@ import vertexShader from '../shaders/dust.vert';
 import fragmentShader from '../shaders/specks.frag';
 
 const DUST = {
-  share: 3.15,
+  share: 5,
   scatter: 3,
   life: [1.5, 5],
   rest: [0.3, 4],

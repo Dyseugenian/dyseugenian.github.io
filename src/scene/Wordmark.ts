@@ -27,6 +27,16 @@ import { Dust, createDustMaterial } from './Dust';
 const LETTER_STARTS = [0, 106, 183, 259, 333, 405, 483, 552, 630, 671, 744];
 const LETTER_SPACING = 6;
 const EDGE_FALLOFF = 6;
+const TETRIS = {
+  block: 14,
+  tick: 0.04,
+  piecesPerLetter: 6,
+  well: 24,
+  spawnGap: 9,
+  spawnSpread: 16,
+  fadeInTicks: 5,
+  clearTicks: 6,
+};
 const NEIGHBORS = [
   [1, 0],
   [-1, 0],
@@ -39,7 +49,9 @@ export class Wordmark extends Group {
     uPixelSize: { value: 1 },
     uTime: { value: 0 },
     uBackground: { value: new Color(palette.bg).convertLinearToSRGB() },
-    uBinary: { value: 0 },
+    uTetris: { value: 0 },
+    uTetrisTime: { value: 0 },
+    uTetrisEnd: { value: 0 },
     uCream: { value: new Color(palette.cream).convertLinearToSRGB() },
     uOchre: { value: new Color(palette.ochreHi).convertLinearToSRGB() },
   };
@@ -47,8 +59,10 @@ export class Wordmark extends Group {
   readonly loaded: Promise<void>;
   private time = 0;
   private materials = [
-    createMaterial(this.uniforms, AddEquation, 1),
-    createMaterial(this.uniforms, ReverseSubtractEquation, -1),
+    createMaterial(this.uniforms, AddEquation, 1, false),
+    createMaterial(this.uniforms, ReverseSubtractEquation, -1, false),
+    createMaterial(this.uniforms, AddEquation, 1, true),
+    createMaterial(this.uniforms, ReverseSubtractEquation, -1, true),
   ];
   private dustMaterial = createDustMaterial(this.uniforms);
 
@@ -60,10 +74,15 @@ export class Wordmark extends Group {
       ([image, dust]) => {
         LETTER_STARTS.forEach((start, index) => {
           const end = LETTER_STARTS[index + 1] ?? image.width;
-          const spread = (index - (LETTER_STARTS.length - 1) / 2) * LETTER_SPACING;
+          const spread = spreadOf(index);
           const center = { x: (start + end) / 2, y: image.height / 2 };
           const home = new Vector2(center.x + spread, -center.y);
-          const pixels = createPixels(image, start, end, center);
+          const firstTick = (index * 5) % TETRIS.spawnGap;
+          const { pixels, completedTick } = createPixels(image, start, end, center, firstTick);
+          this.uniforms.uTetrisEnd.value = Math.max(
+            this.uniforms.uTetrisEnd.value,
+            (completedTick + TETRIS.clearTicks) * TETRIS.tick,
+          );
           const specks = new Dust(findSites(dust, image, start, end, center), this.dustMaterial);
           const letter = new Letter(pixels, this.materials, home, specks);
           this.letters.push(letter);
@@ -97,13 +116,21 @@ function createMaterial(
   uniforms: Record<string, IUniform>,
   blendEquation: BlendingEquation,
   sign: number,
+  falling: boolean,
 ): RawShaderMaterial {
   return new RawShaderMaterial({
     glslVersion: GLSL3,
     vertexShader,
     fragmentShader,
     uniforms,
-    defines: { SIGN: sign.toFixed(1) },
+    defines: {
+      SIGN: sign.toFixed(1),
+      BLOCK: TETRIS.block.toFixed(1),
+      TICK: TETRIS.tick.toFixed(3),
+      CLEAR_TICKS: TETRIS.clearTicks.toFixed(1),
+      FADE_IN_TICKS: TETRIS.fadeInTicks.toFixed(1),
+      ...(falling ? { FALLING: '' } : {}),
+    },
     blending: CustomBlending,
     blendEquation,
     blendSrc: SrcAlphaFactor,
@@ -114,6 +141,10 @@ function createMaterial(
     depthTest: false,
     depthWrite: false,
   });
+}
+
+function spreadOf(index: number): number {
+  return (index - (LETTER_STARTS.length - 1) / 2) * LETTER_SPACING;
 }
 
 async function readImage(url: string): Promise<ImageData> {
@@ -132,28 +163,143 @@ function createPixels(
   start: number,
   end: number,
   center: { x: number; y: number },
-): BufferGeometry {
-  const positions: number[] = [];
-  const colors: number[] = [];
-  const cells: number[] = [];
-
+  firstTick: number,
+): { pixels: BufferGeometry; completedTick: number } {
+  const opaqueColumns: number[] = [];
+  const opaqueRows: number[] = [];
   for (let row = 0; row < height; row++) {
     for (let column = start; column < end; column++) {
-      const pixel = (row * width + column) * 4;
-      if (data[pixel + 3] === 0) continue;
-      positions.push(column + 0.5 - center.x, center.y - row - 0.5, 0);
-      cells.push(column, row);
-      colors.push(...data.subarray(pixel, pixel + 3));
+      if (data[(row * width + column) * 4 + 3] === 0) continue;
+      opaqueColumns.push(column);
+      opaqueRows.push(row);
     }
   }
 
-  const geometry = new BufferGeometry()
+  const left = Math.min(...opaqueColumns);
+  const bottom = Math.max(...opaqueRows);
+  const gridColumns = Math.ceil((Math.max(...opaqueColumns) - left + 1) / TETRIS.block);
+  const gridRows = Math.ceil((bottom - Math.min(...opaqueRows) + 1) / TETRIS.block);
+  const blockOf = (column: number, row: number) =>
+    Math.floor((bottom - row) / TETRIS.block) * gridColumns +
+    Math.floor((column - left) / TETRIS.block);
+
+  const filled = new Uint8Array(gridColumns * gridRows);
+  opaqueColumns.forEach((column, i) => (filled[blockOf(column, opaqueRows[i]!)] = 1));
+  const pieceOf = splitIntoPieces(filled, gridColumns);
+  const pieces = schedulePieces(pieceOf, gridColumns, firstTick);
+  const completedTick = Math.max(...pieces.map((piece) => piece[3]));
+
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const cells: number[] = [];
+  const grid: number[] = [];
+  const drops: number[] = [];
+  opaqueColumns.forEach((column, i) => {
+    const row = opaqueRows[i]!;
+    const pixel = (row * width + column) * 4;
+    positions.push(column + 0.5 - center.x, center.y - row - 0.5, 0);
+    cells.push(column, row);
+    colors.push(...data.subarray(pixel, pixel + 3));
+    grid.push(column - left + 0.5, bottom - row + 0.5);
+    drops.push(...pieces[pieceOf[blockOf(column, row)]!]!);
+  });
+
+  const pixels = new BufferGeometry()
     .setAttribute('position', new Float32BufferAttribute(positions, 3))
     .setAttribute('color', new BufferAttribute(new Uint8Array(colors), 3, true))
-    .setAttribute('aCell', new Float32BufferAttribute(cells, 2));
-  geometry.addGroup(0, positions.length / 3, 0);
-  geometry.addGroup(0, positions.length / 3, 1);
-  return geometry;
+    .setAttribute('aCell', new Float32BufferAttribute(cells, 2))
+    .setAttribute('aGrid', new Float32BufferAttribute(grid, 2))
+    .setAttribute('aPiece', new Float32BufferAttribute(drops, 4))
+    .setAttribute(
+      'aCompleted',
+      new Float32BufferAttribute(new Float32Array(opaqueRows.length).fill(completedTick), 1),
+    );
+  for (let material = 0; material < 4; material++) {
+    pixels.addGroup(0, positions.length / 3, material);
+  }
+  return { pixels, completedTick };
+}
+
+function splitIntoPieces(filled: Uint8Array, columns: number): Int32Array {
+  const pieceOf = new Int32Array(filled.length).fill(-1);
+  const neighborsOf = (cell: number) =>
+    [
+      cell % columns > 0 ? cell - 1 : -1,
+      cell % columns < columns - 1 ? cell + 1 : -1,
+      cell - columns,
+      cell + columns,
+    ].filter((neighbor) => neighbor >= 0 && neighbor < filled.length && filled[neighbor]);
+  const size = Math.ceil(filled.reduce((sum, cell) => sum + cell, 0) / TETRIS.piecesPerLetter);
+  const sizes: number[] = [];
+
+  for (let seed = 0; seed < filled.length; seed++) {
+    if (!filled[seed] || pieceOf[seed]! >= 0) continue;
+    const piece = sizes.length;
+    const frontier = [seed];
+    const cost = (cell: number) =>
+      Math.floor(cell / columns) -
+      Math.floor(seed / columns) +
+      0.7 * Math.abs((cell % columns) - (seed % columns));
+    let grown = 0;
+    while (frontier.length > 0 && grown < size) {
+      const nearest = frontier.reduce(
+        (best, cell, i) => (cost(cell) < cost(frontier[best]!) ? i : best),
+        0,
+      );
+      const cell = frontier.splice(nearest, 1)[0]!;
+      pieceOf[cell] = piece;
+      grown++;
+      for (const neighbor of neighborsOf(cell)) {
+        if (pieceOf[neighbor]! < 0 && !frontier.includes(neighbor)) frontier.push(neighbor);
+      }
+    }
+    sizes.push(grown);
+  }
+
+  for (let piece = sizes.length - 1; piece >= 0; piece--) {
+    if (sizes[piece]! * 2 >= size) continue;
+    const cells = cellsOf(pieceOf, piece);
+    const touching = cells
+      .flatMap(neighborsOf)
+      .map((cell) => pieceOf[cell]!)
+      .filter((owner) => owner !== piece);
+    if (touching.length === 0) continue;
+    const target = Math.max(...touching);
+    for (const cell of cells) pieceOf[cell] = target;
+    sizes[target]! += sizes[piece]!;
+    sizes[piece] = 0;
+  }
+
+  const order = sizes.flatMap((count, piece) => (count > 0 ? [piece] : []));
+  return pieceOf.map((owner) => order.indexOf(owner));
+}
+
+function schedulePieces(
+  pieceOf: Int32Array,
+  columns: number,
+  firstTick: number,
+): [number, number, number, number][] {
+  const count = Math.max(...pieceOf) + 1;
+  let land = 0;
+  return Array.from({ length: count }, (_, piece) => {
+    const blocks = cellsOf(pieceOf, piece);
+    const columnsOf = blocks.map((cell) => cell % columns);
+    const rowsOf = blocks.map((cell) => Math.floor(cell / columns));
+    const average = (values: number[]) =>
+      values.reduce((sum, value) => sum + value, 0) / values.length;
+    const spawn = firstTick + piece * TETRIS.spawnGap;
+    land = Math.max(spawn + TETRIS.well - Math.max(...rowsOf) - 1, land + 2);
+    return [
+      (Math.round(average(columnsOf)) + 0.5) * TETRIS.block,
+      (Math.round(average(rowsOf)) + 0.5) * TETRIS.block,
+      spawn - Math.floor(Math.random() * TETRIS.spawnSpread),
+      land,
+    ];
+  });
+}
+
+function cellsOf(pieceOf: Int32Array, piece: number): number[] {
+  return [...pieceOf.keys()].filter((cell) => pieceOf[cell] === piece);
 }
 
 function findSites(
