@@ -291,7 +291,7 @@ function createStroke(count: number): BufferGeometry {
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
     const pressure = waves.reduce((sum, w) => sum + Math.sin(angle * w.frequency + w.phase), 0) / 4;
-    stroke.set([angle, bellRandom() * 0.02, bellRandom() * 0.015], i * 3);
+    stroke.set([angle, bellRandom() * 0.012, bellRandom() * 0.015], i * 3);
     look.set(
       [
         randomGrain(),
@@ -318,7 +318,7 @@ function angleAt(start: number, time: number, flow: number): number {
 
 function randomGrain(): number {
   const roll = Math.random();
-  return roll < 0.55 ? 1 : roll < 0.9 ? 2 : 3;
+  return roll < 0.75 ? 1 : roll < 0.97 ? 2 : 3;
 }
 
 function bellRandom(): number {

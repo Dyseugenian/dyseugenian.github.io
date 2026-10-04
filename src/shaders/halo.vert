@@ -17,11 +17,17 @@ uniform float uSpill;
 uniform float uSpillBelow;
 uniform float uSpillSides;
 uniform float uBottomGrowth;
+uniform float uSideGrowth;
+uniform float uTopGrowth;
 uniform float uSpillFalloff;
 uniform float uScatter;
 uniform float uTime;
 uniform float uPixelRatio;
 uniform float uPupilStretch;
+uniform float uWingLength;
+uniform float uWingWidth;
+uniform float uWingFlick;
+uniform float uWingAngle;
 
 uniform float uInnerRadius;
 uniform float uOuterRadius;
@@ -65,21 +71,30 @@ void main() {
   float sides = 1.0 - above - below;
 
   vec2 uv = orbit / (2.0 * uDensityExtent) + 0.5;
-  vec2 growth = direction * uBottomGrowth * below / (2.0 * uDensityExtent);
-  vec3 sampled = max(texture(uDensity, uv).rgb, texture(uDensity, uv + growth).rgb);
+  vec2 squashed = vec2(orbit.x * (1.0 + uSideGrowth), orbit.y * (1.0 + uBottomGrowth * step(orbit.y, 0.0)));
+  vec3 sampled = texture(uDensity, uv).rgb;
+  vec3 raised = texture(uDensity, squashed / (2.0 * uDensityExtent) + 0.5).rgb;
+  vec2 stretched = vec2(orbit.x, orbit.y / (1.0 + uTopGrowth * step(0.0, orbit.y)));
+  vec3 widened = texture(uDensity, stretched / (2.0 * uDensityExtent) + 0.5).rgb;
   float drift = valueNoise(vec3(orbit * 5.0, uTime * 0.15)) - 0.5;
-  float pupilFade = smoothstep(0.0, uPupilFade, sampled.g * uEdgeReach);
+  float pupilFade = smoothstep(0.0, uPupilFade, raised.g * uEdgeReach);
   float wobble = valueNoise(vec3(direction * 2.0, uTime * 0.04)) - 0.5
     + 0.5 * (valueNoise(vec3(direction * 6.0 + 31.0, uTime * 0.06)) - 0.5);
-  float fromOuterEdge = (sampled.b * 2.0 - 1.0) * uEdgeReach + wobble * uOuterWobble;
+  float fromOuterEdge = (widened.b * 2.0 - 1.0) * uEdgeReach + wobble * uOuterWobble;
   float inside = max(fromOuterEdge, 0.0);
   float outside = max(-fromOuterEdge, 0.0);
   float outerFade = smoothstep(0.0, uOuterFade, inside);
-  float density = sampled.r * uDensityGain * (1.0 + uVariation * drift * 2.0);
+  float density = max(max(sampled.r, raised.r), widened.r) * uDensityGain * (1.0 + uVariation * drift * 2.0);
   density = clamp(density, 0.0, 1.0) * pupilFade * outerFade;
 
   float spill = (uSpill * above + uSpillBelow * below + uSpillSides * sides) * exp(-outside / uSpillFalloff);
   density = max(density, spill * (1.0 + drift));
+
+  float reach = clamp((radius - 1.4) / uWingLength, 0.0, 1.0);
+  float wingAngle = atan(direction.y, abs(direction.x)) - uWingAngle - uWingFlick * reach;
+  float halfWidth = uWingWidth * (1.0 - reach) + 1e-3;
+  float wing = (1.0 - smoothstep(0.0, halfWidth, abs(wingAngle))) * smoothstep(1.15, 1.45, radius);
+  density = max(density, wing * (0.7 + drift) * pow(1.0 - reach, 2.5));
 
   vec2 scatter = vec2(
     valueNoise(vec3(orbit * 3.0, uTime * 0.1 + aLook.z * 10.0)),
@@ -87,7 +102,7 @@ void main() {
   ) - 0.5;
   float nearEdge = 1.0 - smoothstep(0.0, uOuterFade, inside);
   float spread = uScatter * outside + uEdgeScatter * nearEdge;
-  vec2 apparent = (orbit + scatter * spread) * vec2(uPupilStretch, 1.0);
+  vec2 apparent = (orbit + scatter * spread * (1.0 - 0.6 * wing)) * vec2(uPupilStretch, 1.0);
   vec2 away = apparent - uPointer;
   float distance = max(length(away), 1e-4);
   float push = uPush * uPushStrength * exp(-distance * distance / (uPushRadius * uPushRadius));

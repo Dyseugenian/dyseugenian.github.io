@@ -36,7 +36,9 @@ function addHaloControls(pane: Pane, halo: Halo): void {
   shape.addBinding(uniforms.uSpill, 'value', { label: 'spill', min: 0, max: 1 });
   shape.addBinding(uniforms.uSpillBelow, 'value', { label: 'spill below', min: 0, max: 1 });
   shape.addBinding(uniforms.uSpillSides, 'value', { label: 'spill sides', min: 0, max: 1 });
-  shape.addBinding(uniforms.uBottomGrowth, 'value', { label: 'bottom growth', min: 0, max: 0.3 });
+  shape.addBinding(uniforms.uBottomGrowth, 'value', { label: 'bottom growth', min: 0, max: 1 });
+  shape.addBinding(uniforms.uSideGrowth, 'value', { label: 'side growth', min: 0, max: 0.5 });
+  shape.addBinding(uniforms.uTopGrowth, 'value', { label: 'top growth', min: 0, max: 0.6 });
   shape.addBinding(uniforms.uSpillFalloff, 'value', {
     label: 'spill falloff',
     min: 0.02,
@@ -44,6 +46,10 @@ function addHaloControls(pane: Pane, halo: Halo): void {
   });
   shape.addBinding(uniforms.uScatter, 'value', { label: 'scatter', min: 0, max: 2 });
   shape.addBinding(uniforms.uPupilStretch, 'value', { label: 'pupil stretch', min: 0.6, max: 1.6 });
+  shape.addBinding(uniforms.uWingLength, 'value', { label: 'wing length', min: 0, max: 1 });
+  shape.addBinding(uniforms.uWingWidth, 'value', { label: 'wing width', min: 0.1, max: 1.5 });
+  shape.addBinding(uniforms.uWingFlick, 'value', { label: 'wing flick', min: -1, max: 1 });
+  shape.addBinding(uniforms.uWingAngle, 'value', { label: 'wing angle', min: -0.8, max: 0.8 });
   shape.addBinding(uniforms.uInnerRadius, 'value', { label: 'inner radius', min: 0.3, max: 1.2 });
   shape.addBinding(uniforms.uOuterRadius, 'value', { label: 'outer radius', min: 1.2, max: 2.5 });
   shape.addBinding(halo, 'tilt', { min: 0, max: 90 });

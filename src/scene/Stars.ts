@@ -14,7 +14,7 @@ import vertexShader from '../shaders/stars.vert';
 import fragmentShader from '../shaders/specks.frag';
 import { palette } from '../core/palette';
 
-const STARS = { pixelsPerStar: 900, twinkle: [0.3, 1.4], drift: 1 / 60, depth: 0.3 } as const;
+const STARS = { pixelsPerStar: 900, twinkle: [0.3, 1.4], drift: 1 / 30, depth: 0.3 } as const;
 
 export class Stars extends Points<BufferGeometry, RawShaderMaterial> {
   readonly uniforms = {

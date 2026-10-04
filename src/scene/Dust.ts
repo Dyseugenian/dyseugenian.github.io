@@ -17,7 +17,7 @@ const DUST = {
   life: [1.5, 5],
   rest: [0.3, 4],
   wander: 4,
-  fall: 40,
+  fall: 120,
 } as const;
 
 export function createDustMaterial(uniforms: Record<string, IUniform>): RawShaderMaterial {
