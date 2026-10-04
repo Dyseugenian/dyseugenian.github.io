@@ -79,7 +79,11 @@ void main() {
   vec3 point = center + uFrame * vec3(onCircle, position.z + ripple * 0.5);
 
   float behind = step(point.z, uCenter.z);
-  float covered = behind * (1.0 - smoothstep(uHideBehind - 0.04, uHideBehind + 0.04, distance(point.xy, uCenter.xy)));
+  vec4 viewPoint = modelViewMatrix * vec4(point, 1.0);
+  vec4 viewCenter = modelViewMatrix * vec4(uCenter, 1.0);
+  float hideRadius = uHideBehind * length(modelViewMatrix[0].xyz);
+  float fromCenter = distance(viewPoint.xy * viewCenter.z / viewPoint.z, viewCenter.xy) / hideRadius;
+  float covered = behind * (1.0 - smoothstep(0.98, 1.02, fromCenter));
 
   point.xy += bendAt(angle);
 
