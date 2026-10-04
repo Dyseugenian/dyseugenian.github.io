@@ -30,7 +30,7 @@ export class App {
 
   constructor(canvas: HTMLCanvasElement, context: WebGL2RenderingContext) {
     this.renderer = new WebGLRenderer({ canvas, context });
-    this.renderer.setClearColor(new Color(palette.bg).convertLinearToSRGB(), 0);
+    this.renderer.setClearColor(new Color(palette.bg).convertLinearToSRGB());
 
     this.camera.position.z = 10;
     this.logo.visible = false;
@@ -56,7 +56,6 @@ export class App {
 
   setStageLive(live: boolean): void {
     setPageState('stage-live', live);
-    this.renderer.setClearAlpha(live ? 1 : 0);
     this.logo.visible = live;
   }
 

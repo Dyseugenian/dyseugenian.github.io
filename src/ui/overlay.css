@@ -26,7 +26,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.poster,
 #stage {
   position: fixed;
   inset: 0;
@@ -35,22 +34,25 @@ body {
   pointer-events: none;
 }
 
-.poster {
-  background: var(--bg) url('/poster.webp') no-repeat center
-    calc(var(--logo-bottom) - var(--logo-size)) / var(--logo-size);
-  transition: opacity 0.6s ease-out;
+.js #stage,
+.js .overlay {
+  opacity: 0;
 }
 
-.stage-live .poster {
-  opacity: 0;
+.stage-live #stage,
+.stage-live .overlay,
+.no-webgl .overlay {
+  opacity: 1;
+  transition: opacity 0.9s ease-out;
+}
+
+.stage-live .overlay,
+.no-webgl .overlay {
+  transition-delay: 0.15s;
 }
 
 .no-webgl #stage {
   display: none;
-}
-
-.no-webgl .poster {
-  opacity: 1;
 }
 
 .overlay {
