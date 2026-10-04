@@ -1,5 +1,6 @@
 import {
   AddEquation,
+  Box2,
   BufferAttribute,
   BufferGeometry,
   Color,
@@ -23,6 +24,7 @@ import vertexShader from '../shaders/wordmark.vert';
 import fragmentShader from '../shaders/wordmark.frag';
 import { palette } from '../core/palette';
 import { Dust, createDustMaterial } from './Dust';
+import { SwipeSpecks } from './SwipeSpecks';
 
 const LETTER_STARTS = [0, 106, 183, 259, 333, 405, 483, 552, 630, 671, 744];
 const LETTER_SPACING = 6;
@@ -37,6 +39,7 @@ const TETRIS = {
   fadeInTicks: 5,
   clearTicks: 6,
 };
+const SWIPE = { spacing: 14, reach: 12, minSpeed: 120 };
 const NEIGHBORS = [
   [1, 0],
   [-1, 0],
@@ -65,6 +68,12 @@ export class Wordmark extends Group {
     createMaterial(this.uniforms, ReverseSubtractEquation, -1, true),
   ];
   private dustMaterial = createDustMaterial(this.uniforms);
+  private bounds = new Box2();
+  private swipePoint = new Vector2();
+  private swipeVelocity = new Vector2();
+  private lastKick = new Vector2();
+  private isSwiping = false;
+  private swipeSpecks!: SwipeSpecks;
 
   constructor(left: number, top: number) {
     super();
@@ -72,6 +81,7 @@ export class Wordmark extends Group {
     this.scale.setScalar(1 / 140);
     this.loaded = Promise.all([readImage(wordmarkUrl), readImage(dustUrl)]).then(
       ([image, dust]) => {
+        let sources: number[] = [];
         LETTER_STARTS.forEach((start, index) => {
           const end = LETTER_STARTS[index + 1] ?? image.width;
           const spread = spreadOf(index);
@@ -85,17 +95,62 @@ export class Wordmark extends Group {
           );
           const specks = new Dust(findSites(dust, image, start, end, center), this.dustMaterial);
           const letter = new Letter(pixels, this.materials, home, specks);
+          sources = sources.concat(letterSources(image, start, end, spread));
           this.letters.push(letter);
           this.add(letter);
         });
+        this.swipeSpecks = new SwipeSpecks(sources, this.uniforms);
+        this.add(this.swipeSpecks);
+        this.bounds
+          .set(
+            new Vector2(spreadOf(0), -image.height),
+            new Vector2(image.width + spreadOf(LETTER_STARTS.length - 1), 0),
+          )
+          .expandByScalar(SWIPE.reach);
       },
     );
   }
 
-  update(dt: number): void {
+  update(dt: number, pointer: Vector2 | null, pointerVelocity: Vector2): void {
     this.time += dt;
     this.uniforms.uTime.value = this.time;
     for (const letter of this.letters) letter.dust.update(this.time);
+    this.swipe(pointer, pointerVelocity);
+  }
+
+  private swipe(pointer: Vector2 | null, pointerVelocity: Vector2): void {
+    if (!pointer) {
+      this.isSwiping = false;
+      return;
+    }
+    const at = this.swipePoint
+      .set(pointer.x - this.position.x, pointer.y - this.position.y)
+      .divideScalar(this.scale.x);
+    const velocity = this.swipeVelocity.copy(pointerVelocity).divideScalar(this.scale.x);
+    if (!this.bounds.containsPoint(at) || velocity.length() < SWIPE.minSpeed) {
+      this.isSwiping = false;
+      return;
+    }
+    if (!this.isSwiping) {
+      this.kick(at.x, at.y, velocity);
+      this.lastKick.copy(at);
+      this.isSwiping = true;
+      return;
+    }
+    const steps = Math.floor(this.lastKick.distanceTo(at) / SWIPE.spacing);
+    for (let step = 1; step <= steps; step++) {
+      const along = step / steps;
+      this.kick(
+        this.lastKick.x + (at.x - this.lastKick.x) * along,
+        this.lastKick.y + (at.y - this.lastKick.y) * along,
+        velocity,
+      );
+    }
+    if (steps > 0) this.lastKick.copy(at);
+  }
+
+  private kick(x: number, y: number, velocity: Vector2): void {
+    this.swipeSpecks.burst(x, y, velocity, this.time);
   }
 }
 
@@ -141,6 +196,29 @@ function createMaterial(
     depthTest: false,
     depthWrite: false,
   });
+}
+
+function letterSources(
+  { width, height, data }: ImageData,
+  start: number,
+  end: number,
+  spread: number,
+): number[] {
+  const sources: number[] = [];
+  for (let row = 0; row < height; row++) {
+    for (let column = start; column < end; column++) {
+      const pixel = (row * width + column) * 4;
+      if (data[pixel + 3] === 0) continue;
+      sources.push(
+        column + 0.5 + spread,
+        -row - 0.5,
+        data[pixel]! / 255,
+        data[pixel + 1]! / 255,
+        data[pixel + 2]! / 255,
+      );
+    }
+  }
+  return sources;
 }
 
 function spreadOf(index: number): number {

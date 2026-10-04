@@ -113,7 +113,7 @@ export class Logo extends Group {
     for (const part of [this.halo, this.outline, this.ring, this.eyes]) {
       part.uniforms.uOpacity.value = 1 - TETRIS_PLANET_FADE * tetris.value;
     }
-    this.wordmark.update(motionDt);
+    this.wordmark.update(motionDt, target, this.pointerVelocity);
     this.stars.update(motionDt);
   }
 }
