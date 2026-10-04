@@ -8,6 +8,7 @@ uniform float uTime;
 uniform float uPixelSize;
 uniform vec3 uBackground;
 uniform float uWander;
+uniform float uFall;
 
 in vec3 position;
 in vec3 color;
@@ -24,7 +25,8 @@ void main() {
     valueNoise(vec3(position.xy * 0.15, drift)),
     valueNoise(vec3(position.xy * 0.15 + 7.0, drift))
   ) - 0.5;
-  vec2 point = position.xy + wander * 2.0 * uWander;
+  float fall = uFall * mix(0.3, 1.0, fract(aLife.z * 7.31)) * clamp(age, 0.0, 1.0) * clamp(age, 0.0, 1.0);
+  vec2 point = position.xy + wander * 2.0 * uWander - vec2(0.0, fall);
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(point, 0.0, 1.0);
   gl_PointSize = max(uPixelSize, 1.0);

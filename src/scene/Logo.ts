@@ -1,15 +1,16 @@
-import { Group, Vector2 } from 'three';
+import { Box2, Group, Vector2 } from 'three';
 import type { Input } from '../core/Input';
 import { Eyes } from './Eyes';
 import { Halo } from './Halo';
 import { SprayCircle } from './SprayCircle';
+import { Stars } from './Stars';
 import { Wordmark } from './Wordmark';
 
 const LOGO_SIZE = { width: 0.88, height: 0.72 };
 const LOGO_CENTER_Y = 0.38;
 const PUPIL = { y: 445 / 1024, radius: 140 / 1024 };
 const SPHERE = { y: 0.096, radius: 1.7, flow: 0.05 };
-const RING = { radius: 2.375, drop: 0.514, flow: 0.035 };
+const RING = { radius: 2.6, drop: 0.514, flow: 0.035 };
 const REDUCED_MOTION_SPEED = 0.1;
 const MAX_POINTER_SPEED = 20;
 
@@ -17,9 +18,13 @@ export class Logo extends Group {
   readonly halo: Halo;
   readonly ready: Promise<unknown>;
   private outline = new SprayCircle(SPHERE.radius, 2000);
-  private ring = new SprayCircle(RING.radius, 2800);
+  private ring = new SprayCircle(RING.radius, 3070);
   private eyes = new Eyes(0.05, 0.429);
   private wordmark = new Wordmark(-416 / 140, -253 / 140);
+  private stars = new Stars(
+    { center: new Vector2(0, SPHERE.y), radius: SPHERE.radius + 0.3 },
+    new Box2(new Vector2(-3.4, -3.3), new Vector2(3.5, -1.8)),
+  );
   private pointer = new Vector2();
   private lastPointer = new Vector2();
   private pointerVelocity = new Vector2();
@@ -42,7 +47,7 @@ export class Logo extends Group {
     this.outline.uniforms.uFlow.value = SPHERE.flow;
     this.ring.uniforms.uFlow.value = RING.flow;
 
-    this.add(this.halo, this.outline, this.ring, this.eyes, this.wordmark);
+    this.add(this.stars, this.halo, this.outline, this.ring, this.eyes, this.wordmark);
     this.ready = Promise.all([this.halo.loaded, this.eyes.loaded, this.wordmark.loaded]);
   }
 
@@ -56,7 +61,16 @@ export class Logo extends Group {
     this.wordmark.uniforms.uPixelSize.value =
       PUPIL.radius * size * pixelRatio * this.wordmark.scale.x;
 
-    for (const specks of [this.halo, this.outline, this.ring]) {
+    const scale = this.scale.x;
+    this.stars.scatter(
+      new Box2(
+        new Vector2(-this.viewHalfSize.x / scale, (-viewHeight / 2 - this.position.y) / scale),
+        new Vector2(this.viewHalfSize.x / scale, (viewHeight / 2 - this.position.y) / scale),
+      ),
+      width * height,
+    );
+
+    for (const specks of [this.stars, this.halo, this.outline, this.ring]) {
       specks.uniforms.uPixelRatio.value = pixelRatio;
     }
   }
@@ -90,5 +104,6 @@ export class Logo extends Group {
     this.ring.update(motionDt, target, this.pointerVelocity);
     this.eyes.update(dt, target);
     this.wordmark.update(motionDt);
+    this.stars.update(motionDt);
   }
 }

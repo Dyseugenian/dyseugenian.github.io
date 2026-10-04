@@ -17,6 +17,7 @@ const DUST = {
   life: [1.5, 5],
   rest: [0.3, 4],
   wander: 4,
+  fall: 40,
 } as const;
 
 export function createDustMaterial(uniforms: Record<string, IUniform>): RawShaderMaterial {
@@ -24,7 +25,7 @@ export function createDustMaterial(uniforms: Record<string, IUniform>): RawShade
     glslVersion: GLSL3,
     vertexShader,
     fragmentShader,
-    uniforms: { ...uniforms, uWander: { value: DUST.wander } },
+    uniforms: { ...uniforms, uWander: { value: DUST.wander }, uFall: { value: DUST.fall } },
     blending: AdditiveBlending,
     transparent: true,
     depthTest: false,

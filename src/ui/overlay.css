@@ -62,8 +62,8 @@ body {
 }
 
 .experience {
-  margin: 0;
-  color: var(--ochre);
+  margin: 1.25rem 0 0;
+  color: var(--cream);
   font-size: 0.75rem;
   opacity: 0.55;
 }
@@ -71,9 +71,9 @@ body {
 .tagline {
   display: flex;
   justify-content: center;
-  margin: 1.25rem 0 0;
+  margin: 0;
   padding: 0;
-  color: color-mix(in srgb, var(--cream) 80%, transparent);
+  color: var(--ochre);
   list-style: none;
 }
 
@@ -90,16 +90,33 @@ body {
   transform: translateX(-50%);
 }
 
+.links,
+.experience,
+.tagline li,
+.tagline li::before,
+.branch {
+  transition: filter 0.2s ease-out;
+}
+
+.roles:has(.tagline span:hover) .experience,
+.overlay:has(.tagline span:hover) .links,
+.tagline:has(span:hover) li:not(:has(span:hover)),
+.tagline li:has(span:hover)::before,
+.tagline li:has(span:hover) .branch {
+  filter: opacity(0.15);
+}
+
 .branch {
   position: absolute;
-  bottom: calc(100% + 0.25rem);
+  top: calc(100% + 0.25rem);
   left: 0;
   width: 100%;
   height: 0.625rem;
   overflow: visible;
-  color: var(--ochre-dim);
-  opacity: 0.6;
+  color: var(--cream);
+  opacity: 0.2;
   shape-rendering: crispEdges;
+  transform: scaleY(-1);
 }
 
 .branch line {
@@ -117,7 +134,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 1rem 1.5rem;
+  gap: 1rem 1.875rem;
   margin: 0 0 1rem;
   padding: 0;
   list-style: none;
@@ -133,8 +150,11 @@ body {
 
 .links a::before,
 .links a::after {
+  display: inline-block;
   color: var(--ochre-dim);
-  transition: color 0.12s;
+  transition:
+    color 0.12s,
+    transform 0.18s ease-out;
 }
 
 .links a::before {
@@ -156,6 +176,24 @@ body {
 .links a:focus-visible::before,
 .links a:focus-visible::after {
   color: var(--ochre-hi);
+}
+
+.links a:hover::before,
+.links a:focus-visible::before {
+  transform: translateX(-0.4ch);
+}
+
+.links a:hover::after,
+.links a:focus-visible::after {
+  transform: translateX(0.4ch);
+}
+
+.links li {
+  transition: filter 0.2s ease-out;
+}
+
+.links:has(a:hover) li:not(:has(a:hover)) {
+  filter: opacity(0.5);
 }
 
 .links a:focus-visible {

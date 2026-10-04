@@ -12,18 +12,12 @@ export function mountDebugPanel(app: App): void {
   measureFps(fpsGraph);
 
   const settings = { tier: app.quality.tier, stageLive: true };
-  const tierBinding = pane
+  pane
     .addBinding(settings, 'tier', { options: { low: 'low', medium: 'medium', high: 'high' } })
     .on('change', ({ value }) => app.quality.setTier(value));
   pane
     .addBinding(settings, 'stageLive', { label: 'stage live' })
     .on('change', ({ value }) => app.setStageLive(value));
-
-  setInterval(() => {
-    if (settings.tier === app.quality.tier) return;
-    settings.tier = app.quality.tier;
-    tierBinding.refresh();
-  }, 500);
 
   addHaloControls(pane, app.logo.halo);
   addReferenceOverlay(pane);

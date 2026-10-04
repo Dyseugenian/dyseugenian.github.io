@@ -1,7 +1,6 @@
 export interface Frame {
   dt: number;
   time: number;
-  frameMs: number;
 }
 
 const MAX_DT = 1 / 20;
@@ -18,12 +17,11 @@ export class Loop {
   }
 
   private tick = (now: number): void => {
-    const frameMs = now - this.lastNow;
-    const dt = Math.min(frameMs / 1000, MAX_DT);
+    const dt = Math.min((now - this.lastNow) / 1000, MAX_DT);
     this.lastNow = now;
     this.time += dt;
 
-    this.onFrame({ dt, time: this.time, frameMs });
+    this.onFrame({ dt, time: this.time });
     requestAnimationFrame(this.tick);
   };
 }

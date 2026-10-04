@@ -23,13 +23,63 @@ float blink(float size, float rate, float chance, float salt) {
   return shown * (dim * 2.0 - 1.0);
 }
 
+float crackEdge(vec2 point) {
+  vec2 base = floor(point);
+  vec2 local = fract(point);
+  float nearest = 8.0;
+  float second = 8.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 offset = vec2(x, y);
+      vec2 seed = base + offset;
+      vec2 site = offset + vec2(hash13(vec3(seed, 1.0)), hash13(vec3(seed, 2.0))) - local;
+      float distance = dot(site, site);
+      if (distance < nearest) {
+        second = nearest;
+        nearest = distance;
+      } else if (distance < second) {
+        second = distance;
+      }
+    }
+  }
+  return sqrt(second) - sqrt(nearest);
+}
+
+float cracks() {
+  vec2 point = aCell / 22.0;
+  point += (vec2(valueNoise(vec3(aCell * 0.12, 4.0)), valueNoise(vec3(aCell * 0.12, 9.0))) - 0.5) * 0.35;
+  float line = step(crackEdge(point) * 22.0, 1.1);
+  float frame = floor(uTime * 12.0);
+  float spread = valueNoise(vec3(aCell * 0.02, frame * 0.04));
+  float grown = step(0.6, spread + 0.2 * valueNoise(vec3(aCell * 0.3, frame * 0.7)));
+  float grain = step(0.2, hash13(vec3(aCell, frame)));
+  return line * grown * grain;
+}
+
+float scratches() {
+  vec2 direction = normalize(vec2(1.0, 0.32));
+  float along = dot(aCell, direction);
+  float across = dot(aCell, vec2(-direction.y, direction.x));
+  across += (valueNoise(vec3(along * 0.05, across * 0.01, 2.0)) - 0.5) * 3.0;
+  float band = floor(across / 7.0);
+  float segment = floor(along / 36.0 + hash13(vec3(band, 5.0, 1.0)));
+  float frame = floor(uTime * 12.0);
+  float hold = floor(frame / 3.0 + hash13(vec3(band, segment, 3.0)) * 3.0);
+  float present = step(0.92, hash13(vec3(band, segment, hold)));
+  float reveal = step(fract(along / 36.0 + hash13(vec3(band, 5.0, 1.0))), hash13(vec3(band, segment, frame)) * 2.0);
+  float thin = step(abs(fract(across / 7.0) - 0.5) * 7.0, 0.5);
+  return present * reveal * thin;
+}
+
 void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   gl_PointSize = uPixelSize + 2.0;
 
   float flicker = blink(2.0, 2.3, 0.015, 1.0) + blink(5.0, 1.7, 0.03, 2.0) + blink(11.0, 1.2, 0.05, 3.0);
   flicker = clamp(flicker, -1.0, 1.0);
-  vColor = flicker > 0.0
+  vec3 surface = flicker > 0.0
     ? mix(color, uBackground, flicker * 0.85)
     : min(color * (1.0 - flicker * 0.3), 1.0);
+  float damage = max(cracks() * 0.7, scratches() * 0.45);
+  vColor = mix(surface, uBackground, damage);
 }
