@@ -39,6 +39,9 @@ export class Wordmark extends Group {
     uPixelSize: { value: 1 },
     uTime: { value: 0 },
     uBackground: { value: new Color(palette.bg).convertLinearToSRGB() },
+    uBinary: { value: 0 },
+    uCream: { value: new Color(palette.cream).convertLinearToSRGB() },
+    uOchre: { value: new Color(palette.ochreHi).convertLinearToSRGB() },
   };
   readonly letters: Letter[] = [];
   readonly loaded: Promise<void>;

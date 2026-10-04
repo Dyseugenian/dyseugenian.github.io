@@ -4,8 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Dyseugenian, game developer and software engineer</title>
-    <meta name="description" content="Dyseugenian, game developer and software engineer." />
-    <meta name="theme-color" content="#0e0e0b" />
+    <meta
+      name="description"
+      content="Dyseugenian is a software engineer and game developer with over 10 years of IT experience. Games on itch.io and Steam, code on GitHub, videos on YouTube."
+    />
+    <meta name="author" content="Dyseugenian" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="color-scheme" content="dark" />
     <link rel="canonical" href="https://dyseugenian.github.io/" />
 
@@ -13,28 +17,74 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preload" href="/poster.webp" as="image" type="image/webp" fetchpriority="high" />
 
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content="profile" />
+    <meta property="og:site_name" content="Dyseugenian" />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:url" content="https://dyseugenian.github.io/" />
-    <meta property="og:title" content="Dyseugenian" />
-    <meta property="og:description" content="Game developer and software engineer." />
+    <meta property="og:title" content="Dyseugenian, game developer and software engineer" />
+    <meta
+      property="og:description"
+      content="Software engineer and game developer with over 10 years of IT experience."
+    />
     <meta property="og:image" content="https://dyseugenian.github.io/og.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="The Dyseugenian logo: an ochre eye-planet with a ring and the pixel wordmark below it."
+    />
+    <meta property="profile:username" content="dyseugenian" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Dyseugenian, game developer and software engineer" />
+    <meta
+      name="twitter:description"
+      content="Software engineer and game developer with over 10 years of IT experience."
+    />
+    <meta name="twitter:image" content="https://dyseugenian.github.io/og.jpg" />
+    <meta
+      name="twitter:image:alt"
+      content="The Dyseugenian logo: an ochre eye-planet with a ring and the pixel wordmark below it."
+    />
 
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "Person",
-        "name": "Dyseugenian",
-        "url": "https://dyseugenian.github.io/",
-        "jobTitle": "Game developer & software engineer",
-        "sameAs": [
-          "https://github.com/dyseugenian",
-          "https://dtf.ru/dyseugenian",
-          "https://www.youtube.com/@Dyseugenian",
-          "https://dyseugenian.itch.io/",
-          "https://steamcommunity.com/id/dyseugenian/"
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://dyseugenian.github.io/#website",
+            "url": "https://dyseugenian.github.io/",
+            "name": "Dyseugenian",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://dyseugenian.github.io/#person" }
+          },
+          {
+            "@type": "ProfilePage",
+            "@id": "https://dyseugenian.github.io/#profile",
+            "url": "https://dyseugenian.github.io/",
+            "name": "Dyseugenian, game developer and software engineer",
+            "inLanguage": "en",
+            "isPartOf": { "@id": "https://dyseugenian.github.io/#website" },
+            "mainEntity": { "@id": "https://dyseugenian.github.io/#person" }
+          },
+          {
+            "@type": "Person",
+            "@id": "https://dyseugenian.github.io/#person",
+            "name": "Dyseugenian",
+            "url": "https://dyseugenian.github.io/",
+            "image": "https://dyseugenian.github.io/og.jpg",
+            "email": "mailto:dyseugenian@gmail.com",
+            "jobTitle": ["Software engineer", "Game developer"],
+            "knowsAbout": ["Software engineering", "Game development", "Motion design"],
+            "sameAs": [
+              "https://dyseugenian.itch.io/",
+              "https://github.com/dyseugenian",
+              "https://www.youtube.com/@Dyseugenian",
+              "https://steamcommunity.com/id/dyseugenian/",
+              "https://dtf.ru/dyseugenian"
+            ]
+          }
         ]
       }
     </script>
@@ -52,7 +102,7 @@
           <li><a href="https://www.youtube.com/@Dyseugenian" rel="me noopener">youtube</a></li>
           <li><a href="https://steamcommunity.com/id/dyseugenian/" rel="me noopener">steam</a></li>
           <li><a href="https://dtf.ru/dyseugenian" rel="me noopener">dtf</a></li>
-          <li><a href="mailto:dyseugenian@gmail.com">gmail</a></li>
+          <li><a href="mailto:dyseugenian@gmail.com" rel="me">gmail</a></li>
         </ul>
       </nav>
 
@@ -76,7 +126,7 @@
               <line x1="50%" y1="0.5" x2="100%" y2="0.5" />
               <line x1="50%" y1="0.5" x2="50%" y2="100%" marker-end="url(#arrowhead)" />
             </svg>
-            <span>software engineer</span>
+            <span id="software-role">software engineer</span>
           </li>
           <li>
             <svg class="branch" aria-hidden="true">

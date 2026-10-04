@@ -18,6 +18,7 @@ function paletteAsCssVariables(): Plugin {
   return {
     name: 'palette-as-css-variables',
     transformIndexHtml: () => [
+      { tag: 'meta', injectTo: 'head', attrs: { name: 'theme-color', content: palette.bg } },
       { tag: 'style', injectTo: 'head', children: `:root { ${variables} }` },
     ],
   };

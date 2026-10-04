@@ -1,4 +1,4 @@
-import { Box2, Group, Vector2 } from 'three';
+import { Box2, Group, MathUtils, Vector2 } from 'three';
 import type { Input } from '../core/Input';
 import { Eyes } from './Eyes';
 import { Halo } from './Halo';
@@ -13,6 +13,7 @@ const SPHERE = { y: 0.096, radius: 1.7, flow: 0.05 };
 const RING = { radius: 2.6, drop: 0.514, flow: 0.035 };
 const REDUCED_MOTION_SPEED = 0.1;
 const MAX_POINTER_SPEED = 20;
+const BINARY_DURATION = 1.2;
 
 export class Logo extends Group {
   readonly halo: Halo;
@@ -76,7 +77,7 @@ export class Logo extends Group {
   }
 
   update(dt: number): void {
-    const { pointer, isPointerInside, reducedMotion } = this.input;
+    const { pointer, isPointerInside, isOnSoftwareRole, reducedMotion } = this.input;
     const motionDt = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
     const follow = isPointerInside && !reducedMotion;
 
@@ -103,6 +104,12 @@ export class Logo extends Group {
     this.outline.update(motionDt, target, this.pointerVelocity);
     this.ring.update(motionDt, target, this.pointerVelocity);
     this.eyes.update(dt, target);
+    const binary = this.wordmark.uniforms.uBinary;
+    binary.value = MathUtils.clamp(
+      binary.value + (isOnSoftwareRole ? dt : -dt) / BINARY_DURATION,
+      0,
+      1,
+    );
     this.wordmark.update(motionDt);
     this.stars.update(motionDt);
   }
