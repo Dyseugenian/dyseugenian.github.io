@@ -2,26 +2,35 @@ export class Input {
   readonly pointer = { x: 0, y: 0 };
   isPointerInside = false;
   activeRole: string | null = null;
+  private roles = document.querySelectorAll<HTMLButtonElement>('.tagline button');
+  private lastPointerType = '';
   readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   constructor() {
-    for (const role of document.querySelectorAll('.tagline span')) {
+    for (const role of this.roles) {
       role.addEventListener('pointerenter', (event) => {
-        if ((event as PointerEvent).pointerType !== 'touch') this.activeRole = role.id;
+        if (event.pointerType === 'mouse') this.setActiveRole(role.id);
       });
       role.addEventListener('pointerleave', (event) => {
-        if ((event as PointerEvent).pointerType !== 'touch') this.activeRole = null;
+        if (event.pointerType === 'mouse') this.setActiveRole(null);
+      });
+      role.addEventListener('click', (event) => {
+        if (event.detail > 0 && this.lastPointerType === 'mouse') return;
+        this.setActiveRole(this.activeRole === role.id ? null : role.id);
       });
     }
     window.addEventListener('pointermove', (event) => this.track(event));
     window.addEventListener('pointerdown', (event) => {
+      this.lastPointerType = event.pointerType;
       this.track(event);
-      if (event.pointerType !== 'touch') return;
-      const role = (event.target as Element).closest('.tagline span');
-      this.activeRole = role && role.id !== this.activeRole ? role.id : null;
+      const onRole = (event.target as Element).closest('.tagline button');
+      if (event.pointerType !== 'mouse' && !onRole) this.setActiveRole(null);
     });
     window.addEventListener('pointerup', (event) => {
       if (event.pointerType === 'touch') this.isPointerInside = false;
+    });
+    window.addEventListener('pointercancel', () => {
+      this.isPointerInside = false;
     });
     document.addEventListener('pointerout', (event) => {
       if (event.relatedTarget === null) this.isPointerInside = false;
@@ -38,6 +47,11 @@ export class Input {
 
   get isOnMotionRole(): boolean {
     return this.activeRole === 'motion-role';
+  }
+
+  private setActiveRole(id: string | null): void {
+    this.activeRole = id;
+    for (const role of this.roles) role.setAttribute('aria-pressed', String(role.id === id));
   }
 
   private track(event: PointerEvent): void {

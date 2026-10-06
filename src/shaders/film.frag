@@ -20,6 +20,7 @@ uniform vec3 uRoleSpread;
 uniform vec3 uRoleFade;
 uniform vec2 uPointer;
 uniform vec2 uGlowPoint;
+uniform float uCanHover;
 uniform float uPresence;
 uniform vec2 uReach;
 uniform vec3 uOchre;
@@ -34,20 +35,18 @@ const float GLOW_STRENGTH = 4.0;
 const float GLOW_RADIUS = 40.0;
 const float GLOW_RANGE = 360.0;
 const float GLOW_SPLIT = 0.6;
-const float GLOW_MARGIN = 20.0;
-const float GLOW_SIDE_STRETCH = 3.2;
 const float SPREAD_SOFTNESS = 0.35;
 
 float pullAt(vec2 pixel) {
   vec2 reach = (pixel - uPointer) / uReach;
-  return uPresence * exp(-pow(dot(reach, reach), PULL_SHARPNESS));
+  return uCanHover * uPresence * exp(-pow(dot(reach, reach), PULL_SHARPNESS));
 }
 
 float glowAt(vec2 pixel) {
   vec2 nearest = clamp(uGlowPoint, uRolesRect.xy, uRolesRect.xy + uRolesRect.zw);
   float approach = 1.0 - smoothstep(0.2 * GLOW_RANGE * uPixelRatio, GLOW_RANGE * uPixelRatio, distance(uGlowPoint, nearest));
   float across = (pixel.x - nearest.x) / (GLOW_RADIUS * uPixelRatio);
-  return uPresence * approach * exp(-across * across);
+  return uCanHover * uPresence * approach * exp(-across * across);
 }
 
 int roleAt(vec2 local) {
@@ -89,19 +88,12 @@ void main() {
   vec2 texel = pixel - uRolesRect.xy;
   vec2 local = texel / uRolesRect.zw;
   int role = uRoleFade.x > uRoleFade.y ? (uRoleFade.x > uRoleFade.z ? 0 : 2) : (uRoleFade.y > uRoleFade.z ? 1 : 2);
-  vec4 box = uRoleBoxes[role];
-  float stretch = mix(1.0, GLOW_SIDE_STRETCH, uRoleActive[role]);
   float left = uRoleInkEdges[role].x;
   float right = uRoleInkEdges[role].y;
-  float beyond = max(max(left - texel.x, texel.x - right), 0.0) / stretch;
-  vec2 outside = vec2(beyond, max(max(box.y - local.y, local.y - box.w), 0.0) * uRolesRect.w);
-  float reach = GLOW_MARGIN * uPixelRatio;
-  float halfWidth = (right - left) * 0.5 + reach * stretch;
-  float fromCenter = abs(texel.x - (left + right) * 0.5) / halfWidth;
+  float fromCenter = abs(texel.x - (left + right) * 0.5) / ((right - left) * 0.5);
   float front = uRoleSpread[role] * (1.0 + SPREAD_SOFTNESS);
   float reveal = 1.0 - smoothstep(front - SPREAD_SOFTNESS, front, fromCenter);
-  float focus = reveal * uRoleFade[role] * (1.0 - smoothstep(0.0, reach, length(outside)));
-  if (beyond < reach && outside.y < reach) texel.x = clamp(texel.x, left - beyond, right + beyond);
+  float focus = roleAt(local) == role ? reveal * uRoleFade[role] : 0.0;
   float calm = 1.0 - max(uRoleActive.x, max(uRoleActive.y, uRoleActive.z));
   vec3 ink = mix(mix(uOchre, uCream, pullAt(pixel) * calm), uCream, focus);
   float glow = glowAt(pixel) * calm;

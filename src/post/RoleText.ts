@@ -20,7 +20,7 @@ export class RoleText {
   private glowContext = this.glowCanvas.getContext('2d')!;
   private glowTexture = new CanvasTexture(this.glowCanvas);
   private tagline = document.querySelector<HTMLElement>('.tagline')!;
-  private roles = [...this.tagline.querySelectorAll<HTMLElement>('span')];
+  private roles = [...this.tagline.querySelectorAll<HTMLElement>('button')];
   private canHover = matchMedia('(hover: hover)').matches;
   private scale = 1;
   private padding = 0;
@@ -40,6 +40,7 @@ export class RoleText {
     uRoleFade: { value: new Vector3() },
     uPointer: { value: new Vector2() },
     uGlowPoint: { value: new Vector2() },
+    uCanHover: { value: this.canHover ? 1 : 0 },
     uPresence: { value: 0 },
     uReach: { value: new Vector2(1, 1) },
     uOchre: { value: new Color(palette.ochre).convertLinearToSRGB() },

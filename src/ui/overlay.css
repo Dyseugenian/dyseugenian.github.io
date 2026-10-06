@@ -55,6 +55,17 @@ body {
   display: none;
 }
 
+.logo-area {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--logo-bottom);
+  touch-action: none;
+}
+
+.no-webgl .logo-area {
+  display: none;
+}
+
 .overlay {
   position: relative;
   min-height: 100svh;
@@ -99,11 +110,29 @@ body {
   padding: 0 3.25ch;
 }
 
-.stage-live:not(.no-webgl) .tagline span {
+.tagline button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: inherit;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tagline button:focus-visible {
+  outline: 2px solid var(--ochre-hi);
+  outline-offset: 4px;
+}
+
+.stage-live:not(.no-webgl) .tagline button {
   color: transparent;
 }
 
-.stage-live:not(.no-webgl) .tagline span:hover {
+.stage-live:not(.no-webgl) .tagline button:hover {
   cursor: none;
 }
 
@@ -124,11 +153,11 @@ body {
 }
 
 @media (hover: hover) {
-  .roles:has(.tagline span:hover) .experience,
-  .overlay:has(.tagline span:hover) .links,
-  .tagline:has(span:hover) li:not(:has(span:hover)),
-  .tagline li:has(span:hover)::before,
-  .tagline li:has(span:hover) .branch {
+  .roles:has(.tagline button:hover) .experience,
+  .overlay:has(.tagline button:hover) .links,
+  .tagline:has(button:hover) li:not(:has(button:hover)),
+  .tagline li:has(button:hover)::before,
+  .tagline li:has(button:hover) .branch {
     filter: opacity(0.15);
   }
 }
