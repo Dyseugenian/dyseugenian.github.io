@@ -99,6 +99,14 @@ body {
   padding: 0 3.25ch;
 }
 
+.stage-live:not(.no-webgl) .tagline span {
+  color: transparent;
+}
+
+.stage-live:not(.no-webgl) .tagline span:hover {
+  cursor: none;
+}
+
 .tagline li + li::before {
   content: '·';
   content: '·' / '';

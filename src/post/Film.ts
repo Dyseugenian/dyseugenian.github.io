@@ -6,6 +6,7 @@ import {
   PlaneGeometry,
   RawShaderMaterial,
   Vector2,
+  type IUniform,
   type Texture,
 } from 'three';
 import vertexShader from '../shaders/film.vert';
@@ -17,8 +18,9 @@ const WARP_GRID = { columns: 160, rows: 90 };
 export class Film extends Mesh<BufferGeometry, RawShaderMaterial> {
   private uniforms;
 
-  constructor(scene: Texture) {
+  constructor(scene: Texture, roleUniforms: Record<string, IUniform>) {
     const uniforms = {
+      ...roleUniforms,
       uScene: { value: scene },
       uTime: { value: 0 },
       uFps: { value: FILM_FPS },

@@ -9,10 +9,62 @@ uniform vec2 uResolution;
 uniform float uPixelRatio;
 uniform float uGrain;
 uniform float uAberration;
+uniform sampler2D uRoles;
+uniform sampler2D uRoleGlow;
+uniform vec4 uRolesRect;
+uniform vec4 uRoleBoxes[3];
+uniform vec2 uRoleInkEdges[3];
+uniform vec3 uRoleOpacity;
+uniform vec3 uRoleActive;
+uniform vec3 uRoleSpread;
+uniform vec3 uRoleFade;
+uniform vec2 uPointer;
+uniform vec2 uGlowPoint;
+uniform float uPresence;
+uniform vec2 uReach;
+uniform vec3 uOchre;
+uniform vec3 uCream;
 
 in vec2 vWarp;
 
 out vec4 outColor;
+
+const float PULL_SHARPNESS = 1.6;
+const float GLOW_STRENGTH = 4.0;
+const float GLOW_RADIUS = 40.0;
+const float GLOW_RANGE = 360.0;
+const float GLOW_SPLIT = 0.6;
+const float GLOW_MARGIN = 20.0;
+const float GLOW_SIDE_STRETCH = 3.2;
+const float SPREAD_SOFTNESS = 0.35;
+
+float pullAt(vec2 pixel) {
+  vec2 reach = (pixel - uPointer) / uReach;
+  return uPresence * exp(-pow(dot(reach, reach), PULL_SHARPNESS));
+}
+
+float glowAt(vec2 pixel) {
+  vec2 nearest = clamp(uGlowPoint, uRolesRect.xy, uRolesRect.xy + uRolesRect.zw);
+  float approach = 1.0 - smoothstep(0.2 * GLOW_RANGE * uPixelRatio, GLOW_RANGE * uPixelRatio, distance(uGlowPoint, nearest));
+  float across = (pixel.x - nearest.x) / (GLOW_RADIUS * uPixelRatio);
+  return uPresence * approach * exp(-across * across);
+}
+
+int roleAt(vec2 local) {
+  for (int i = 0; i < 3; i++) {
+    vec4 box = uRoleBoxes[i];
+    if (all(greaterThanEqual(local, box.xy)) && all(lessThanEqual(local, box.zw))) return i;
+  }
+  return -1;
+}
+
+vec2 roleInk(vec2 texel) {
+  vec2 local = texel / uRolesRect.zw;
+  if (any(lessThan(local, vec2(0.0))) || any(greaterThan(local, vec2(1.0)))) return vec2(0.0);
+  int role = roleAt(local);
+  float opacity = role < 0 ? 1.0 : uRoleOpacity[role];
+  return vec2(texture(uRoles, local).a, texture(uRoleGlow, local).a) * opacity;
+}
 
 void main() {
   vec2 pixel = gl_FragCoord.xy;
@@ -32,5 +84,31 @@ void main() {
   float alpha = clamp(abs(shade) + (ign(pixel) - 0.5) / 255.0, 0.0, 1.0);
   vec3 under = base.rgb * base.a;
 
-  outColor = vec4(tint * alpha + under * (1.0 - alpha), alpha + base.a * (1.0 - alpha));
+  vec3 film = tint * alpha + under * (1.0 - alpha);
+
+  vec2 texel = pixel - uRolesRect.xy;
+  vec2 local = texel / uRolesRect.zw;
+  int role = uRoleFade.x > uRoleFade.y ? (uRoleFade.x > uRoleFade.z ? 0 : 2) : (uRoleFade.y > uRoleFade.z ? 1 : 2);
+  vec4 box = uRoleBoxes[role];
+  float stretch = mix(1.0, GLOW_SIDE_STRETCH, uRoleActive[role]);
+  float left = uRoleInkEdges[role].x;
+  float right = uRoleInkEdges[role].y;
+  float beyond = max(max(left - texel.x, texel.x - right), 0.0) / stretch;
+  vec2 outside = vec2(beyond, max(max(box.y - local.y, local.y - box.w), 0.0) * uRolesRect.w);
+  float reach = GLOW_MARGIN * uPixelRatio;
+  float halfWidth = (right - left) * 0.5 + reach * stretch;
+  float fromCenter = abs(texel.x - (left + right) * 0.5) / halfWidth;
+  float front = uRoleSpread[role] * (1.0 + SPREAD_SOFTNESS);
+  float reveal = 1.0 - smoothstep(front - SPREAD_SOFTNESS, front, fromCenter);
+  float focus = reveal * uRoleFade[role] * (1.0 - smoothstep(0.0, reach, length(outside)));
+  if (beyond < reach && outside.y < reach) texel.x = clamp(texel.x, left - beyond, right + beyond);
+  float calm = 1.0 - max(uRoleActive.x, max(uRoleActive.y, uRoleActive.z));
+  vec3 ink = mix(mix(uOchre, uCream, pullAt(pixel) * calm), uCream, focus);
+  float glow = glowAt(pixel) * calm;
+  vec2 split = vec2(GLOW_SPLIT * uPixelRatio * max(glow, focus), 0.0);
+  vec2 red = roleInk(texel - split);
+  vec2 green = roleInk(texel);
+  vec2 blue = roleInk(texel + split);
+  film += ink * vec3(red.y, green.y, blue.y) * glow * GLOW_STRENGTH;
+  outColor = vec4(mix(film, ink, vec3(red.x, green.x, blue.x)), 1.0);
 }

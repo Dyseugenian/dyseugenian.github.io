@@ -12,6 +12,7 @@ import { Loop, type Frame } from './Loop';
 import { Quality } from './Quality';
 import { palette } from './palette';
 import { Film } from '../post/Film';
+import { RoleText } from '../post/RoleText';
 import { Logo } from '../scene/Logo';
 
 const MAX_DRAWING_PIXELS = 3840 * 2160;
@@ -24,8 +25,9 @@ export class App {
   private camera = new PerspectiveCamera(22, 1, 0.1, 100);
   private loop = new Loop((frame) => this.update(frame));
   private target = new WebGLRenderTarget(1, 1);
-  private film = new Film(this.target.texture);
   private input = new Input();
+  private roleText = new RoleText(this.input);
+  private film = new Film(this.target.texture, this.roleText.uniforms);
   readonly logo = new Logo(this.input);
 
   constructor(canvas: HTMLCanvasElement, context: WebGL2RenderingContext) {
@@ -61,6 +63,7 @@ export class App {
 
   private update({ dt, time }: Frame): void {
     this.logo.update(dt);
+    this.roleText.update(dt);
     this.film.update(time);
     this.renderer.setRenderTarget(this.target);
     this.renderer.render(this.scene, this.camera);
@@ -85,6 +88,7 @@ export class App {
     const { x, y } = this.renderer.getDrawingBufferSize(new Vector2());
     this.target.setSize(x, y);
     this.film.setSize(x, y, this.renderer.getPixelRatio());
+    this.roleText.setSize(x, y);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
 
