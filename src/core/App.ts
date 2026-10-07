@@ -14,6 +14,7 @@ import { palette } from './palette';
 import { Film } from '../post/Film';
 import { RoleText } from '../post/RoleText';
 import { Logo } from '../scene/Logo';
+import { Tower } from '../scene/Tower';
 
 const MAX_DRAWING_PIXELS = 3840 * 2160;
 
@@ -24,18 +25,22 @@ export class App {
   private scene = new Scene();
   private camera = new PerspectiveCamera(22, 1, 0.1, 100);
   private loop = new Loop((frame) => this.update(frame));
-  private target = new WebGLRenderTarget(1, 1);
+  private target = new WebGLRenderTarget(1, 1, { samples: 4 });
   private input = new Input();
   private roleText = new RoleText(this.input);
   private film = new Film(this.target.texture, this.roleText.uniforms);
   readonly logo = new Logo(this.input);
+  private tower = new Tower(this.input);
 
   constructor(canvas: HTMLCanvasElement, context: WebGL2RenderingContext) {
     this.renderer = new WebGLRenderer({ canvas, context });
     this.renderer.setClearColor(new Color(palette.bg).convertLinearToSRGB());
+    this.renderer.autoClear = false;
+    this.tower.bakeSurface(this.renderer);
 
     this.camera.position.z = 10;
     this.logo.visible = false;
+    this.tower.visible = false;
     this.scene.add(this.logo);
 
     canvas.addEventListener('webglcontextlost', () => setPageState('no-webgl', true));
@@ -51,6 +56,7 @@ export class App {
 
   async compile(): Promise<void> {
     await Promise.all([
+      this.renderer.compileAsync(this.tower, this.tower.camera),
       this.renderer.compileAsync(this.scene, this.camera),
       this.renderer.compileAsync(this.film, this.camera),
     ]);
@@ -59,13 +65,18 @@ export class App {
   setStageLive(live: boolean): void {
     setPageState('stage-live', live);
     this.logo.visible = live;
+    this.tower.visible = live;
   }
 
   private update({ dt, time }: Frame): void {
+    this.tower.update(dt);
     this.logo.update(dt);
     this.roleText.update(dt);
     this.film.update(time);
     this.renderer.setRenderTarget(this.target);
+    this.renderer.clear();
+    this.renderer.render(this.tower, this.tower.camera);
+    this.renderer.clearDepth();
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.film, this.camera);
@@ -91,6 +102,7 @@ export class App {
     this.roleText.setSize(x, y);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.tower.fit(this.camera.aspect, x, y);
 
     const viewHeight =
       2 * this.camera.position.z * Math.tan(MathUtils.degToRad(this.camera.fov / 2));
