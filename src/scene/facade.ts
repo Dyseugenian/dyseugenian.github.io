@@ -19,7 +19,6 @@ export const TILE_HEIGHT = 2 * STOREY;
 
 const CONCRETE = 0;
 const GLASS = 1;
-const METAL = 2;
 
 const OCCLUSION = {
   width: 20,
@@ -64,9 +63,6 @@ export function tileParts(): Part[] {
       part(CONCRETE, [-1.05, 1.05], [glassTop, top], [-3.1, -2.5]),
       part(CONCRETE, [-1.4, 1.4], [y, sill], [-3.1, -1.8]),
       part(CONCRETE, [-1.2, 1.2], [sill, glassBottom], [-3.1, -1.3]),
-      part(METAL, [-0.38, -0.32], [glassBottom, glassTop], [-3.05, -2.98]),
-      part(METAL, [0.32, 0.38], [glassBottom, glassTop], [-3.05, -2.98]),
-      part(METAL, [-1.05, 1.05], [y + 2.55, y + 2.61], [-3.05, -2.98]),
     );
   }
   return parts;

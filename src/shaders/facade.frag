@@ -19,8 +19,9 @@ uniform vec3 uRim;
 uniform float uExposure;
 uniform float uOuterX;
 uniform vec3 uConcrete;
-uniform vec3 uGlass;
 uniform vec3 uLamp;
+uniform vec3 uLampSoft;
+uniform vec3 uLampCool;
 uniform vec3 uSalt;
 uniform vec3 uGrime;
 uniform vec3 uLight;
@@ -51,9 +52,16 @@ const float MOONLIGHT = 0.9;
 const vec3 WINDOW = vec3(0.0, 2.175, -3.4);
 const float WINDOW_REACH = 4.5;
 const vec3 GLOW = vec3(1.2, 1.1, 1.8);
-const float PANE = 1.1;
+const float PANE = 0.25;
+const float GLASS_Z = -3.05;
+const vec3 ROOM = vec3(2.0, 3.2, 4.0);
+const float ROOM_LIGHT = 10.0;
+const vec2 GLASS_HALF = vec2(1.05, 1.025);
+const vec3 BEAMS[5] = vec3[5](
+  vec3(0.9, 0.14, 0.3), vec3(0.8, 0.2, 0.35), vec3(0.8, 0.2, 0.35), vec3(1.6, 0.28, 0.5), vec3(1.8, 0.4, 0.55));
+const vec2 BEAM_AXES[5] = vec2[5](vec2(1.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0), vec2(0.0, 1.0));
 const float WASH = 3.2;
-const float SCATTER = 1.6;
+const float SCATTER = 1.2;
 const int GLOW_STEPS = 12;
 
 struct Concrete {
@@ -191,13 +199,19 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   return Concrete(albedo, height, detail);
 }
 
-float windowLevel(vec2 window) {
-  float cluster = valueNoise(window * vec2(0.45, 0.2) + 5.0);
+vec3 windowLight(vec2 room) {
+  float cluster = valueNoise(room * vec2(0.45, 0.2) + 5.0);
   float chance = mix(0.05, 0.6, smoothstep(0.3, 0.75, cluster));
-  return step(hash12(window + 41.0), chance) * mix(0.35, 1.0, hash12(window + 7.0));
+  float pick = hash12(room + 19.0);
+  vec3 tint = pick < 0.55 ? uLamp : pick < 0.85 ? uLampSoft : uLampCool;
+  return tint * step(hash12(room + 41.0), chance) * mix(0.35, 1.0, hash12(room + 7.0));
 }
 
-vec3 fromWindow(vec3 point, vec2 tile, vec3 origin, float below, out float level) {
+float lampDepth(vec2 room) {
+  return hash12(room + 5.0);
+}
+
+vec3 fromWindow(vec3 point, vec2 tile, vec3 origin, float below, out vec3 light, out vec2 room) {
   float storey = 0.5 * uTileHeight;
   float column = floor((point.x + 0.5 * uBay) / uBay);
   float columnTile = tile.x + column;
@@ -205,14 +219,153 @@ vec3 fromWindow(vec3 point, vec2 tile, vec3 origin, float below, out float level
   float shift = parity - mod(abs(tile.x), 2.0);
   float row = floor(point.y / storey - shift) - below;
   vec3 window = WINDOW + vec3(column * uBay, (row + shift) * storey, 0.0);
-  level = windowLevel(vec2(columnTile, mod(2.0 * tile.y + row + parity, 8192.0)))
-    * step(abs(origin.x + window.x) + 1.05, uOuterX);
+  room = vec2(columnTile, mod(2.0 * tile.y + row + parity, 8192.0));
+  light = windowLight(room) * step(abs(origin.x + window.x) + 1.05, uOuterX);
   return point - window;
 }
 
-float glow(vec3 q) {
-  vec3 shape = (q - vec3(0.0, -0.1, 1.8)) / GLOW;
-  return exp(-1.5 * dot(shape, shape));
+float recessGlow(vec3 q) {
+  vec3 shape = (q - vec3(0.0, -0.1, 2.3)) / GLOW;
+  return exp(-1.5 * dot(shape, shape)) * smoothstep(0.4, 1.4, q.z);
+}
+
+float groove(float toEdge, float blur, float width) {
+  return 1.0 - smoothstep(width - blur, width + blur, toEdge);
+}
+
+float slabs(vec2 point, vec2 room, float salt) {
+  float width = mix(0.9, 1.5, hash12(room + salt));
+  vec2 size = vec2(width, width * (hash12(room + salt + 1.0) < 0.5 ? 0.5 : 1.0));
+  vec2 cells = point / size;
+  cells.x += 0.5 * step(0.5, hash12(room + salt + 2.0)) * mod(floor(cells.y), 2.0);
+  vec2 index = floor(cells);
+  vec2 toEdge = (0.5 - abs(fract(cells) - 0.5)) * size;
+  float edge = min(toEdge.x, toEdge.y);
+  float blur = max(fwidth(point.x), fwidth(point.y));
+  float joint = groove(edge, blur, 0.016);
+  float bevel = smoothstep(0.0, 0.1, edge);
+  float tone = mix(0.8, 1.1, hash12(index + room * 7.0 + salt))
+    * mix(0.9, 1.05, valueNoise(point * 2.5 + index * 13.0));
+  return tone * mix(0.7, 1.0, bevel) * (1.0 - 0.7 * joint);
+}
+
+float beamHit(vec3 pane, vec3 ray, vec3 window, vec2 room, float ceilingY, float limit,
+    inout vec3 normal, out float crease) {
+  crease = 1.0;
+  int style = int(hash12(room + 37.0) * 5.0);
+  vec3 beam = BEAMS[style];
+  vec2 axes = BEAM_AXES[style];
+  float period = beam.x * mix(1.0, 1.4, hash12(room + 39.0));
+  float halfWidth = 0.5 * beam.y;
+  float enter = (ceilingY - beam.z - pane.y) / ray.y;
+  if (ray.y <= 0.0 || enter >= limit) return limit;
+
+  vec3 entry = pane + ray * enter;
+  vec2 position = vec2(entry.x - window.x, entry.z - GLASS_Z);
+  vec2 cell = floor(position / period);
+  vec2 fromCenter = abs(position - floor(position / period + 0.5) * period);
+  if (max(axes.x * step(fromCenter.x, halfWidth), axes.y * step(fromCenter.y, halfWidth)) > 0.5) {
+    normal = vec3(0.0, -1.0, 0.0);
+    return enter;
+  }
+
+  vec2 heading = ray.xz;
+  vec2 side = mix(cell * period + halfWidth, (cell + 1.0) * period - halfWidth, step(0.0, heading));
+  vec2 toSide = mix(vec2(1e6), (side - position) / heading, axes);
+  float toCeiling = beam.z / ray.y;
+  float travel = min(min(toSide.x, toSide.y), toCeiling);
+  vec3 landed = entry + ray * travel;
+  vec2 around = vec2(landed.x - window.x, landed.z - GLASS_Z);
+  vec2 clearance = mix(vec2(1e6), abs(around - floor(around / period + 0.5) * period) - halfWidth, axes);
+  if (travel == toCeiling) {
+    crease = mix(0.45, 1.0, smoothstep(0.0, 0.5, min(clearance.x, clearance.y)));
+    return enter + travel >= limit - 1e-3 ? limit : enter + travel;
+  }
+  if (enter + travel >= limit) return limit;
+  normal = travel == toSide.x ? vec3(-sign(ray.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(ray.z));
+  crease = mix(0.5, 1.0, smoothstep(0.0, beam.z, ceilingY - landed.y));
+  return enter + travel;
+}
+
+vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room) {
+  float floorY = window.y - WINDOW.y + 0.25;
+  vec3 low = vec3(window.x - ROOM.x, floorY, GLASS_Z - ROOM.z);
+  vec3 high = vec3(window.x + ROOM.x, floorY + ROOM.y, GLASS_Z);
+  vec3 bound = mix(low, high, step(0.0, ray));
+  vec3 travel = (bound - pane) / ray;
+  float nearest = min(min(travel.x, travel.y), travel.z);
+  vec3 hit = pane + ray * nearest;
+  vec3 wall = nearest == travel.x ? vec3(-sign(ray.x), 0.0, 0.0)
+    : nearest == travel.y ? vec3(0.0, -sign(ray.y), 0.0) : vec3(0.0, 0.0, 1.0);
+  float crease;
+  float overhead = step(wall.y, -0.5);
+  float beam = beamHit(pane, ray, window, room, high.y, nearest, wall, crease);
+  if (beam < nearest) {
+    overhead = 1.0;
+    nearest = beam;
+    hit = pane + ray * nearest;
+  }
+
+  float finish = hash12(room + 13.0);
+  vec3 paint = finish < 0.4 ? uConcrete : finish < 0.75 ? uSalt : mix(uSalt, uLampSoft, 0.45);
+  vec3 albedo = paint * mix(0.6, 0.95, hash12(room + 11.0));
+  float lowerBand = step(0.7, hash12(room + 43.0)) * step(hit.y - floorY, mix(0.8, 1.1, hash12(room + 47.0)));
+  albedo *= 1.0 - 0.4 * lowerBand;
+  vec3 fromLow = hit - low;
+  vec3 toHigh = high - hit;
+  vec3 corner = min(fromLow, toHigh) + abs(wall) * 10.0;
+  float occlusion = mix(0.35, 1.0, smoothstep(0.0, 0.8, min(min(corner.x, corner.y), corner.z)));
+
+  vec2 plan = vec2(hit.x - window.x, hit.z - GLASS_Z);
+  float along = wall.z > 0.5 ? hit.x - window.x : hit.z;
+  float wallSlabs = slabs(vec2(along, hit.y - floorY), room, 53.0);
+  float floorSlabs = slabs(plan, room, 67.0);
+  vec2 face = abs(wall.y) > 0.5 ? plan : abs(wall.x) > 0.5 ? hit.zy : hit.xy;
+  vec4 grain = texture(uSurface, face / uSurfaceMeters + room * 0.37);
+  float mottle = fbm(face * 1.7 + room * 3.1);
+  float stain = smoothstep(0.55, 0.85, fbm(face * 0.6 + room * 5.0 + 9.0));
+  float plaster = mix(0.75, 1.12, grain.z) * mix(0.7, 1.0, smoothstep(0.1, 0.5, grain.w))
+    * mix(0.82, 1.08, mottle) * (1.0 - 0.3 * stain);
+
+  if (overhead > 0.5) {
+    albedo = uSalt * mix(0.75, 1.0, hash12(room + 59.0)) * plaster * crease;
+  } else if (wall.y > 0.5) {
+    albedo = mix(uGrime, finish < 0.4 ? uConcrete : uLampSoft, mix(0.25, 0.5, hash12(room + 61.0)));
+    albedo *= floorSlabs;
+  } else {
+    albedo *= wallSlabs;
+  }
+
+  float doorX = mix(-1.4, 0.6, hash12(room + 31.0));
+  float door = step(0.5, wall.z) * step(doorX, hit.x - window.x) * step(hit.x - window.x, doorX + 0.9)
+    * step(fromLow.y, 2.1);
+  albedo *= 1.0 - 0.85 * door;
+
+  float deskZ = GLASS_Z - mix(0.9, 2.6, hash12(room + 15.0));
+  float deskLeft = window.x + mix(-1.9, 0.1, hash12(room + 17.0));
+  float deskTop = floorY + mix(0.75, 1.8, hash12(room + 21.0));
+  float toDesk = (deskZ - pane.z) / ray.z;
+  vec3 deskHit = pane + ray * toDesk;
+  float desk = step(toDesk, nearest) * step(deskLeft, deskHit.x)
+    * step(deskHit.x, deskLeft + mix(0.8, 1.8, hash12(room + 25.0))) * step(deskHit.y, deskTop);
+  if (desk > 0.5) {
+    hit = deskHit;
+    wall = vec3(0.0, 0.0, 1.0);
+    albedo = uGrime * (1.0 + 2.0 * (1.0 - smoothstep(0.0, 0.03, deskTop - hit.y)));
+    occlusion = mix(0.5, 1.0, smoothstep(0.0, 0.6, hit.y - floorY));
+  }
+
+  vec3 lamp = vec3(
+    window.x + mix(-1.4, 1.4, hash12(room + 3.0)),
+    floorY + 1.3,
+    GLASS_Z - mix(1.0, 3.2, lampDepth(room)));
+  vec3 toLamp = lamp - hit;
+  float reach = length(toLamp);
+  float spread = mix(0.08, 0.6, hash12(room + 9.0));
+  float illumination = (0.25 + 0.75 * max(dot(wall, toLamp / reach), 0.0)) / (0.8 + spread * reach * reach);
+  float recess = mix(1.0, 0.45, smoothstep(0.0, ROOM.z, GLASS_Z - hit.z));
+
+  return albedo * occlusion * recess * (uHaze * 0.35 + light * illumination * ROOM_LIGHT);
 }
 
 vec3 bumped(vec3 normal, float height) {
@@ -249,28 +402,59 @@ void main() {
   float depth = 1.0 - smoothstep(14.0, 40.0, distance);
   if (vKind < 0.5) {
     for (int below = 0; below < 2; below++) {
-      float level;
-      vec3 q = fromWindow(vLocal + normal * 0.02, tile, origin, float(below), level);
+      vec3 glow;
+      vec2 room;
+      vec3 q = fromWindow(vLocal + normal * 0.02, tile, origin, float(below), glow, room);
       float reach = length(q);
       float facing = max(dot(shading, -q / reach), 0.0);
       float ahead = smoothstep(-0.1, 0.5, q.z / reach);
       float falloff = (1.0 - smoothstep(0.5 * WINDOW_REACH, WINDOW_REACH, reach)) / (0.5 + reach * reach);
-      light += uLamp * WASH * depth * level * facing * ahead * falloff * mix(0.4, 1.0, occlusion);
+      light += glow * mix(1.0, 0.35, lampDepth(room)) * WASH * depth * facing * ahead * falloff
+        * mix(0.4, 1.0, occlusion);
     }
   }
 
   vec3 haze = skyColor(gl_FragCoord.xy, uResolution, uVanish, uBacklights, uTime, uSky, uHaze, uRim);
   vec3 color = surface.albedo * light;
   float lit = 0.0;
-  if (vKind > 1.5) {
-    color = uGlass * 2.0 * light;
-  } else if (vKind > 0.5) {
-    float fresnel = pow(1.0 - max(dot(normal, toCamera), 0.0), 2.0);
-    color = mix(uGlass, haze * 0.45, 0.15 + 0.6 * fresnel) * mix(0.5, 1.0, occlusion);
-    float level;
-    fromWindow(vLocal, tile, origin, 0.0, level);
-    lit = step(0.01, level);
-    color = mix(color, uLamp * PANE * level * mix(0.75, 1.0, valueNoise(vLocal.xy * 3.0 + tile)), lit);
+  if (vKind > 0.5) {
+    vec3 glow;
+    vec2 room;
+    vec3 q = fromWindow(vLocal, tile, origin, 0.0, glow, room);
+    lit = step(1e-3, glow.r + glow.g + glow.b);
+    vec3 window = vLocal - q;
+    vec2 pane = vLocal.xy - window.xy;
+
+    vec2 wave = vLocal.xy * vec2(1.3, 0.35) + room * 3.7;
+    vec2 ripple = vec2(valueNoise(wave), valueNoise(wave + 17.0)) - 0.5;
+    vec3 glassNormal = normalize(vec3(ripple * 0.05, 1.0));
+    vec3 view = normalize(vLocal - (cameraPosition - origin));
+    vec3 through = normalize(view + vec3(ripple * 0.06, 0.0));
+
+    vec3 inside = interior(vLocal, through, window, glow, room);
+    float sill = window.y - WINDOW.y + 1.15;
+    float blind = sill + 2.05 * (1.0 - step(0.8, hash12(room + 23.0)) * mix(0.15, 0.45, hash12(room + 29.0)));
+    float slats = 0.75 + 0.25 * smoothstep(0.3, 0.5, abs(fract(vLocal.y / 0.06) - 0.5));
+    float behind = exp(-abs(pane.x - mix(-1.4, 1.4, hash12(room + 3.0))) * 0.8);
+    inside = mix(glow * PANE * slats * behind, inside, step(vLocal.y, blind));
+
+    vec3 mirrored = reflect(view, glassNormal);
+    float fresnel = 0.04 + 0.26 * pow(1.0 - max(dot(-view, glassNormal), 0.0), 5.0);
+    float moon = max(dot(mirrored, uLight), 0.0);
+    float bands = pow(0.5 + 0.5 * sin(dot(pane, vec2(1.6, 1.1)) * 2.4 + room.x * 1.7 + room.y), 5.0);
+    vec3 reflection = mix(uSky * 1.5, uHaze * 2.6, smoothstep(-0.3, 0.7, mirrored.y + 0.3 * ripple.y))
+      + uRim * (0.3 * bands + MOONLIGHT * (1.6 * pow(moon, 80.0) + 0.25 * pow(moon, 6.0)));
+    reflection *= mix(0.4, 1.0, occlusion);
+
+    float smudge = smoothstep(0.5, 0.85, fbm(vLocal.xy * vec2(3.0, 1.1) + room * 5.3));
+    float edge = min(GLASS_HALF.x - abs(pane.x), GLASS_HALF.y - abs(pane.y));
+    float rim = 1.0 - smoothstep(0.0, 0.012 + 1.5 * fwidth(edge), edge);
+    float joint = 1.0 - smoothstep(0.0, 0.004 + fwidth(pane.x), abs(pane.x));
+
+    vec3 transmitted = inside * (1.0 - fresnel) * (1.0 - 0.1 * smudge) * (1.0 - 0.5 * joint);
+    color = transmitted + reflection * fresnel * mix(1.0, 0.4, lit)
+      + (uHaze * 0.1 + glow * 0.06) * smudge
+      + (uRim * 0.5 + glow * 0.6) * rim + uRim * 0.25 * joint;
   }
 
   float outward = sign(vWorld.x);
@@ -287,18 +471,19 @@ void main() {
   vec3 ray = vLocal - eye;
   float near = clamp((eye.z - 1.2) / (eye.z - vLocal.z), 0.0, 1.0);
   float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
-  float scatter = 0.0;
+  vec3 scatter = vec3(0.0);
   for (int i = 0; i < GLOW_STEPS; i++) {
     vec3 point = eye + ray * mix(near, 1.0, (float(i) + jitter) / float(GLOW_STEPS));
-    float level;
-    vec3 q = fromWindow(point, tile, origin, 0.0, level);
+    vec3 glow;
+    vec2 room;
+    vec3 q = fromWindow(point, tile, origin, 0.0, glow, room);
     vec3 drift = point + origin + vec3(0.0, uClimb - uTime * 0.2, 0.0);
     float dust = valueNoise(drift * vec3(2.5, 1.0, 2.5)) * mix(0.6, 1.4, valueNoise(drift * 9.0));
-    scatter += level * glow(q) * mix(0.25, 1.6, dust);
+    scatter += glow * mix(1.0, 0.35, lampDepth(room)) * recessGlow(q) * mix(0.25, 1.6, dust);
   }
   scatter *= (1.0 - near) * length(ray) / float(GLOW_STEPS) * depth;
   scatter *= mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
 
-  color = mix(color, haze, fog * mix(1.0, 0.6, lit)) + uLamp * SCATTER * scatter * (1.0 - 0.5 * fog);
+  color = mix(color, haze, fog * mix(1.0, 0.6, lit)) + SCATTER * scatter * (1.0 - 0.5 * fog);
   outColor = vec4(color * uExposure, 1.0);
 }
