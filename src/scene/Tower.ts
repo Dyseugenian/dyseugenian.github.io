@@ -10,6 +10,7 @@ import {
   Vector2,
   Texture,
   Vector3,
+  Vector4,
   type WebGLRenderer,
 } from 'three';
 import vertexShader from '../shaders/facade.vert';
@@ -20,8 +21,10 @@ import { palette } from '../core/palette';
 import { Backdrop } from './Backdrop';
 import { MAP_METERS, bakeConcreteMaps } from './concreteMaps';
 import {
+  BAY,
   OCCLUSION_MIN,
   OCCLUSION_SIZE,
+  BLOCK,
   PIER,
   TILE_HEIGHT,
   bakeOcclusion,
@@ -32,10 +35,13 @@ import {
 const VIEW = { fov: 64, narrowestFov: 45, distance: 6.5, vanish: 0.82 };
 const COLUMNS = { left: -3, right: 3 };
 const ROWS = { below: 2, above: 32 };
-const CLIMB_SPEED = 1.8;
+const CLIMB_SPEED = 0.9;
 const SWAY = { pitch: 0.04, yaw: 0.06 };
 const REDUCED_MOTION_SPEED = 0.1;
 const TILE_SEEDS = 4096;
+const EXPOSURE = 0.42;
+const UP = new Vector3(0, 1, 0);
+const BACKLIGHTS = [new Vector3(-1, 1.1, -0.15), new Vector3(1, 1.1, -0.15)] as const;
 
 export class Tower extends Scene {
   readonly camera = new PerspectiveCamera(VIEW.fov, 1, 0.1, 400);
@@ -43,8 +49,11 @@ export class Tower extends Scene {
     uTime: { value: 0 },
     uResolution: { value: new Vector2(1, 1) },
     uVanish: { value: new Vector2() },
+    uBacklights: { value: new Vector4() },
     uSky: { value: new Color(palette.sky).convertLinearToSRGB() },
     uHaze: { value: new Color(palette.haze).convertLinearToSRGB() },
+    uRim: { value: new Color(palette.rim).convertLinearToSRGB() },
+    uExposure: { value: EXPOSURE },
   };
   private facadeUniforms = {
     uClimb: { value: 0 },
@@ -56,7 +65,7 @@ export class Tower extends Scene {
   private pitch = 0;
   private swayPitch = new Spring(4, 5);
   private swayYaw = new Spring(4, 5);
-  private vanish = new Vector3();
+  private projected = new Vector3();
 
   constructor(private input: Input) {
     super();
@@ -70,9 +79,12 @@ export class Tower extends Scene {
         ...this.facadeUniforms,
         uConcrete: { value: new Color(palette.concrete).convertLinearToSRGB() },
         uGlass: { value: new Color(palette.glass).convertLinearToSRGB() },
+        uLamp: { value: new Color(palette.lamp).convertLinearToSRGB() },
         uSalt: { value: new Color(palette.salt).convertLinearToSRGB() },
         uGrime: { value: new Color(palette.grime).convertLinearToSRGB() },
+        uBay: { value: BAY },
         uTileHeight: { value: TILE_HEIGHT },
+        uOuterX: { value: (COLUMNS.right + 1) * BAY + PIER.max.x },
         uSurface: { value: new Texture() },
         uSurfaceMeters: { value: MAP_METERS },
         uLight: { value: new Vector3(-0.45, 0.7, 0.55).normalize() },
@@ -88,7 +100,7 @@ export class Tower extends Scene {
       (_, index) => COLUMNS.left + index,
     );
     const facade = new Mesh(facadeGeometry(parts, columns, rows), material);
-    const edge = new Mesh(facadeGeometry([PIER], [COLUMNS.right + 1], rows), material);
+    const edge = new Mesh(facadeGeometry([PIER, BLOCK], [COLUMNS.right + 1], rows), material);
     facade.frustumCulled = edge.frustumCulled = false;
     this.building.add(facade, edge);
     this.camera.position.z = VIEW.distance;
@@ -133,12 +145,17 @@ export class Tower extends Scene {
     }
     this.building.position.y = -this.lift;
 
-    this.vanish.copy(this.camera.position).y += 1e4;
-    this.vanish.project(this.camera);
-    const { x: width, y: height } = this.uniforms.uResolution.value;
-    this.uniforms.uVanish.value.set(
-      ((this.vanish.x + 1) / 2) * width,
-      ((this.vanish.y + 1) / 2) * height,
+    this.uniforms.uVanish.value.set(...this.onScreen(UP));
+    this.uniforms.uBacklights.value.set(
+      ...this.onScreen(BACKLIGHTS[0]),
+      ...this.onScreen(BACKLIGHTS[1]),
     );
+  }
+
+  private onScreen(direction: Vector3): [number, number] {
+    const { x: width, y: height } = this.uniforms.uResolution.value;
+    this.projected.copy(direction).multiplyScalar(1e4).add(this.camera.position);
+    this.projected.project(this.camera);
+    return [((this.projected.x + 1) / 2) * width, ((this.projected.y + 1) / 2) * height];
   }
 }

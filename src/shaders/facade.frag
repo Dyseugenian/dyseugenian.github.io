@@ -8,13 +8,19 @@ uniform vec3 cameraPosition;
 uniform float uTime;
 uniform float uClimb;
 uniform float uTilesClimbed;
+uniform float uBay;
 uniform float uTileHeight;
 uniform vec2 uResolution;
 uniform vec2 uVanish;
+uniform vec4 uBacklights;
 uniform vec3 uSky;
 uniform vec3 uHaze;
+uniform vec3 uRim;
+uniform float uExposure;
+uniform float uOuterX;
 uniform vec3 uConcrete;
 uniform vec3 uGlass;
+uniform vec3 uLamp;
 uniform vec3 uSalt;
 uniform vec3 uGrime;
 uniform vec3 uLight;
@@ -39,6 +45,16 @@ const vec2 PANEL = vec2(1.2, 0.6);
 const float TIE_HOLE = 0.022;
 const float BUMP = 0.008;
 const float DRIP_SPACING = 0.9;
+const float RIM_STRENGTH = 0.9;
+const float NIGHT_SKY = 2.3;
+const float MOONLIGHT = 0.9;
+const vec3 WINDOW = vec3(0.0, 2.175, -3.4);
+const float WINDOW_REACH = 4.5;
+const vec3 GLOW = vec3(1.2, 1.1, 1.8);
+const float PANE = 1.1;
+const float WASH = 3.2;
+const float SCATTER = 1.6;
+const int GLOW_STEPS = 12;
 
 struct Concrete {
   vec3 albedo;
@@ -175,6 +191,30 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   return Concrete(albedo, height, detail);
 }
 
+float windowLevel(vec2 window) {
+  float cluster = valueNoise(window * vec2(0.45, 0.2) + 5.0);
+  float chance = mix(0.05, 0.6, smoothstep(0.3, 0.75, cluster));
+  return step(hash12(window + 41.0), chance) * mix(0.35, 1.0, hash12(window + 7.0));
+}
+
+vec3 fromWindow(vec3 point, vec2 tile, vec3 origin, float below, out float level) {
+  float storey = 0.5 * uTileHeight;
+  float column = floor((point.x + 0.5 * uBay) / uBay);
+  float columnTile = tile.x + column;
+  float parity = mod(abs(columnTile), 2.0);
+  float shift = parity - mod(abs(tile.x), 2.0);
+  float row = floor(point.y / storey - shift) - below;
+  vec3 window = WINDOW + vec3(column * uBay, (row + shift) * storey, 0.0);
+  level = windowLevel(vec2(columnTile, mod(2.0 * tile.y + row + parity, 8192.0)))
+    * step(abs(origin.x + window.x) + 1.05, uOuterX);
+  return point - window;
+}
+
+float glow(vec3 q) {
+  vec3 shape = (q - vec3(0.0, -0.1, 1.8)) / GLOW;
+  return exp(-1.5 * dot(shape, shape));
+}
+
 vec3 bumped(vec3 normal, float height) {
   vec3 dpdx = dFdx(vWorld);
   vec3 dpdy = dFdy(vWorld);
@@ -201,19 +241,64 @@ void main() {
   vec3 shading = bumped(normalize(frame * surface.detail), surface.height * BUMP);
   float skyLight = mix(0.12, 0.9, shading.y * 0.5 + 0.5);
   float key = max(dot(shading, uLight), 0.0);
-  float light = skyLight * occlusion + 0.55 * key * mix(0.3, 1.0, occlusion);
+  vec3 light = uHaze * NIGHT_SKY * skyLight * occlusion
+    + uRim * MOONLIGHT * key * mix(0.3, 1.0, occlusion);
 
-  vec3 haze = skyColor(gl_FragCoord.xy, uResolution, uVanish, uTime, uSky, uHaze);
+  vec3 origin = vWorld - vLocal;
+  float distance = length(vWorld - cameraPosition);
+  float depth = 1.0 - smoothstep(14.0, 40.0, distance);
+  if (vKind < 0.5) {
+    for (int below = 0; below < 2; below++) {
+      float level;
+      vec3 q = fromWindow(vLocal + normal * 0.02, tile, origin, float(below), level);
+      float reach = length(q);
+      float facing = max(dot(shading, -q / reach), 0.0);
+      float ahead = smoothstep(-0.1, 0.5, q.z / reach);
+      float falloff = (1.0 - smoothstep(0.5 * WINDOW_REACH, WINDOW_REACH, reach)) / (0.5 + reach * reach);
+      light += uLamp * WASH * depth * level * facing * ahead * falloff * mix(0.4, 1.0, occlusion);
+    }
+  }
+
+  vec3 haze = skyColor(gl_FragCoord.xy, uResolution, uVanish, uBacklights, uTime, uSky, uHaze, uRim);
   vec3 color = surface.albedo * light;
+  float lit = 0.0;
   if (vKind > 1.5) {
     color = uGlass * 2.0 * light;
   } else if (vKind > 0.5) {
     float fresnel = pow(1.0 - max(dot(normal, toCamera), 0.0), 2.0);
     color = mix(uGlass, haze * 0.45, 0.15 + 0.6 * fresnel) * mix(0.5, 1.0, occlusion);
+    float level;
+    fromWindow(vLocal, tile, origin, 0.0, level);
+    lit = step(0.01, level);
+    color = mix(color, uLamp * PANE * level * mix(0.75, 1.0, valueNoise(vLocal.xy * 3.0 + tile)), lit);
   }
 
-  float distance = length(vWorld - cameraPosition);
+  float outward = sign(vWorld.x);
+  float partOuter = abs(vWorld.x - vLocal.x + (outward > 0.0 ? vMax.x : vMin.x));
+  float silhouette = step(uOuterX - 0.01, partOuter) * step(0.0, normal.x * outward);
+  float fromEdge = partOuter - abs(vWorld.x);
+  float pixel = fwidth(vWorld.x);
+  float rim = 0.3 * exp(-fromEdge / max(pixel * 2.5, 0.06)) + 0.7 * exp(-fromEdge / max(pixel * 12.0, 0.45));
+  color += uRim * RIM_STRENGTH * silhouette * rim;
+
   float mist = fbm(vec3(vWorld.x * 0.05, building.y * 0.04, uTime * 0.04));
   float fog = 1.0 - exp(-distance * uFogDensity * mix(0.5, 1.7, mist));
-  outColor = vec4(mix(color, haze, fog), 1.0);
+  vec3 eye = cameraPosition - origin;
+  vec3 ray = vLocal - eye;
+  float near = clamp((eye.z - 1.2) / (eye.z - vLocal.z), 0.0, 1.0);
+  float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
+  float scatter = 0.0;
+  for (int i = 0; i < GLOW_STEPS; i++) {
+    vec3 point = eye + ray * mix(near, 1.0, (float(i) + jitter) / float(GLOW_STEPS));
+    float level;
+    vec3 q = fromWindow(point, tile, origin, 0.0, level);
+    vec3 drift = point + origin + vec3(0.0, uClimb - uTime * 0.2, 0.0);
+    float dust = valueNoise(drift * vec3(2.5, 1.0, 2.5)) * mix(0.6, 1.4, valueNoise(drift * 9.0));
+    scatter += level * glow(q) * mix(0.25, 1.6, dust);
+  }
+  scatter *= (1.0 - near) * length(ray) / float(GLOW_STEPS) * depth;
+  scatter *= mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
+
+  color = mix(color, haze, fog * mix(1.0, 0.6, lit)) + uLamp * SCATTER * scatter * (1.0 - 0.5 * fog);
+  outColor = vec4(color * uExposure, 1.0);
 }

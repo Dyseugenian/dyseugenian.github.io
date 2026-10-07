@@ -34,7 +34,7 @@ const OCCLUSION = {
 export const OCCLUSION_MIN = new Vector3(-BAY / 2, 0, OCCLUSION.back);
 export const OCCLUSION_SIZE = new Vector3(BAY, TILE_HEIGHT, OCCLUSION.front - OCCLUSION.back);
 
-export type Part = { kind: number; min: Vector3; max: Vector3 };
+export type Part = { kind: number; min: Vector3; max: Vector3; protrudes?: boolean };
 
 type Span = [number, number];
 
@@ -47,9 +47,10 @@ function part(kind: number, x: Span, y: Span, z: Span): Part {
 }
 
 export const PIER = part(CONCRETE, [-2.8, -1.4], [0, TILE_HEIGHT], [-3.2, 0]);
+export const BLOCK = { ...part(CONCRETE, [-3.05, -1.15], [0.9, 2.7], [-1, 0.9]), protrudes: true };
 
 export function tileParts(): Part[] {
-  const parts = [PIER];
+  const parts = [PIER, BLOCK];
   for (const y of [0, STOREY]) {
     const top = y + STOREY;
     const sill = y + 0.55;
@@ -68,12 +69,11 @@ export function tileParts(): Part[] {
       part(METAL, [-1.05, 1.05], [y + 2.55, y + 2.61], [-3.05, -2.98]),
     );
   }
-  parts.push(part(CONCRETE, [-3.05, -1.15], [0.9, 2.7], [-1, 0.9]));
   return parts;
 }
 
 function partsGeometry(parts: Part[]): BufferGeometry {
-  const boxes = parts.map(({ kind, min, max }) => {
+  const boxes = parts.map(({ kind, min, max, protrudes }) => {
     const size = max.clone().sub(min);
     const center = max.clone().add(min).multiplyScalar(0.5);
     const box = new BoxGeometry(size.x, size.y, size.z).translate(center.x, center.y, center.z);
@@ -81,6 +81,10 @@ function partsGeometry(parts: Part[]): BufferGeometry {
     box.setAttribute('aKind', new Float32BufferAttribute(new Array<number>(count).fill(kind), 1));
     box.setAttribute('aMin', new Float32BufferAttribute(repeat(min, count), 3));
     box.setAttribute('aMax', new Float32BufferAttribute(repeat(max, count), 3));
+    box.setAttribute(
+      'aProtrudes',
+      new Float32BufferAttribute(new Array<number>(count).fill(protrudes ? 1 : 0), 1),
+    );
     return box;
   });
   const merged = mergeGeometries(boxes)!;

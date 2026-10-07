@@ -3,6 +3,7 @@ import type { Input } from '../core/Input';
 import { Eyes } from './Eyes';
 import { Halo } from './Halo';
 import { Infall } from './Infall';
+import { Shade } from './Shade';
 import { SprayCircle } from './SprayCircle';
 import { Wordmark } from './Wordmark';
 
@@ -11,6 +12,7 @@ const LOGO_CENTER_Y = 0.38;
 const PUPIL = { y: 445 / 1024, radius: 140 / 1024 };
 const SPHERE = { y: 0.096, radius: 1.7, flow: 0.05 };
 const RING = { radius: 2.6, drop: 0.514, flow: 0.035 };
+const SHADE = { radius: 5.5, strength: 0.55 };
 const REDUCED_MOTION_SPEED = 0.1;
 const MAX_POINTER_SPEED = 20;
 const HOVER_FADE = 0.3;
@@ -31,6 +33,7 @@ export class Logo extends Group {
     Math.ceil(INFALL_SPECKS * Math.sqrt(MAX_COVERAGE)),
     this.halo.uniforms.uPupilStretch,
   );
+  private shade = new Shade(SHADE.radius, SHADE.strength);
   private eyes = new Eyes(0.05, 0.429);
   private wordmark = new Wordmark(-416 / 140, -253 / 140);
   private pointer = new Vector2();
@@ -49,8 +52,9 @@ export class Logo extends Group {
     this.ring.uniforms.uHideBehind.value = SPHERE.radius;
     this.outline.uniforms.uFlow.value = SPHERE.flow;
     this.ring.uniforms.uFlow.value = RING.flow;
+    this.shade.position.y = SPHERE.y;
 
-    this.add(this.infall, this.halo, this.outline, this.ring, this.eyes, this.wordmark);
+    this.add(this.shade, this.infall, this.halo, this.outline, this.ring, this.eyes, this.wordmark);
     this.ready = Promise.all([this.halo.loaded, this.eyes.loaded, this.wordmark.loaded]);
   }
 
@@ -125,7 +129,7 @@ export class Logo extends Group {
       advanceHover(uniforms.uMotion, uniforms.uMotionTime, isOnMotionRole, dt),
     ];
     const planetFade = PLANET_FADE * Math.max(...hovers.map((hover) => hover.amount));
-    for (const part of [this.halo, this.infall, this.outline, this.ring, this.eyes]) {
+    for (const part of [this.shade, this.halo, this.infall, this.outline, this.ring, this.eyes]) {
       part.uniforms.uOpacity.value = 1 - planetFade;
     }
     const end = uniforms.uTetrisEnd.value;

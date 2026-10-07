@@ -3,6 +3,7 @@ precision highp float;
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
+uniform float uTilesClimbed;
 
 in vec3 position;
 in vec3 normal;
@@ -11,6 +12,7 @@ in vec3 aOffset;
 in vec2 aTile;
 in vec3 aMin;
 in vec3 aMax;
+in float aProtrudes;
 
 out vec3 vWorld;
 out vec3 vLocal;
@@ -20,14 +22,21 @@ flat out vec2 vTile;
 flat out vec3 vMin;
 flat out vec3 vMax;
 
+const float HALF_PROTRUSION = 0.45;
+
 void main() {
-  vec4 world = modelMatrix * vec4(position + aOffset, 1.0);
+  vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
+  float inset = aProtrudes * HALF_PROTRUSION * mod(floor(abs(tile.x - 0.5)) + tile.y, 2.0);
+  vec3 local = position;
+  local.z -= inset * step(aMax.z - 1e-3, position.z);
+
+  vec4 world = modelMatrix * vec4(local + aOffset, 1.0);
   vWorld = world.xyz;
-  vLocal = position;
+  vLocal = local;
   vNormal = mat3(modelMatrix) * normal;
   vKind = aKind;
   vTile = aTile;
   vMin = aMin;
-  vMax = aMax;
+  vMax = aMax - vec3(0.0, 0.0, inset);
   gl_Position = projectionMatrix * viewMatrix * world;
 }
