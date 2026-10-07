@@ -2,6 +2,7 @@ export class Input {
   readonly pointer = { x: 0, y: 0 };
   isPointerInside = false;
   activeRole: string | null = null;
+  isOnLink = false;
   private roles = document.querySelectorAll<HTMLButtonElement>('.tagline button');
   private lastPointerType = '';
   readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -17,6 +18,14 @@ export class Input {
       role.addEventListener('click', (event) => {
         if (event.detail > 0 && this.lastPointerType === 'mouse') return;
         this.setActiveRole(this.activeRole === role.id ? null : role.id);
+      });
+    }
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('.links a')) {
+      link.addEventListener('pointerenter', (event) => {
+        if (event.pointerType === 'mouse') this.isOnLink = true;
+      });
+      link.addEventListener('pointerleave', () => {
+        this.isOnLink = false;
       });
     }
     window.addEventListener('pointermove', (event) => this.track(event));

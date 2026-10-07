@@ -145,6 +145,7 @@ body {
 }
 
 .links,
+.roles,
 .experience,
 .tagline li,
 .tagline li::before,
@@ -159,6 +160,10 @@ body {
   .tagline li:has(button:hover)::before,
   .tagline li:has(button:hover) .branch {
     filter: opacity(0.15);
+  }
+
+  .overlay:has(.links a:hover) .roles {
+    filter: opacity(0.5);
   }
 }
 
@@ -226,7 +231,10 @@ body {
 }
 
 .links a:hover,
-.links a:focus-visible,
+.links a:focus-visible {
+  color: var(--ochre-bright);
+}
+
 .links a:hover::before,
 .links a:hover::after,
 .links a:focus-visible::before,

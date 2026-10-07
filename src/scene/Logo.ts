@@ -2,6 +2,7 @@ import { Box2, Group, MathUtils, Vector2 } from 'three';
 import type { Input } from '../core/Input';
 import { Eyes } from './Eyes';
 import { Halo } from './Halo';
+import { Infall } from './Infall';
 import { SprayCircle } from './SprayCircle';
 import { Stars } from './Stars';
 import { Wordmark } from './Wordmark';
@@ -20,12 +21,17 @@ const REFERENCE_SIZE = 670;
 const MAX_COVERAGE = 6;
 const OUTLINE_SPECKS = 2000;
 const RING_SPECKS = 3070;
+const INFALL_SPECKS = 900;
 
 export class Logo extends Group {
   readonly halo = new Halo();
   readonly ready: Promise<unknown>;
   private outline = new SprayCircle(SPHERE.radius, OUTLINE_SPECKS * MAX_COVERAGE);
   private ring = new SprayCircle(RING.radius, RING_SPECKS * MAX_COVERAGE);
+  private infall = new Infall(
+    Math.ceil(INFALL_SPECKS * Math.sqrt(MAX_COVERAGE)),
+    this.halo.uniforms.uPupilStretch,
+  );
   private eyes = new Eyes(0.05, 0.429);
   private wordmark = new Wordmark(-416 / 140, -253 / 140);
   private stars = new Stars(
@@ -49,7 +55,7 @@ export class Logo extends Group {
     this.outline.uniforms.uFlow.value = SPHERE.flow;
     this.ring.uniforms.uFlow.value = RING.flow;
 
-    this.add(this.stars, this.halo, this.outline, this.ring, this.eyes, this.wordmark);
+    this.add(this.stars, this.infall, this.halo, this.outline, this.ring, this.eyes, this.wordmark);
     this.ready = Promise.all([this.halo.loaded, this.eyes.loaded, this.wordmark.loaded]);
   }
 
@@ -79,13 +85,14 @@ export class Logo extends Group {
       width * height,
     );
 
-    for (const specks of [this.stars, this.halo, this.outline, this.ring]) {
+    for (const specks of [this.stars, this.infall, this.halo, this.outline, this.ring]) {
       specks.uniforms.uPixelRatio.value = pixelRatio;
     }
     const coverage = Math.min((size / REFERENCE_SIZE) ** 2, MAX_COVERAGE);
     this.halo.setCount(Math.round(particles * coverage));
     this.outline.setCount(Math.round(OUTLINE_SPECKS * coverage));
     this.ring.setCount(Math.round(RING_SPECKS * coverage));
+    this.infall.setCount(Math.round(INFALL_SPECKS * Math.sqrt(coverage)));
   }
 
   update(dt: number): void {
@@ -120,6 +127,8 @@ export class Logo extends Group {
 
     const target = follow ? this.pointer : null;
     this.halo.update(motionDt, target);
+    this.infall.rotation.copy(this.halo.rotation);
+    this.infall.update(motionDt);
     this.outline.update(motionDt, target, this.pointerVelocity);
     this.ring.update(motionDt, target, this.pointerVelocity);
     this.eyes.update(dt, target);
@@ -130,7 +139,7 @@ export class Logo extends Group {
       advanceHover(uniforms.uMotion, uniforms.uMotionTime, isOnMotionRole, dt),
     ];
     const planetFade = PLANET_FADE * Math.max(...hovers.map((hover) => hover.amount));
-    for (const part of [this.halo, this.outline, this.ring, this.eyes]) {
+    for (const part of [this.halo, this.infall, this.outline, this.ring, this.eyes]) {
       part.uniforms.uOpacity.value = 1 - planetFade;
     }
     const end = uniforms.uTetrisEnd.value;

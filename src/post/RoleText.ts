@@ -5,6 +5,7 @@ import { palette } from '../core/palette';
 const REACH = { x: 6.3, y: 10.4 };
 const FOLLOW_RATE = 12;
 const DIM = 0.15;
+const LINK_DIM = 0.5;
 const DIM_DURATION = 0.2;
 const GLOW_BLUR = 10;
 const GLOW_FOLLOW_RATE = 4;
@@ -32,6 +33,7 @@ export class RoleText {
     uRoles: { value: this.texture },
     uRoleGlow: { value: this.glowTexture },
     uRolesRect: { value: new Vector4() },
+    uRolesOpacity: { value: 1 },
     uRoleBoxes: { value: this.roles.map(() => new Vector4()) },
     uRoleInkEdges: { value: this.roles.map(() => new Vector2()) },
     uRoleOpacity: { value: new Vector3(1, 1, 1) },
@@ -87,6 +89,12 @@ export class RoleText {
     }
 
     const fade = dt / DIM_DURATION;
+    const linkDimmed = this.canHover && input.isOnLink;
+    uniforms.uRolesOpacity.value = approach(
+      uniforms.uRolesOpacity.value,
+      linkDimmed ? LINK_DIM : 1,
+      fade,
+    );
     this.roles.forEach((role, i) => {
       const dimmed = this.canHover && input.activeRole !== null && input.activeRole !== role.id;
       stepToward(uniforms.uRoleOpacity.value, i, dimmed ? DIM : 1, fade);
@@ -156,9 +164,9 @@ export class RoleText {
 }
 
 function stepToward(vector: Vector3, index: number, target: number, step: number): void {
-  const current = vector.getComponent(index);
-  vector.setComponent(
-    index,
-    current + Math.sign(target - current) * Math.min(step, Math.abs(target - current)),
-  );
+  vector.setComponent(index, approach(vector.getComponent(index), target, step));
+}
+
+function approach(current: number, target: number, step: number): number {
+  return current + Math.sign(target - current) * Math.min(step, Math.abs(target - current));
 }

@@ -16,6 +16,7 @@ uniform float uBinary;
 uniform float uBinaryTime;
 uniform float uMotion;
 uniform float uMotionTime;
+uniform sampler2D uHealsAt;
 
 in vec3 position;
 in vec3 color;
@@ -40,6 +41,7 @@ const float DISSOLVE = 0.07;
 const float FLIP_RATE = 14.0;
 const float DIGIT_WARM = 0.4;
 const float GLIDE_TICKS = 2.0;
+const float HEAL_GLOW = 0.35;
 
 float bayer(vec2 cell) {
   const float ORDER[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
@@ -228,7 +230,9 @@ void main() {
   if (uMotion > 0.0) vColor = penFill(vColor);
 #endif
 
-  if (all(lessThanEqual((vColor - uBackground) * SIGN, vec3(0.0)))) {
+  float healed = uTime - texelFetch(uHealsAt, ivec2(aCell), 0).r;
+  vColor = mix(vColor, uCream, 0.6 * step(0.0, healed) * (1.0 - smoothstep(0.0, HEAL_GLOW, healed)));
+  if (healed < 0.0 || all(lessThanEqual((vColor - uBackground) * SIGN, vec3(0.0)))) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     gl_PointSize = 0.0;
     return;

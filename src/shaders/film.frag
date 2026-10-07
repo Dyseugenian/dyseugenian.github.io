@@ -12,6 +12,7 @@ uniform float uAberration;
 uniform sampler2D uRoles;
 uniform sampler2D uRoleGlow;
 uniform vec4 uRolesRect;
+uniform float uRolesOpacity;
 uniform vec4 uRoleBoxes[3];
 uniform vec2 uRoleInkEdges[3];
 uniform vec3 uRoleOpacity;
@@ -61,7 +62,7 @@ vec2 roleInk(vec2 texel) {
   vec2 local = texel / uRolesRect.zw;
   if (any(lessThan(local, vec2(0.0))) || any(greaterThan(local, vec2(1.0)))) return vec2(0.0);
   int role = roleAt(local);
-  float opacity = role < 0 ? 1.0 : uRoleOpacity[role];
+  float opacity = (role < 0 ? 1.0 : uRoleOpacity[role]) * uRolesOpacity;
   return vec2(texture(uRoles, local).a, texture(uRoleGlow, local).a) * opacity;
 }
 

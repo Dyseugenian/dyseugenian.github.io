@@ -5,6 +5,7 @@ import {
   BufferGeometry,
   Color,
   CustomBlending,
+  DataTexture,
   Float32BufferAttribute,
   GLSL3,
   Group,
@@ -66,6 +67,7 @@ export class Wordmark extends Group {
     uMotionTime: { value: 0 },
     uCream: { value: new Color(palette.cream).convertLinearToSRGB() },
     uOchre: { value: new Color(palette.ochreHi).convertLinearToSRGB() },
+    uHealsAt: { value: new DataTexture() },
   };
   readonly letters: Letter[] = [];
   readonly loaded: Promise<void>;
@@ -82,7 +84,7 @@ export class Wordmark extends Group {
   private swipeVelocity = new Vector2();
   private lastKick = new Vector2();
   private isSwiping = false;
-  private swipeSpecks!: SwipeSpecks;
+  private swipeSpecks?: SwipeSpecks;
   private penPaths?: PenPaths;
 
   constructor(left: number, top: number) {
@@ -119,6 +121,7 @@ export class Wordmark extends Group {
         this.penPaths = new PenPaths(paths, this.uniforms);
         this.add(this.penPaths);
         this.swipeSpecks = new SwipeSpecks(letterSources(image), this.uniforms);
+        this.uniforms.uHealsAt.value = this.swipeSpecks.healsAt;
         this.add(this.swipeSpecks);
         this.bounds
           .set(new Vector2(0, -image.height), new Vector2(image.width, 0))
@@ -136,6 +139,7 @@ export class Wordmark extends Group {
     for (const letter of this.letters) letter.dust.update(this.time);
     this.penPaths?.update(this.uniforms.uMotionTime.value);
     this.swipe(pointer, pointerVelocity);
+    this.swipeSpecks?.update(dt, this.time);
   }
 
   private swipe(pointer: Vector2 | null, pointerVelocity: Vector2): void {
@@ -170,7 +174,7 @@ export class Wordmark extends Group {
   }
 
   private kick(x: number, y: number, velocity: Vector2): void {
-    this.swipeSpecks.burst(x, y, velocity, this.time);
+    this.swipeSpecks?.burst(x, y, velocity, this.time);
   }
 }
 
