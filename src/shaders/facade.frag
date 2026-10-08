@@ -26,6 +26,9 @@ uniform vec3 uLampCold;
 uniform vec3 uSalt;
 uniform vec3 uGrime;
 uniform vec3 uRust;
+uniform vec3 uBeaconColor;
+uniform vec3 uBeaconSpot;
+uniform float uBeacon;
 uniform vec3 uLight;
 uniform float uFogDensity;
 uniform sampler3D uOcclusion;
@@ -70,6 +73,11 @@ const vec2 BEAM_AXES[5] = vec2[5](vec2(1.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec
 const float WASH = 3.2;
 const float SCATTER = 1.2;
 const int GLOW_STEPS = 12;
+const float SWITCH_PERIOD = 30.0;
+const float BEACON_LIGHT = 3.0;
+const float CLOUD_SPACING = 60.0;
+const float CLOUD_THICKNESS = 2.5;
+const float CLOUD_DENSITY = 0.35;
 
 struct Concrete {
   vec3 albedo;
@@ -290,7 +298,25 @@ vec3 windowLight(vec2 room) {
   float chance = mix(0.1, 0.6, smoothstep(0.3, 0.75, cluster));
   float pick = hash12(room + 19.0);
   vec3 tint = pick < 0.5 ? uLamp : pick < 0.75 ? uLampSoft : pick < 0.88 ? uLampCool : uLampCold;
-  return tint * step(hash12(room + 41.0), chance) * mix(0.35, 1.0, hash12(room + 7.0));
+  float era = floor(uTime / SWITCH_PERIOD + hash12(room + 43.0));
+  float on = abs(step(hash12(room + 41.0), chance) - step(0.93, hash12(room + era * 1.37)));
+  float faulty = step(0.75, pick) * step(pick, 0.88) * step(0.5, hash12(room + 47.0));
+  float bursts = step(0.6, valueNoise(vec2(uTime * 0.7, room.x * 3.1 + room.y)));
+  float flicker = step(0.7, valueNoise(vec2(uTime * 14.0, room.x * 13.0 + room.y * 7.0)));
+  return tint * on * (1.0 - 0.85 * faulty * bursts * flicker) * mix(0.35, 1.0, hash12(room + 7.0));
+}
+
+float clouds(vec3 from, vec3 to) {
+  float rise = max(to.y - from.y, 1e-3);
+  float depth = 0.0;
+  for (int i = 0; i < 4; i++) {
+    float center = (floor(from.y / CLOUD_SPACING) + float(i)) * CLOUD_SPACING;
+    vec3 crossing = from + (to - from) * clamp((center - from.y) / rise, 0.0, 1.0);
+    float puffs = fbm(vec3(crossing.xz * vec2(0.06, 0.1) + vec2(uTime * 0.05, center), uTime * 0.03));
+    float across = atan((to.y - center) / CLOUD_THICKNESS) - atan((from.y - center) / CLOUD_THICKNESS);
+    depth += smoothstep(0.35, 0.7, puffs) * CLOUD_THICKNESS * across;
+  }
+  return 1.0 - exp(-CLOUD_DENSITY * depth * length(to - from) / rise);
 }
 
 float lampDepth(vec2 room) {
@@ -482,6 +508,12 @@ void main() {
   float key = max(dot(shading, uLight), 0.0);
   vec3 light = uHaze * NIGHT_SKY * skyLight * occlusion
     + uRim * MOONLIGHT * key * mix(0.3, 1.0, occlusion);
+  float spacing = 4.0 * uTileHeight;
+  float beaconY = floor((building.y - uBeaconSpot.y) / spacing + 0.5) * spacing + uBeaconSpot.y - uClimb;
+  vec3 toBeacon = vec3(sign(vWorld.x) * uBeaconSpot.x, beaconY, uBeaconSpot.z) - vWorld;
+  float beaconReach = length(toBeacon);
+  light += uBeaconColor * uBeacon * BEACON_LIGHT * max(dot(shading, toBeacon / beaconReach), 0.0)
+    / (1.0 + 3.0 * beaconReach * beaconReach) * mix(0.4, 1.0, occlusion);
 
   vec3 origin = vWorld - vLocal;
   float distance = length(vWorld - cameraPosition);
@@ -523,6 +555,13 @@ void main() {
     float slats = 0.75 + 0.25 * smoothstep(0.3, 0.5, abs(fract(vLocal.y / 0.06) - 0.5));
     float behind = exp(-abs(pane.x - mix(-1.4, 1.4, hash12(room + 3.0))) * 0.8);
     inside = mix(glow * PANE * slats * behind, inside, step(vLocal.y, blind));
+    float stride = uTime * mix(0.12, 0.25, hash12(room + 67.0)) + 6.28 * hash12(room + 71.0);
+    vec2 figure = pane + through.xy * (0.8 / max(-through.z, 0.2)) - vec2(1.8 * sin(stride), 0.0);
+    vec2 shoulders = abs(figure - vec2(0.0, -1.3)) - vec2(0.18, 0.56);
+    float outline = min(length(figure - vec2(0.0, -0.55)) - 0.11,
+      length(max(shoulders, 0.0)) + min(max(shoulders.x, shoulders.y), 0.0) - 0.06);
+    float person = (1.0 - smoothstep(0.0, 0.01 + fwidth(outline), outline)) * step(0.75, hash12(room + 61.0));
+    inside *= 1.0 - 0.85 * person;
 
     vec3 mirrored = reflect(view, glassNormal);
     float fresnel = 0.04 + 0.26 * pow(1.0 - max(dot(-view, glassNormal), 0.0), 5.0);
@@ -571,5 +610,8 @@ void main() {
   scatter *= mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
 
   color = mix(color, haze, fog * mix(1.0, 0.6, lit)) + SCATTER * scatter * (1.0 - 0.5 * fog);
+  vec3 climbed = vec3(0.0, uClimb, 0.0);
+  float cloud = clouds(cameraPosition + climbed, vWorld + climbed);
+  color = mix(color, haze, cloud);
   outColor = vec4(color * uExposure, 1.0);
 }

@@ -11,6 +11,7 @@ export const palette = {
   lampSoft: '#f0d6a8',
   lampCool: '#b4c3c9',
   lampCold: '#86a9d6',
+  beacon: '#e3301f',
   void: '#000000',
   ochre: '#cc961f',
   ochreHi: '#ebb325',

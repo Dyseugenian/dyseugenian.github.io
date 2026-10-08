@@ -19,6 +19,7 @@ import type { Input } from '../core/Input';
 import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 import { Backdrop } from './Backdrop';
+import { Beacons, beaconSpot } from './Beacons';
 import { MAP_METERS, bakeConcreteMaps } from './concreteMaps';
 import {
   BAY,
@@ -45,6 +46,7 @@ const TILE_SEEDS = 4096;
 const EXPOSURE = 0.42;
 const UP = new Vector3(0, 1, 0);
 const BACKLIGHTS = [new Vector3(-1, 1.1, -0.15), new Vector3(1, 1.1, -0.15)] as const;
+const BEACON_PERIOD = 2.4;
 
 export class Tower extends Scene {
   readonly camera = new PerspectiveCamera(VIEW.fov, 1, 0.1, 400);
@@ -61,6 +63,7 @@ export class Tower extends Scene {
   private facadeUniforms = {
     uClimb: { value: 0 },
     uTilesClimbed: { value: 0 },
+    uBeacon: { value: 0 },
   };
   private building = new Group();
   private material: RawShaderMaterial;
@@ -74,6 +77,8 @@ export class Tower extends Scene {
     super();
     const parts = tileParts();
     const windows = parts.filter((part) => part !== PIER && part !== BLOCK);
+    const outerX = (COLUMNS.right + 1) * BAY + PIER.min.x + EDGE_WIDTH;
+    const spot = beaconSpot(outerX);
     const uniforms = {
       ...this.uniforms,
       ...this.facadeUniforms,
@@ -85,9 +90,11 @@ export class Tower extends Scene {
       uSalt: { value: new Color(palette.salt).convertLinearToSRGB() },
       uGrime: { value: new Color(palette.grime).convertLinearToSRGB() },
       uRust: { value: new Color(palette.rust).convertLinearToSRGB() },
+      uBeaconColor: { value: new Color(palette.beacon).convertLinearToSRGB() },
       uBay: { value: BAY },
       uTileHeight: { value: TILE_HEIGHT },
-      uOuterX: { value: (COLUMNS.right + 1) * BAY + PIER.min.x + EDGE_WIDTH },
+      uOuterX: { value: outerX },
+      uBeaconSpot: { value: spot },
       uSurface: { value: new Texture() },
       uSurfaceMeters: { value: MAP_METERS },
       uLight: { value: new Vector3(-0.45, 0.7, 0.55).normalize() },
@@ -129,7 +136,7 @@ export class Tower extends Scene {
       );
     }
     for (const mesh of meshes) mesh.frustumCulled = false;
-    this.building.add(...meshes);
+    this.building.add(...meshes, new Beacons(spot, rows, uniforms));
     this.camera.position.z = VIEW.distance;
     this.add(new Backdrop(this.uniforms), this.building);
   }
@@ -171,6 +178,10 @@ export class Tower extends Scene {
         (this.facadeUniforms.uTilesClimbed.value + 1) % TILE_SEEDS;
     }
     this.building.position.y = -this.lift;
+
+    const phase = (this.uniforms.uTime.value / BEACON_PERIOD) % 1;
+    this.facadeUniforms.uBeacon.value =
+      MathUtils.smoothstep(phase, 0, 0.08) * (1 - MathUtils.smoothstep(phase, 0.3, 0.55));
 
     this.uniforms.uVanish.value.set(...this.onScreen(UP));
     this.uniforms.uBacklights.value.set(

@@ -30,7 +30,7 @@ const OCCLUSION = {
   front: 1.6,
 };
 
-const EDGE = { pitch: 1.8, rib: 0.45, depth: 0.35, margin: 0.55 };
+const EDGE = { pitch: 3.6, rib: 0.45, depth: 0.7, margin: 0.85 };
 export const EDGE_WIDTH = 1.75;
 
 export const OCCLUSION_MIN = new Vector3(-BAY / 2, 0, OCCLUSION.back);
