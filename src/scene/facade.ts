@@ -19,10 +19,12 @@ export const TILE_HEIGHT = 2 * STOREY;
 
 const CONCRETE = 0;
 const GLASS = 1;
+const APPLIANCE = 2;
 
 const REGULAR = 1;
 const PLANT = 2;
-export const PLANT_EVERY = 8;
+const OCCASIONAL = 3;
+export const PLANT_EVERY = 16;
 const PLANT_FLOOR = { front: 0.6, louvre: 0.06, louvreSpacing: 0.24 };
 
 const OCCLUSION = {
@@ -74,6 +76,10 @@ function plant(part: Part): Part {
   return { ...part, role: PLANT };
 }
 
+function occasional(part: Part): Part {
+  return { ...part, role: OCCASIONAL };
+}
+
 export function tileParts(): Part[] {
   const parts = [PIER, BLOCK];
   for (const y of [0, STOREY]) {
@@ -100,6 +106,12 @@ export function tileParts(): Part[] {
         plant(part(CONCRETE, [-2.8, -1.4], [bottom, height], [-0.5, front])),
       );
     }
+    parts.push(
+      occasional(part(APPLIANCE, [-0.75, 0.75], [glassBottom, glassBottom + 1.0], [-2.3, -1.3])),
+      occasional(
+        part(APPLIANCE, [0.75, 0.81], [glassBottom + 0.15, glassBottom + 0.21], [-2.9, -2.0]),
+      ),
+    );
     for (let blade = sill + louvreSpacing / 2; blade < glassTop; blade += louvreSpacing) {
       parts.push(
         plant(
@@ -231,7 +243,7 @@ export function bakeOcclusion(
 ): Data3DTexture {
   const { width, height, depth } = OCCLUSION;
   const probes = probePoints();
-  const solids = around.filter(({ role }) => role !== PLANT);
+  const solids = around.filter(({ role }) => role !== PLANT && role !== OCCASIONAL);
   const openness = new Uint8Array(width * height * depth);
   const cell = new Vector3();
   const sample = new Vector3();

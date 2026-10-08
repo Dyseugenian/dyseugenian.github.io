@@ -18,6 +18,7 @@ import fragmentShader from '../shaders/facade.frag';
 import type { Input } from '../core/Input';
 import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
+import { Cables } from './Cables';
 import { Backdrop } from './Backdrop';
 import { Beacons, beaconSpot } from './Beacons';
 import { MAP_METERS, bakeConcreteMaps } from './concreteMaps';
@@ -91,6 +92,9 @@ export class Tower extends Scene {
       uGrime: { value: new Color(palette.grime).convertLinearToSRGB() },
       uRust: { value: new Color(palette.rust).convertLinearToSRGB() },
       uBeaconColor: { value: new Color(palette.beacon).convertLinearToSRGB() },
+      uNewsprint: { value: new Color(palette.newsprint).convertLinearToSRGB() },
+      uNewsprintAged: { value: new Color(palette.newsprintAged).convertLinearToSRGB() },
+      uAppliance: { value: new Color(palette.appliance).convertLinearToSRGB() },
       uBay: { value: BAY },
       uTileHeight: { value: TILE_HEIGHT },
       uPlantEvery: { value: PLANT_EVERY },
@@ -137,7 +141,7 @@ export class Tower extends Scene {
       );
     }
     for (const mesh of meshes) mesh.frustumCulled = false;
-    this.building.add(...meshes, new Beacons(spot, rows, uniforms));
+    this.building.add(...meshes, new Beacons(spot, rows, uniforms), new Cables(rows, uniforms));
     this.camera.position.z = VIEW.distance;
     this.add(new Backdrop(this.uniforms), this.building);
   }

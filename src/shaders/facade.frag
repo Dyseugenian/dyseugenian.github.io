@@ -28,6 +28,9 @@ uniform vec3 uSalt;
 uniform vec3 uGrime;
 uniform vec3 uRust;
 uniform vec3 uBeaconColor;
+uniform vec3 uNewsprint;
+uniform vec3 uNewsprintAged;
+uniform vec3 uAppliance;
 uniform vec3 uBeaconSpot;
 uniform float uBeacon;
 uniform vec3 uLight;
@@ -63,8 +66,11 @@ const float MOONLIGHT = 0.9;
 const vec3 WINDOW = vec3(0.0, 2.175, -3.4);
 const float WINDOW_REACH = 4.5;
 const vec3 GLOW = vec3(1.2, 1.1, 1.8);
-const float PANE = 0.25;
 const float GLASS_Z = -3.05;
+const float SPANDREL_Z = -1.8;
+const vec2 VENT = vec2(0.26, 0.13);
+const float FAN_RADIUS = 0.34;
+const vec3 GLASS_NORMAL = vec3(0.0, 0.0, 1.0);
 const vec3 ROOM = vec3(2.0, 3.2, 4.0);
 const float ROOM_LIGHT = 10.0;
 const vec2 GLASS_HALF = vec2(1.05, 1.025);
@@ -84,6 +90,7 @@ struct Concrete {
   vec3 albedo;
   float height;
   vec3 detail;
+  vec3 emission;
 };
 
 float resolved(float frequency, float footprint) {
@@ -291,7 +298,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
     * smoothstep(0.55, 0.9, valueNoise(scratch * vec2(2.0, 60.0))) * resolved(60.0, footprint);
   albedo *= 1.0 + (hash12(scuffCell + 8.0) > 0.3 ? 0.2 : -0.25) * scuff;
 
-  return Concrete(albedo, height, detail);
+  return Concrete(albedo, height, detail, vec3(0.0));
 }
 
 vec3 windowLight(vec2 room) {
@@ -492,6 +499,147 @@ vec3 bumped(vec3 normal, float height) {
   return normalize(abs(det) * normal - gradient);
 }
 
+const int SHEETS = 7;
+
+Concrete ventGrille(Concrete surface, vec2 at, vec2 seed) {
+  vec2 outside = abs(at) - VENT;
+  float rim = max(outside.x, outside.y);
+  float frame = 1.0 - smoothstep(0.03, 0.034, rim);
+  float opening = 1.0 - smoothstep(-0.004, 0.0, rim);
+  float slot = opening * smoothstep(0.22, 0.32, abs(fract(at.y / 0.05) - 0.5));
+  float bolts = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec2 corner = vec2(i % 2 == 0 ? -1.0 : 1.0, i < 2 ? -1.0 : 1.0) * (VENT + 0.017);
+    bolts = max(bolts, 1.0 - smoothstep(0.006, 0.009, length(at - corner)));
+  }
+  float rust = smoothstep(0.35, 0.8, valueNoise(at * 30.0 + seed));
+  vec3 steel = mix(uGrime * 1.4, uRust, 0.35 + 0.55 * rust);
+  surface.albedo = mix(surface.albedo, steel, frame);
+  surface.albedo *= 1.0 - 0.92 * slot;
+  surface.height += 1.2 * frame + 1.5 * bolts - 3.5 * slot;
+
+  float below = -at.y - VENT.y - 0.03;
+  float runs = step(0.0, below) * exp(-below / 0.3) * step(abs(at.x), VENT.x)
+    * smoothstep(0.45, 0.8, valueNoise(vec2(at.x * 22.0, seed.x)));
+  surface.albedo = mix(surface.albedo, uRust * 0.6, 0.6 * runs);
+  float soot = exp(-max(rim, 0.0) / 0.07) * (1.0 - frame) * smoothstep(-0.2, 0.15, at.y);
+  surface.albedo *= 1.0 - 0.4 * soot;
+  return surface;
+}
+
+Concrete airConditioner(Concrete surface, vec3 normal) {
+  vec3 inUnit = vLocal - 0.5 * (vMin + vMax);
+  vec3 halfSize = 0.5 * (vMax - vMin);
+  surface.detail = vec3(0.0, 0.0, 1.0);
+  surface.height = 0.0;
+  if (halfSize.x < 0.3) {
+    surface.albedo = uGrime * mix(1.2, 2.0, valueNoise(inUnit.zy * 40.0));
+    return surface;
+  }
+  float seed = hash12(vec2(vTile.x, mod(vTile.y + uTilesClimbed, 4096.0)) + vMin.y * 3.7);
+  vec3 facing = abs(normal);
+  vec2 onFace = facing.z > 0.5 ? inUnit.xy : facing.x > 0.5 ? inUnit.zy : inUnit.xz;
+  vec2 faceHalf = facing.z > 0.5 ? halfSize.xy : facing.x > 0.5 ? halfSize.zy : halfSize.xz;
+  float front = step(0.5, normal.z);
+
+  vec3 paint = mix(uAppliance, uNewsprintAged * 0.85, 0.35 * seed) * mix(0.6, 0.9, valueNoise(onFace * 6.0 + seed * 9.0));
+  paint *= mix(0.55, 1.0, smoothstep(-halfSize.y, halfSize.y * 0.4, inUnit.y));
+  paint = mix(paint, uGrime * 1.5, step(0.5, normal.y) * 0.6 * smoothstep(0.3, 0.7, valueNoise(onFace * 12.0 + seed)));
+  float runs = smoothstep(0.55, 0.85, valueNoise(vec2(onFace.x * 30.0, onFace.y * 1.5 + seed * 20.0)))
+    * smoothstep(halfSize.y, -halfSize.y * 0.5, inUnit.y) * (1.0 - step(0.5, normal.y));
+  paint *= 1.0 - 0.35 * runs;
+  vec2 fromEdge = faceHalf - abs(onFace);
+  float rim = min(fromEdge.x, fromEdge.y);
+  float rust = (1.0 - smoothstep(0.0, 0.05, rim)) * smoothstep(0.4, 0.75, valueNoise(onFace * 25.0 + seed * 5.0));
+  paint = mix(paint, uRust * 0.75, 0.7 * rust);
+  surface.height += 0.6 * (1.0 - smoothstep(0.0, 0.015, rim)) - 0.8 * (1.0 - smoothstep(0.012, 0.018, abs(rim - 0.03)));
+
+  vec2 fanCenter = vec2(halfSize.x - FAN_RADIUS - 0.08, -0.02);
+  vec2 toFan = inUnit.xy - fanCenter;
+  float radius = length(toFan);
+  float angle = atan(toFan.y, toFan.x);
+  float speed = mix(3.0, 8.0, fract(seed * 13.7)) * step(0.15, seed);
+  float sweep = 0.5 + 0.5 * cos(5.0 * (angle + radius * 3.0 - uTime * speed));
+  float blades = mix(smoothstep(0.3, 0.6, sweep), 0.45 + 0.1 * sweep, smoothstep(3.0, 8.0, speed));
+  float hub = 1.0 - smoothstep(0.065, 0.07, radius);
+  float bladeArea = blades * smoothstep(0.07, 0.1, radius);
+  vec3 cavity = mix(uGrime * 0.3, paint * 0.55, bladeArea) + paint * 0.6 * hub;
+  float opening = front * (1.0 - smoothstep(FAN_RADIUS - 0.004, FAN_RADIUS, radius));
+  float bezel = front * (1.0 - smoothstep(FAN_RADIUS + 0.02, FAN_RADIUS + 0.026, radius)) * (1.0 - opening);
+  paint = mix(paint, cavity, opening);
+  surface.height += bezel * 0.8 - opening * (3.0 - 1.8 * max(bladeArea, hub));
+
+  float intakeRight = fanCenter.x - FAN_RADIUS - 0.07;
+  vec2 intakeCenter = vec2(0.5 * (intakeRight - halfSize.x + 0.07), 0.04);
+  vec2 intakeHalf = vec2(0.5 * (intakeRight + halfSize.x - 0.07), halfSize.y - 0.14);
+  vec2 inIntake = abs(inUnit.xy - intakeCenter) - intakeHalf;
+  float intake = front * (1.0 - step(0.0, max(inIntake.x, inIntake.y)));
+  float slots = intake * smoothstep(0.2, 0.35, abs(fract(inUnit.y / 0.032) - 0.5));
+  paint *= 1.0 - 0.8 * slots;
+  surface.height -= 2.0 * slots;
+  vec2 badge = abs(inUnit.xy - vec2(intakeCenter.x, -halfSize.y + 0.06)) - vec2(0.06, 0.014);
+  float label = front * (1.0 - step(0.0, max(badge.x, badge.y)));
+  paint = mix(paint, uSalt * 0.9, 0.7 * label);
+  surface.height += 0.5 * label;
+
+  float sideVents = step(0.5, facing.x) * smoothstep(0.2, 0.4, abs(fract(inUnit.z / 0.025) - 0.5))
+    * step(abs(inUnit.z), halfSize.z - 0.08) * step(abs(inUnit.y), halfSize.y - 0.1);
+  paint *= 1.0 - 0.75 * sideVents;
+  surface.height -= 1.5 * sideVents;
+
+  float led = front * step(0.55, fract(seed * 31.0)) * (1.0 - smoothstep(0.006, 0.01, length(inUnit.xy - vec2(halfSize.x - 0.05, -halfSize.y + 0.05))));
+  surface.emission = uBeaconColor * led * (0.6 + 0.4 * sin(uTime * 1.3 + seed * 6.0));
+  surface.albedo = paint;
+  return surface;
+}
+
+vec3 newsprint(vec2 onSheet, vec2 extent, vec2 seed) {
+  float columns = step(0.12, fract(onSheet.x / 0.1 + 0.5));
+  float lines = smoothstep(0.2, 0.45, abs(fract(onSheet.y / 0.016) - 0.5));
+  float words = step(0.3, valueNoise(onSheet * vec2(45.0, 60.0) + seed));
+  float headline = step(extent.y - 0.14, onSheet.y) * step(onSheet.y, extent.y - 0.05)
+    * step(abs(onSheet.x), extent.x * 0.7);
+  float ink = max(columns * (1.0 - lines) * words * 0.6, headline * 0.9);
+
+  float foldedY = step(0.3, hash12(seed + 181.0));
+  float creaseY = mix(-0.3, 0.3, hash12(seed + 179.0)) * extent.y;
+  float upper = step(creaseY, onSheet.y);
+  float foldedX = foldedY * step(0.5, hash12(seed + 193.0)) * (hash12(seed + 197.0) < 0.5 ? upper : 1.0 - upper);
+  float creaseX = mix(-0.3, 0.3, hash12(seed + 191.0)) * extent.x;
+  vec2 facet = vec2(step(creaseX, onSheet.x) * foldedX, upper * foldedY);
+  float facetTone = mix(0.7, 1.1, hash12(seed + facet * vec2(3.0, 5.0) + 199.0));
+  float crease = max(foldedY * exp(-abs(onSheet.y - creaseY) / 0.004),
+    foldedX * exp(-abs(onSheet.x - creaseX) / 0.004));
+  float flap = mix(0.04, 0.12, hash12(seed + 203.0));
+  float doubled = step(0.5, hash12(seed + 207.0)) * step(extent.y - flap, onSheet.y);
+
+  vec3 tint = mix(uNewsprint, uNewsprintAged, hash12(seed + 211.0));
+  float foxing = smoothstep(0.6, 0.85, valueNoise(onSheet * 7.0 + seed));
+  float worn = exp(-min(extent.x - abs(onSheet.x), extent.y - abs(onSheet.y)) / 0.03);
+  tint = mix(tint, uNewsprintAged * 0.75, 0.5 * foxing + 0.4 * worn);
+  return tint * (1.0 - ink) * facetTone * (1.0 - 0.4 * crease) * mix(1.0, 0.5, doubled)
+    * mix(0.88, 1.04, valueNoise(onSheet * 20.0 + seed));
+}
+
+vec4 newspaper(vec2 pane, vec2 room, float blur) {
+  vec3 top = vec3(0.0);
+  float layers = 0.0;
+  for (int i = 0; i < SHEETS; i++) {
+    vec2 seed = room * 13.0 + float(i) * 17.3;
+    vec2 extent = vec2(mix(0.16, 0.42, hash12(seed + 1.0)), mix(0.2, 0.5, hash12(seed + 2.0)));
+    vec2 center = (vec2(hash12(seed + 3.0), hash12(seed + 4.0)) * 2.0 - 1.0) * (GLASS_HALF - 0.15);
+    float angle = (hash12(seed + 5.0) - 0.5) * 0.6;
+    vec2 onSheet = mat2(cos(angle), -sin(angle), sin(angle), cos(angle)) * (pane - center);
+    vec2 margin = abs(onSheet) - extent;
+    float covered = 1.0 - smoothstep(0.0, blur, max(margin.x, margin.y));
+    if (covered > 0.0) {
+      top = mix(top, newsprint(onSheet, extent, seed), covered);
+      layers += covered;
+    }
+  }
+  return vec4(top, layers);
+}
+
 void main() {
   vec3 normal = normalize(vNormal);
   vec3 toCamera = normalize(cameraPosition - vWorld);
@@ -503,8 +651,17 @@ void main() {
   float openness = texture(uOcclusion, (vLocal + normal * 0.1 - uOcclusionMin) / uOcclusionSize).r;
   float occlusion = smoothstep(0.08, 0.55, openness);
 
+  vec3 origin = vWorld - vLocal;
   mat3 frame = faceFrame(normal);
   Concrete surface = concrete(frame, seed, weathering);
+  if (vKind > 1.5) surface = airConditioner(surface, normal);
+  if (vKind < 0.5 && normal.z > 0.5 && abs(vMax.z - SPANDREL_Z) < 0.01) {
+    vec3 unlit;
+    vec2 bay;
+    vec3 q = fromWindow(vLocal, tile, origin, 0.0, unlit, bay);
+    vec2 at = vec2(q.x - mix(-0.8, 0.8, hash12(bay + 227.0)), vLocal.y - 0.5 * (vMin.y + vMax.y));
+    if (hash12(bay + 229.0) > 0.55) surface = ventGrille(surface, at, bay);
+  }
   vec3 shading = bumped(normalize(frame * surface.detail), surface.height * BUMP);
   float skyLight = mix(0.12, 0.9, shading.y * 0.5 + 0.5);
   float key = max(dot(shading, uLight), 0.0);
@@ -517,10 +674,9 @@ void main() {
   light += uBeaconColor * uBeacon * BEACON_LIGHT * max(dot(shading, toBeacon / beaconReach), 0.0)
     / (1.0 + 3.0 * beaconReach * beaconReach) * mix(0.4, 1.0, occlusion);
 
-  vec3 origin = vWorld - vLocal;
   float distance = length(vWorld - cameraPosition);
   float depth = 1.0 - smoothstep(14.0, 40.0, distance);
-  if (vKind < 0.5) {
+  if (abs(vKind - 1.0) > 0.5) {
     for (int below = 0; below < 2; below++) {
       vec3 glow;
       vec2 room;
@@ -535,9 +691,9 @@ void main() {
   }
 
   vec3 haze = skyColor(gl_FragCoord.xy, uResolution, uVanish, uBacklights, uTime, uSky, uHaze, uRim);
-  vec3 color = surface.albedo * light;
+  vec3 color = surface.albedo * light + surface.emission;
   float lit = 0.0;
-  if (vKind > 0.5) {
+  if (abs(vKind - 1.0) < 0.5) {
     vec3 glow;
     vec2 room;
     vec3 q = fromWindow(vLocal, tile, origin, 0.0, glow, room);
@@ -545,43 +701,58 @@ void main() {
     vec3 window = vLocal - q;
     vec2 pane = vLocal.xy - window.xy;
 
-    vec2 wave = vLocal.xy * vec2(1.3, 0.35) + room * 3.7;
-    vec2 ripple = vec2(valueNoise(wave), valueNoise(wave + 17.0)) - 0.5;
-    vec3 glassNormal = normalize(vec3(ripple * 0.05, 1.0));
     vec3 view = normalize(vLocal - (cameraPosition - origin));
-    vec3 through = normalize(view + vec3(ripple * 0.06, 0.0));
 
-    vec3 inside = interior(vLocal, through, window, glow, room);
-    float sill = window.y - WINDOW.y + 1.15;
-    float blind = sill + 2.05 * (1.0 - step(0.8, hash12(room + 23.0)) * mix(0.15, 0.45, hash12(room + 29.0)));
-    float slats = 0.75 + 0.25 * smoothstep(0.3, 0.5, abs(fract(vLocal.y / 0.06) - 0.5));
-    float behind = exp(-abs(pane.x - mix(-1.4, 1.4, hash12(room + 3.0))) * 0.8);
-    inside = mix(glow * PANE * slats * behind, inside, step(vLocal.y, blind));
+    vec3 inside = interior(vLocal, view, window, glow, room);
     float stride = uTime * mix(0.12, 0.25, hash12(room + 67.0)) + 6.28 * hash12(room + 71.0);
-    vec2 figure = pane + through.xy * (0.8 / max(-through.z, 0.2)) - vec2(1.8 * sin(stride), 0.0);
+    vec2 figure = pane + view.xy * (0.8 / max(-view.z, 0.2)) - vec2(1.8 * sin(stride), 0.0);
     vec2 shoulders = abs(figure - vec2(0.0, -1.3)) - vec2(0.18, 0.56);
     float outline = min(length(figure - vec2(0.0, -0.55)) - 0.11,
       length(max(shoulders, 0.0)) + min(max(shoulders.x, shoulders.y), 0.0) - 0.06);
     float person = (1.0 - smoothstep(0.0, 0.01 + fwidth(outline), outline)) * step(0.75, hash12(room + 61.0));
     inside *= 1.0 - 0.85 * person;
 
-    vec3 mirrored = reflect(view, glassNormal);
-    float fresnel = 0.04 + 0.26 * pow(1.0 - max(dot(-view, glassNormal), 0.0), 5.0);
+    vec2 pot = pane - vec2(mix(-0.75, 0.75, hash12(room + 103.0)), -GLASS_HALF.y);
+    float potShape = max(abs(pot.x) - mix(0.06, 0.085, pot.y / 0.15), abs(pot.y - 0.075) - 0.075);
+    float leaves = length((pot - vec2(0.0, 0.3)) * vec2(1.0, 1.3)) - 0.17
+      - 0.07 * (valueNoise(pot * 28.0 + room) - 0.5);
+    float plantOutline = min(potShape, leaves);
+    float plant = step(0.8, hash12(room + 107.0)) * (1.0 - smoothstep(0.0, 0.005 + fwidth(plantOutline), plantOutline));
+    inside *= 1.0 - 0.9 * plant;
+
+    vec3 mirrored = reflect(view, GLASS_NORMAL);
+    float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(-view, GLASS_NORMAL), 0.0), 5.0);
     float moon = max(dot(mirrored, uLight), 0.0);
-    float bands = pow(0.5 + 0.5 * sin(dot(pane, vec2(1.6, 1.1)) * 2.4 + room.x * 1.7 + room.y), 5.0);
-    vec3 reflection = mix(uSky * 1.5, uHaze * 2.6, smoothstep(-0.3, 0.7, mirrored.y + 0.3 * ripple.y))
-      + uRim * (0.3 * bands + MOONLIGHT * (1.6 * pow(moon, 80.0) + 0.25 * pow(moon, 6.0)));
+    vec3 reflection = mix(uSky * 1.5, uHaze * 2.6, smoothstep(-0.3, 0.7, mirrored.y))
+      + uRim * MOONLIGHT * (3.0 * pow(moon, 300.0) + 1.2 * pow(moon, 18.0));
     reflection *= mix(0.4, 1.0, occlusion);
 
-    float smudge = smoothstep(0.5, 0.85, fbm(vLocal.xy * vec2(3.0, 1.1) + room * 5.3));
     float edge = min(GLASS_HALF.x - abs(pane.x), GLASS_HALF.y - abs(pane.y));
+    float grimy = pow(hash12(room + 141.0), 2.5);
+    float film = mix(0.1, 0.55, smoothstep(0.8, -1.0, pane.y)) + 0.25 * exp(-edge / 0.1);
+    float runs = smoothstep(0.5, 0.85, valueNoise(vec2(pane.x * 16.0, pane.y * 0.9 + room.y)))
+      * smoothstep(1.1, 0.2, pane.y);
+    float wipe = abs(length(pane - vec2(mix(-0.5, 0.5, hash12(room + 143.0)), -0.2)) - 0.55);
+    float smear = smoothstep(0.4, 0.75, valueNoise(pane * 3.0 + room)) * exp(-wipe / 0.15);
+    float specks = step(0.82, valueNoise(pane * 45.0 + room * 7.0));
+    float dirt = film * mix(0.8, 1.2, valueNoise(pane * 1.2 + room * 3.1))
+      + grimy * (1.4 * film + 0.9 * runs + 0.7 * smear + 0.5 * specks);
     float rim = 1.0 - smoothstep(0.0, 0.012 + 1.5 * fwidth(edge), edge);
     float joint = 1.0 - smoothstep(0.0, 0.004 + fwidth(pane.x), abs(pane.x));
 
-    vec3 transmitted = inside * (1.0 - fresnel) * (1.0 - 0.1 * smudge) * (1.0 - 0.5 * joint);
+    vec3 transmitted = inside * (1.0 - fresnel) * (1.0 - 0.55 * min(dirt, 1.2)) * (1.0 - 0.5 * joint);
     color = transmitted + reflection * fresnel * mix(1.0, 0.4, lit)
-      + (uHaze * 0.1 + glow * 0.06) * smudge
-      + (uRim * 0.5 + glow * 0.6) * rim + uRim * 0.25 * joint;
+      + (uHaze * 0.12 + glow * 0.22) * dirt
+      + (uRim * 0.15 + glow * 0.15) * rim + uRim * 0.1 * joint;
+
+
+    float blur = fwidth(pane.x);
+    if (hash12(room + 149.0) > 0.94) {
+      vec4 papers = newspaper(pane, room, blur);
+      float layers = papers.a;
+      vec3 paper = papers.rgb * (glow * 0.4 * pow(0.45, max(layers - 1.0, 0.0)) + 0.05 * mix(0.4, 1.0, occlusion));
+      color = mix(color, paper + reflection * fresnel * 0.3, min(layers, 1.0));
+    }
   }
 
   float silhouette = step(0.0, normal.x * sign(vWorld.x));
