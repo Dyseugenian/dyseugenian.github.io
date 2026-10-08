@@ -25,9 +25,9 @@ import {
   BAY,
   OCCLUSION_MIN,
   OCCLUSION_SIZE,
-  BLOCK,
   EDGE_WIDTH,
   PIER,
+  PLANT_EVERY,
   TILE_HEIGHT,
   bakeOcclusion,
   edge,
@@ -76,7 +76,7 @@ export class Tower extends Scene {
   constructor(private input: Input) {
     super();
     const parts = tileParts();
-    const windows = parts.filter((part) => part !== PIER && part !== BLOCK);
+    const windows = parts.filter((part) => part.min.x >= PIER.max.x);
     const outerX = (COLUMNS.right + 1) * BAY + PIER.min.x + EDGE_WIDTH;
     const spot = beaconSpot(outerX);
     const uniforms = {
@@ -93,6 +93,7 @@ export class Tower extends Scene {
       uBeaconColor: { value: new Color(palette.beacon).convertLinearToSRGB() },
       uBay: { value: BAY },
       uTileHeight: { value: TILE_HEIGHT },
+      uPlantEvery: { value: PLANT_EVERY },
       uOuterX: { value: outerX },
       uBeaconSpot: { value: spot },
       uSurface: { value: new Texture() },

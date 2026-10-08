@@ -10,6 +10,7 @@ uniform float uClimb;
 uniform float uTilesClimbed;
 uniform float uBay;
 uniform float uTileHeight;
+uniform float uPlantEvery;
 uniform vec2 uResolution;
 uniform vec2 uVanish;
 uniform vec4 uBacklights;
@@ -303,6 +304,7 @@ vec3 windowLight(vec2 room) {
   float faulty = step(0.75, pick) * step(pick, 0.88) * step(0.5, hash12(room + 47.0));
   float bursts = step(0.6, valueNoise(vec2(uTime * 0.7, room.x * 3.1 + room.y)));
   float flicker = step(0.7, valueNoise(vec2(uTime * 14.0, room.x * 13.0 + room.y * 7.0)));
+  on *= step(0.5, mod(room.y, uPlantEvery));
   return tint * on * (1.0 - 0.85 * faulty * bursts * flicker) * mix(0.35, 1.0, hash12(room + 7.0));
 }
 

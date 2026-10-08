@@ -4,6 +4,8 @@ uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
 uniform float uTilesClimbed;
+uniform float uTileHeight;
+uniform float uPlantEvery;
 
 in vec3 position;
 in vec3 normal;
@@ -13,6 +15,7 @@ in vec2 aTile;
 in vec3 aMin;
 in vec3 aMax;
 in float aProtrudes;
+in float aRole;
 
 out vec3 vWorld;
 out vec3 vLocal;
@@ -27,7 +30,10 @@ const float HALF_PROTRUSION = 0.45;
 void main() {
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
   float inset = aProtrudes * HALF_PROTRUSION * mod(floor(abs(tile.x - 0.5)) + tile.y, 2.0);
-  vec3 local = position;
+  float storey = 2.0 * tile.y + mod(abs(tile.x), 2.0) + floor(aMin.y / (0.5 * uTileHeight) + 0.01);
+  float plant = step(mod(storey, uPlantEvery), 0.5);
+  float shown = aRole < 0.5 ? 1.0 : aRole < 1.5 ? 1.0 - plant : plant;
+  vec3 local = position * shown;
   local.z -= inset * step(aMax.z - 1e-3, position.z);
 
   vec4 world = modelMatrix * vec4(local + aOffset, 1.0);

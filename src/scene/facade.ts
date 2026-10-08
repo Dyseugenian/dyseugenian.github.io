@@ -20,6 +20,11 @@ export const TILE_HEIGHT = 2 * STOREY;
 const CONCRETE = 0;
 const GLASS = 1;
 
+const REGULAR = 1;
+const PLANT = 2;
+export const PLANT_EVERY = 8;
+const PLANT_FLOOR = { front: 0.6, louvre: 0.06, louvreSpacing: 0.24 };
+
 const OCCLUSION = {
   width: 20,
   height: 40,
@@ -36,7 +41,13 @@ export const EDGE_WIDTH = 1.75;
 export const OCCLUSION_MIN = new Vector3(-BAY / 2, 0, OCCLUSION.back);
 export const OCCLUSION_SIZE = new Vector3(BAY, TILE_HEIGHT, OCCLUSION.front - OCCLUSION.back);
 
-export type Part = { kind: number; min: Vector3; max: Vector3; protrudes?: boolean };
+export type Part = {
+  kind: number;
+  min: Vector3;
+  max: Vector3;
+  protrudes?: boolean;
+  role?: number;
+};
 
 type Span = [number, number];
 
@@ -49,7 +60,19 @@ function part(kind: number, x: Span, y: Span, z: Span): Part {
 }
 
 export const PIER = part(CONCRETE, [-2.8, -1.4], [0, TILE_HEIGHT], [-3.2, 0]);
-export const BLOCK = { ...part(CONCRETE, [-3.05, -1.15], [0.9, 2.7], [-1, 0.9]), protrudes: true };
+const BLOCK = {
+  ...part(CONCRETE, [-3.05, -1.15], [0.9, 2.7], [-1, 0.9]),
+  protrudes: true,
+  role: REGULAR,
+};
+
+function regular(part: Part): Part {
+  return { ...part, role: REGULAR };
+}
+
+function plant(part: Part): Part {
+  return { ...part, role: PLANT };
+}
 
 export function tileParts(): Part[] {
   const parts = [PIER, BLOCK];
@@ -60,19 +83,36 @@ export function tileParts(): Part[] {
     const glassTop = y + 3.2;
     parts.push(
       part(CONCRETE, [-1.4, 1.4], [y, top], [-3.5, -3.1]),
-      part(GLASS, [-1.05, 1.05], [glassBottom, glassTop], [-3.1, -3.05]),
+      regular(part(GLASS, [-1.05, 1.05], [glassBottom, glassTop], [-3.1, -3.05])),
       part(CONCRETE, [-1.4, -1.05], [sill, top], [-3.1, -2.5]),
       part(CONCRETE, [1.05, 1.4], [sill, top], [-3.1, -2.5]),
       part(CONCRETE, [-1.05, 1.05], [glassTop, top], [-3.1, -2.5]),
       part(CONCRETE, [-1.4, 1.4], [y, sill], [-3.1, -1.8]),
-      part(CONCRETE, [-1.2, 1.2], [sill, glassBottom], [-3.1, -1.3]),
+      regular(part(CONCRETE, [-1.2, 1.2], [sill, glassBottom], [-3.1, -1.3])),
     );
+    const { front, louvre, louvreSpacing } = PLANT_FLOOR;
+    for (const [bottom, height] of [
+      [y, sill],
+      [glassTop, top],
+    ] as const) {
+      parts.push(
+        plant(part(CONCRETE, [-1.4, 1.4], [bottom, height], [-2.5, front])),
+        plant(part(CONCRETE, [-2.8, -1.4], [bottom, height], [-0.5, front])),
+      );
+    }
+    for (let blade = sill + louvreSpacing / 2; blade < glassTop; blade += louvreSpacing) {
+      parts.push(
+        plant(
+          part(CONCRETE, [-1.05, 1.05], [blade - louvre / 2, blade + louvre / 2], [-3.05, -2.55]),
+        ),
+      );
+    }
   }
   return parts;
 }
 
 function partsGeometry(parts: Part[]): BufferGeometry {
-  const boxes = parts.map(({ kind, min, max, protrudes }) => {
+  const boxes = parts.map(({ kind, min, max, protrudes, role }) => {
     const size = max.clone().sub(min);
     const center = max.clone().add(min).multiplyScalar(0.5);
     const box = new BoxGeometry(size.x, size.y, size.z).translate(center.x, center.y, center.z);
@@ -83,6 +123,10 @@ function partsGeometry(parts: Part[]): BufferGeometry {
     box.setAttribute(
       'aProtrudes',
       new Float32BufferAttribute(new Array<number>(count).fill(protrudes ? 1 : 0), 1),
+    );
+    box.setAttribute(
+      'aRole',
+      new Float32BufferAttribute(new Array<number>(count).fill(role ?? 0), 1),
     );
     return box;
   });
@@ -134,8 +178,8 @@ function stack(parts: Part[], column: number): Part[] {
   const stacked: Part[] = [];
   for (let row = -1; row <= 1; row++) {
     const shift = new Vector3(column * BAY, row * TILE_HEIGHT + Math.abs(column) * STOREY, 0);
-    for (const { kind, min, max } of parts) {
-      stacked.push({ kind, min: min.clone().add(shift), max: max.clone().add(shift) });
+    for (const part of parts) {
+      stacked.push({ ...part, min: part.min.clone().add(shift), max: part.max.clone().add(shift) });
     }
   }
   return stacked;
@@ -187,6 +231,7 @@ export function bakeOcclusion(
 ): Data3DTexture {
   const { width, height, depth } = OCCLUSION;
   const probes = probePoints();
+  const solids = around.filter(({ role }) => role !== PLANT);
   const openness = new Uint8Array(width * height * depth);
   const cell = new Vector3();
   const sample = new Vector3();
@@ -197,7 +242,7 @@ export function bakeOcclusion(
           .set((x + 0.5) / width, (y + 0.5) / height, (z + 0.5) / depth)
           .multiply(extent)
           .add(corner);
-        const near = around.filter(
+        const near = solids.filter(
           ({ min, max }) =>
             cell.x > min.x - OCCLUSION.reach &&
             cell.x < max.x + OCCLUSION.reach &&
