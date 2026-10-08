@@ -2,13 +2,19 @@ import {
   BoxGeometry,
   BufferGeometry,
   ClampToEdgeWrapping,
+  CylinderGeometry,
   Data3DTexture,
   Float32BufferAttribute,
   InstancedBufferAttribute,
   InstancedBufferGeometry,
   LinearFilter,
+  PlaneGeometry,
   RedFormat,
   RepeatWrapping,
+  RingGeometry,
+  Shape,
+  ShapeGeometry,
+  Vector2,
   Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -20,12 +26,19 @@ export const TILE_HEIGHT = 2 * STOREY;
 const CONCRETE = 0;
 const GLASS = 1;
 const APPLIANCE = 2;
+const CLOTH = 3;
+const FAN = 4;
+const TRIM = 5;
 
 const REGULAR = 1;
 const PLANT = 2;
 const OCCASIONAL = 3;
+const LAUNDRY = 4;
 export const PLANT_EVERY = 16;
 const PLANT_FLOOR = { front: 0.6, louvre: 0.06, louvreSpacing: 0.24 };
+const CLOTHES_LINE = { height: 1.05, z: -0.8, span: 1.12, slots: 4, drop: 0.95, thickness: 0.012 };
+
+const ROTOR = { radius: 0.34, hub: 0.07, blades: 4, pitch: 0.45, rim: 0.04, depth: 0.08 };
 
 const OCCLUSION = {
   width: 20,
@@ -49,9 +62,12 @@ export type Part = {
   max: Vector3;
   protrudes?: boolean;
   role?: number;
+  shape?: BufferGeometry;
 };
 
 type Span = [number, number];
+
+export type Detail = 'full' | 'reduced' | 'distant';
 
 function part(kind: number, x: Span, y: Span, z: Span): Part {
   return {
@@ -60,6 +76,105 @@ function part(kind: number, x: Span, y: Span, z: Span): Part {
     max: new Vector3(x[1], y[1], z[1]),
   };
 }
+
+function shaped(kind: number, shape: BufferGeometry): Part {
+  shape.computeBoundingBox();
+  const { min, max } = shape.boundingBox!;
+  return { kind, min: min.clone(), max: max.clone(), shape };
+}
+
+function flipped(geometry: BufferGeometry): BufferGeometry {
+  const index = geometry.index!.array;
+  const reversed: number[] = [];
+  for (let i = 0; i < index.length; i += 3) reversed.push(index[i]!, index[i + 2]!, index[i + 1]!);
+  geometry.setIndex(reversed);
+  const normals = geometry.getAttribute('normal');
+  for (let i = 0; i < normals.count; i++) {
+    normals.setXYZ(i, -normals.getX(i), -normals.getY(i), -normals.getZ(i));
+  }
+  return geometry;
+}
+
+function shroud(center: Vector3, segments: number): BufferGeometry {
+  const { radius, rim, depth } = ROTOR;
+  const tube = (size: number) =>
+    new CylinderGeometry(size, size, depth, segments, 1, true)
+      .rotateX(Math.PI / 2)
+      .translate(0, 0, depth / 2);
+  const lip = new RingGeometry(radius, radius + rim, segments).translate(0, 0, depth);
+  return mergeGeometries([tube(radius + rim), flipped(tube(radius)), lip])!.translate(
+    center.x,
+    center.y,
+    center.z,
+  );
+}
+
+function blade(steps: number): BufferGeometry {
+  const { radius, hub } = ROTOR;
+  const edge = (from: number, to: number) =>
+    Array.from({ length: steps + 1 }, (_, step) => {
+      const along = step / steps;
+      const angle = from + (to - from) * along;
+      const reach = hub * 0.9 + (radius - 0.015 - hub * 0.9) * along;
+      return new Vector2(Math.cos(angle) * reach, Math.sin(angle) * reach);
+    });
+  const outline = [...edge(0.25, 0.6), ...edge(-0.3, -0.05).reverse()];
+  const front = new ShapeGeometry(new Shape(outline));
+  return mergeGeometries([front, flipped(front.clone())])!;
+}
+
+function rotor(center: Vector3, segments: number, steps: number): BufferGeometry {
+  const { hub, blades, pitch } = ROTOR;
+  const pieces: BufferGeometry[] = [
+    new CylinderGeometry(hub, hub, 0.05, segments).rotateX(Math.PI / 2).translate(0, 0, 0.035),
+  ];
+  for (let index = 0; index < blades; index++) {
+    pieces.push(
+      blade(steps)
+        .rotateX(pitch)
+        .rotateZ((index * 2 * Math.PI) / blades)
+        .translate(0, 0, 0.03),
+    );
+  }
+  return mergeGeometries(pieces)!.translate(center.x, center.y, center.z);
+}
+
+function airConditioner(y: number, detail: Detail): Part[] {
+  const bottom = y + 0.05;
+  const top = y + 1.0;
+  const front = -1.3;
+  const fan = new Vector3(0.33, (bottom + top) / 2 - 0.02, front);
+  const intake = (bottom + top) / 2 + 0.04;
+  const parts = [
+    part(APPLIANCE, [-0.75, 0.75], [bottom, top], [-2.3, front]),
+    part(APPLIANCE, [0.75, 0.81], [y + 0.15, y + 0.21], [-2.9, -2.0]),
+    part(TRIM, [-0.77, 0.77], [top, top + 0.025], [-2.32, front + 0.03]),
+  ];
+  if (detail !== 'distant') {
+    parts.push(
+      part(TRIM, [-0.65, -0.5], [y, bottom], [-2.2, -1.4]),
+      part(TRIM, [0.5, 0.65], [y, bottom], [-2.2, -1.4]),
+    );
+  }
+  if (detail === 'full') {
+    parts.push(shaped(TRIM, shroud(fan, 24)), shaped(FAN, rotor(fan, 12, 5)));
+    for (let slat = intake - 0.3; slat < intake + 0.31; slat += 0.06) {
+      parts.push(part(TRIM, [-0.68, -0.08], [slat - 0.011, slat + 0.011], [front, front + 0.03]));
+    }
+  } else {
+    parts.push(part(TRIM, [-0.68, -0.08], [intake - 0.311, intake + 0.311], [front, front + 0.03]));
+  }
+  if (detail === 'reduced') {
+    parts.push(shaped(TRIM, shroud(fan, 12)), shaped(FAN, rotor(fan, 6, 2)));
+  }
+  return parts.map(occasional);
+}
+
+const LAUNDRY_SEGMENTS: Record<Detail, { line: number; across: number; down: number }> = {
+  full: { line: 8, across: 8, down: 4 },
+  reduced: { line: 4, across: 4, down: 2 },
+  distant: { line: 4, across: 2, down: 1 },
+};
 
 export const PIER = part(CONCRETE, [-2.8, -1.4], [0, TILE_HEIGHT], [-3.2, 0]);
 const BLOCK = {
@@ -80,7 +195,11 @@ function occasional(part: Part): Part {
   return { ...part, role: OCCASIONAL };
 }
 
-export function tileParts(): Part[] {
+function hung(part: Part): Part {
+  return { ...part, role: LAUNDRY };
+}
+
+export function tileParts(detail: Detail): Part[] {
   const parts = [PIER, BLOCK];
   for (const y of [0, STOREY]) {
     const top = y + STOREY;
@@ -106,12 +225,24 @@ export function tileParts(): Part[] {
         plant(part(CONCRETE, [-2.8, -1.4], [bottom, height], [-0.5, front])),
       );
     }
+    parts.push(...airConditioner(glassBottom, detail));
+    const { height, z, span, slots, drop, thickness } = CLOTHES_LINE;
+    const segments = LAUNDRY_SEGMENTS[detail];
+    const line = y + height;
+    const slot = (2 * span) / slots;
     parts.push(
-      occasional(part(APPLIANCE, [-0.75, 0.75], [glassBottom, glassBottom + 1.0], [-2.3, -1.3])),
-      occasional(
-        part(APPLIANCE, [0.75, 0.81], [glassBottom + 0.15, glassBottom + 0.21], [-2.9, -2.0]),
+      hung(
+        shaped(
+          CLOTH,
+          new BoxGeometry(2.8, thickness, thickness, segments.line, 1, 1).translate(0, line, z),
+        ),
       ),
     );
+    for (let index = 0; index < slots; index++) {
+      const center = -span + (index + 0.5) * slot;
+      const cloth = new PlaneGeometry(slot, drop, segments.across, segments.down);
+      parts.push(hung(shaped(CLOTH, cloth.translate(center, line - drop / 2, z))));
+    }
     for (let blade = sill + louvreSpacing / 2; blade < glassTop; blade += louvreSpacing) {
       parts.push(
         plant(
@@ -124,10 +255,12 @@ export function tileParts(): Part[] {
 }
 
 function partsGeometry(parts: Part[]): BufferGeometry {
-  const boxes = parts.map(({ kind, min, max, protrudes, role }) => {
+  const boxes = parts.map(({ kind, min, max, protrudes, role, shape }) => {
     const size = max.clone().sub(min);
     const center = max.clone().add(min).multiplyScalar(0.5);
-    const box = new BoxGeometry(size.x, size.y, size.z).translate(center.x, center.y, center.z);
+    const box =
+      shape?.clone() ??
+      new BoxGeometry(size.x, size.y, size.z).translate(center.x, center.y, center.z);
     const count = box.getAttribute('position').count;
     box.setAttribute('aKind', new Float32BufferAttribute(new Array<number>(count).fill(kind), 1));
     box.setAttribute('aMin', new Float32BufferAttribute(repeat(min, count), 3));
@@ -243,7 +376,9 @@ export function bakeOcclusion(
 ): Data3DTexture {
   const { width, height, depth } = OCCLUSION;
   const probes = probePoints();
-  const solids = around.filter(({ role }) => role !== PLANT && role !== OCCASIONAL);
+  const solids = around.filter(
+    ({ role }) => role !== PLANT && role !== OCCASIONAL && role !== LAUNDRY,
+  );
   const openness = new Uint8Array(width * height * depth);
   const cell = new Vector3();
   const sample = new Vector3();

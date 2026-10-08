@@ -1,7 +1,7 @@
 precision highp float;
 precision highp sampler3D;
 
-#include "chunks/noise.glsl"
+#include "chunks/noise-texture.glsl"
 #include "chunks/sky.glsl"
 
 uniform vec3 cameraPosition;
@@ -31,8 +31,13 @@ uniform vec3 uBeaconColor;
 uniform vec3 uNewsprint;
 uniform vec3 uNewsprintAged;
 uniform vec3 uAppliance;
+uniform vec3 uLinen;
+uniform vec3 uDenim;
+uniform vec3 uMadder;
 uniform vec3 uBeaconSpot;
 uniform float uBeacon;
+uniform vec3 uSpot;
+uniform vec3 uSpotColor;
 uniform vec3 uLight;
 uniform float uFogDensity;
 uniform sampler3D uOcclusion;
@@ -48,6 +53,7 @@ in float vKind;
 flat in vec2 vTile;
 flat in vec3 vMin;
 flat in vec3 vMax;
+in vec2 vCloth;
 
 out vec4 outColor;
 
@@ -79,9 +85,13 @@ const vec3 BEAMS[5] = vec3[5](
 const vec2 BEAM_AXES[5] = vec2[5](vec2(1.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0), vec2(0.0, 1.0));
 const float WASH = 3.2;
 const float SCATTER = 1.2;
-const int GLOW_STEPS = 12;
+const int GLOW_STEPS = 8;
 const float SWITCH_PERIOD = 30.0;
 const float BEACON_LIGHT = 3.0;
+const vec3 SPOT_AIM = vec3(0.0, 0.99, -0.14);
+const vec2 SPOT_CONE = vec2(0.9, 0.985);
+const float SPOT_LIGHT = 9.0;
+const float SPOT_FALLOFF = 10.0;
 const float CLOUD_SPACING = 60.0;
 const float CLOUD_THICKNESS = 2.5;
 const float CLOUD_DENSITY = 0.35;
@@ -116,14 +126,14 @@ mat3 faceFrame(vec3 normal) {
 
 float drips(vec2 p, float belowTop, float footprint) {
   float cell = floor(p.x / DRIP_SPACING);
-  float present = step(0.5, hash12(vec2(cell, 3.1)));
+  if (hash12(vec2(cell, 3.1)) < 0.5) return 0.0;
   float reach = mix(0.4, 2.2, hash12(vec2(cell, 7.9)));
   float center = (cell + mix(0.2, 0.8, hash12(vec2(cell, 5.3)))) * DRIP_SPACING;
   float meander = (valueNoise(vec2(belowTop * 1.5, cell)) - 0.5) * 0.06;
   float width = mix(0.03, 0.1, hash12(vec2(cell, 9.7)))
     * (1.0 - 0.6 * smoothstep(0.0, reach, belowTop)) + footprint;
   float across = (p.x - center + meander) / width;
-  return present * exp(-across * across) * exp(-belowTop / reach)
+  return exp(-across * across) * exp(-belowTop / reach)
     * mix(0.5, 1.0, valueNoise(vec2(p.x * 20.0, belowTop * 3.0)));
 }
 
@@ -143,11 +153,12 @@ float rusted(vec2 cell) {
 }
 
 float rustRun(vec2 p, vec2 cell) {
+  if (rusted(cell) < 0.5) return 0.0;
   vec2 center = spallCenter(cell);
   float drop = center.y - p.y;
   float wobble = (valueNoise(vec2(p.y * 5.0, cell.x)) - 0.5) * 0.08;
   float width = 0.015 + 0.03 * max(drop, 0.0);
-  return rusted(cell) * step(0.0, drop) * exp(-abs(p.x - center.x + wobble) / width)
+  return step(0.0, drop) * exp(-abs(p.x - center.x + wobble) / width)
     * exp(-drop / mix(0.3, 1.0, hash12(cell + 59.0)));
 }
 
@@ -184,9 +195,12 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   mat2 turn = mat2(0.8, 0.6, -0.6, 0.8);
   vec4 fine = texture(uSurface, turn * (p.yx + 31.0) / (uSurfaceMeters * 0.61));
   vec2 slope = (coarse.xy * 2.0 - 1.0) + 0.6 * (transpose(turn) * (fine.xy * 2.0 - 1.0));
-  float grain = grit(p, footprint);
-  float nudge = 0.25 / GRIT;
-  slope += GRIT_DEPTH * (vec2(grit(p + vec2(nudge, 0.0), footprint), grit(p + vec2(0.0, nudge), footprint)) - grain);
+  float grain = 0.5;
+  if (footprint < 0.6 / GRIT) {
+    grain = grit(p, footprint);
+    float nudge = 0.25 / GRIT;
+    slope += GRIT_DEPTH * (vec2(grit(p + vec2(nudge, 0.0), footprint), grit(p + vec2(0.0, nudge), footprint)) - grain);
+  }
   vec3 detail = normalize(vec3(slope, 1.0));
   float relief = mix(coarse.z, fine.z, 0.4);
   float cavity = coarse.w;
@@ -206,17 +220,25 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
     * (0.4 * drip + 0.6 * exp(-fromLow.y / 0.5)) * upright;
   albedo = mix(albedo, uSalt, 0.7 * salt);
 
-  float crackField = fbm(q * 1.4 + warp * 2.0 + 41.0);
-  float crackWidth = mix(0.002, 0.007, valueNoise(q * 3.0 + 9.0));
   float crackZone = smoothstep(0.5, 0.75, valueNoise(p * 0.35 + 3.0)) * resolved(6.0, footprint);
-  float crack = (1.0 - smoothstep(0.0, crackWidth + fwidth(crackField), abs(crackField - 0.5)))
-    * crackZone * smoothstep(0.2, 0.55, valueNoise(q * 5.0 + 2.0));
-  float damp = exp(-abs(crackField - 0.5) / 0.025) * crackZone;
-  float hairField = fbm(q * 4.5 + 63.0);
-  float hairline = 1.0 - smoothstep(0.0, 0.0015 + fwidth(hairField), abs(hairField - 0.5));
-  hairline *= smoothstep(0.6, 0.85, valueNoise(p * 0.6 + 21.0));
-  hairline *= smoothstep(0.35, 0.7, valueNoise(q * 8.0)) * resolved(20.0, footprint);
-  float crackShade = mix(0.35, 0.65, valueNoise(p * 0.2 + 51.0));
+  float crack = 0.0;
+  float damp = 0.0;
+  float crackShade = 0.0;
+  if (crackZone > 0.0) {
+    float crackField = fbm(q * 1.4 + warp * 2.0 + 41.0);
+    crackShade = mix(0.35, 0.65, valueNoise(p * 0.2 + 51.0));
+    float crackWidth = mix(0.002, 0.007, valueNoise(q * 3.0 + 9.0));
+    crack = (1.0 - smoothstep(0.0, crackWidth + fwidth(crackField), abs(crackField - 0.5)))
+      * crackZone * smoothstep(0.2, 0.55, valueNoise(q * 5.0 + 2.0));
+    damp = exp(-abs(crackField - 0.5) / 0.025) * crackZone;
+  }
+  float hairZone = smoothstep(0.6, 0.85, valueNoise(p * 0.6 + 21.0)) * resolved(20.0, footprint);
+  float hairline = 0.0;
+  if (hairZone > 0.0) {
+    float hairField = fbm(q * 4.5 + 63.0);
+    hairline = (1.0 - smoothstep(0.0, 0.0015 + fwidth(hairField), abs(hairField - 0.5)))
+      * hairZone * smoothstep(0.35, 0.7, valueNoise(q * 8.0));
+  }
   albedo *= (1.0 - crackShade * crack - 0.15 * hairline) * (1.0 - 0.25 * damp);
   albedo = mix(albedo, uSalt, 0.3 * crack * smoothstep(0.55, 0.8, mottle));
   height -= 1.2 * crack + 0.3 * hairline;
@@ -224,32 +246,37 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   vec2 spallCell = floor(p / SPALL_SPACING);
   vec2 center = spallCenter(spallCell);
   float kind = hash12(spallCell + 47.0);
-  float size = mix(0.08, 0.24, hash12(spallCell + 43.0));
-  float outline = length((p - center) * vec2(1.0, 1.4)) - size * mix(0.6, 1.3, valueNoise(p * 9.0 + spallCell));
-  float spall = (1.0 - smoothstep(-footprint, footprint + 0.003, outline)) * step(0.62, kind);
-  float repair = (1.0 - smoothstep(-footprint, footprint + 0.01, outline - 0.08))
-    * step(0.45, kind) * (1.0 - step(0.62, kind));
-  albedo = mix(albedo, mix(uConcrete, uSalt, 0.6) * mix(0.85, 1.05, mottle), 0.75 * repair);
-  height += 0.4 * repair;
+  float spall = 0.0;
+  if (kind > 0.45) {
+    float size = mix(0.08, 0.24, hash12(spallCell + 43.0));
+    float outline = length((p - center) * vec2(1.0, 1.4)) - size * mix(0.6, 1.3, valueNoise(p * 9.0 + spallCell));
+    spall = (1.0 - smoothstep(-footprint, footprint + 0.003, outline)) * step(0.62, kind);
+    float repair = (1.0 - smoothstep(-footprint, footprint + 0.01, outline - 0.08)) * (1.0 - step(0.62, kind));
+    albedo = mix(albedo, mix(uConcrete, uSalt, 0.6) * mix(0.85, 1.05, mottle), 0.75 * repair);
+    height += 0.4 * repair;
 
-  float rubble = valueNoise(p * 45.0);
-  albedo = mix(albedo, uConcrete * mix(0.3, 0.75, rubble) * mix(0.7, 1.0, weathering), spall);
-  albedo *= 1.0 + 0.35 * exp(-abs(outline) / max(0.012, footprint)) * step(0.62, kind);
-  height -= spall * (2.5 + rubble);
-  float bar = spall * rusted(spallCell)
-    * (1.0 - smoothstep(0.008, 0.012 + footprint, abs(p.y - center.y)));
-  albedo = mix(albedo, uRust, 0.85 * bar);
-  height += 1.5 * bar;
-  float rust = upright * (1.0 - spall)
-    * max(rustRun(p, spallCell), rustRun(p, spallCell + vec2(0.0, 1.0)));
+    float rubble = spall > 0.0 ? valueNoise(p * 45.0) : 0.0;
+    albedo = mix(albedo, uConcrete * mix(0.3, 0.75, rubble) * mix(0.7, 1.0, weathering), spall);
+    albedo *= 1.0 + 0.35 * exp(-abs(outline) / max(0.012, footprint)) * step(0.62, kind);
+    height -= spall * (2.5 + rubble);
+    float bar = spall * rusted(spallCell)
+      * (1.0 - smoothstep(0.008, 0.012 + footprint, abs(p.y - center.y)));
+    albedo = mix(albedo, uRust, 0.85 * bar);
+    height += 1.5 * bar;
+  }
+  float rust = 0.0;
+  if (upright * (1.0 - spall) > 0.0) rust = (1.0 - spall) * max(rustRun(p, spallCell), rustRun(p, spallCell + vec2(0.0, 1.0)));
   albedo = mix(albedo, uRust * 0.8, 0.5 * rust);
 
   vec2 pitCell = floor(p / PIT_SPACING);
   vec2 pitCenter = (pitCell + 0.25 + 0.5 * vec2(hash12(pitCell + 61.0), hash12(pitCell + 67.0))) * PIT_SPACING;
-  float pitDensity = 0.3 * smoothstep(0.4, 0.8, valueNoise(p * 1.5 + 71.0));
-  float pitRadius = mix(0.006, 0.02, hash12(pitCell + 73.0)) * step(1.0 - pitDensity, hash12(pitCell + 79.0));
-  float pit = (1.0 - smoothstep(pitRadius * 0.5, pitRadius + footprint, length(p - pitCenter)))
-    * resolved(40.0, footprint);
+  float pit = 0.0;
+  if (footprint < 0.6 / 40.0) {
+    float pitDensity = 0.3 * smoothstep(0.4, 0.8, valueNoise(p * 1.5 + 71.0));
+    float pitRadius = mix(0.006, 0.02, hash12(pitCell + 73.0)) * step(1.0 - pitDensity, hash12(pitCell + 79.0));
+    pit = (1.0 - smoothstep(pitRadius * 0.5, pitRadius + footprint, length(p - pitCenter)))
+      * resolved(40.0, footprint);
+  }
   albedo *= 1.0 - 0.55 * pit;
   height -= 0.8 * pit;
 
@@ -258,61 +285,75 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   float plugged = step(0.55, hash12(hole + seed));
   float plug = (1.0 - smoothstep(TIE_HOLE * 1.4, TIE_HOLE * 1.7, length(face - hole))) * plugged;
   vec2 above = vec2(hole.x, (floor(face.y / PANEL.y - 0.25) + 1.25) * PANEL.y);
-  float drop = above.y - face.y;
-  float leakWidth = 0.01 + drop * 0.02;
-  float wobble = (valueNoise(vec2(face.y * 20.0, above.x * 3.0)) - 0.5) * 0.012;
-  float leak = step(0.6, hash12(above + seed + 1.0))
-    * (1.0 - smoothstep(leakWidth * 0.5, leakWidth, abs(face.x - above.x + wobble)))
-    * exp(-drop / mix(0.1, 0.55, hash12(above + seed + 3.0)));
   float holes = resolved(30.0, footprint);
-  albedo *= 1.0 - 0.35 * leak * upright * holes;
+  if (upright * holes > 0.0 && hash12(above + seed + 1.0) >= 0.6) {
+    float drop = above.y - face.y;
+    float leakWidth = 0.01 + drop * 0.02;
+    float wobble = (valueNoise(vec2(face.y * 20.0, above.x * 3.0)) - 0.5) * 0.012;
+    float leak = (1.0 - smoothstep(leakWidth * 0.5, leakWidth, abs(face.x - above.x + wobble)))
+      * exp(-drop / mix(0.1, 0.55, hash12(above + seed + 3.0)));
+    albedo *= 1.0 - 0.35 * leak * holes;
+  }
   albedo = mix(albedo, uConcrete * 1.1, 0.5 * plug * holes);
   albedo *= 1.0 - 0.6 * tieHole * (1.0 - plugged) * holes;
   height -= tieHole;
 
-  float jointWidth = mix(0.006, 0.02, valueNoise(face * 2.5 + seed + 29.0));
-  float rough = (valueNoise(face * 60.0 + seed) - 0.5) * 0.008 * resolved(60.0, footprint);
-  float joint = 1.0 - smoothstep(jointWidth - footprint, jointWidth + footprint, fromJoint + rough);
-  float wear = mix(0.015, 0.05, hash12(block + seed + 2.0));
-  float bevel = (1.0 - smoothstep(jointWidth, jointWidth + wear, fromJoint + rough)) * (1.0 - joint);
-  vec3 mortar = mix(uGrime, uConcrete * 0.6, valueNoise(face * 30.0 + 7.0));
+  float joint = 0.0;
+  float bevel = 0.0;
+  if (fromJoint < 0.08 + footprint) {
+    float jointWidth = mix(0.006, 0.02, valueNoise(face * 2.5 + seed + 29.0));
+    float rough = footprint < 0.01 ? (valueNoise(face * 60.0 + seed) - 0.5) * 0.008 * resolved(60.0, footprint) : 0.0;
+    joint = 1.0 - smoothstep(jointWidth - footprint, jointWidth + footprint, fromJoint + rough);
+    float wear = mix(0.015, 0.05, hash12(block + seed + 2.0));
+    bevel = (1.0 - smoothstep(jointWidth, jointWidth + wear, fromJoint + rough)) * (1.0 - joint);
+    vec3 mortar = mix(uGrime, uConcrete * 0.6, valueNoise(face * 30.0 + 7.0));
+    albedo = mix(albedo, mortar, 0.8 * joint);
+  }
   float lift = line(vLocal.y, uTileHeight, 0.012) * upright;
-  albedo = mix(albedo, mortar, 0.8 * joint);
   albedo *= 1.0 - 0.15 * bevel - 0.35 * lift;
   height -= 1.4 * joint + 0.6 * bevel + lift;
 
-  float along = face.x + face.y;
-  float chipSize = 0.14 * smoothstep(0.4, 0.85, valueNoise(vec2(along * 5.0, seed.x + 2.0)));
-  float ragged = valueNoise(p * 35.0) * 0.03;
-  float chip = 1.0 - smoothstep(chipSize * 0.6, chipSize + 1e-3, edge + ragged);
-  vec3 aggregate = uConcrete * mix(0.45, 0.95, valueNoise(p * 70.0));
-  albedo = mix(albedo, aggregate, 0.85 * chip);
+  float chip = 0.0;
+  if (edge < 0.15) {
+    float along = face.x + face.y;
+    float chipSize = 0.14 * smoothstep(0.4, 0.85, valueNoise(vec2(along * 5.0, seed.x + 2.0)));
+    float ragged = valueNoise(p * 35.0) * 0.03;
+    chip = 1.0 - smoothstep(chipSize * 0.6, chipSize + 1e-3, edge + ragged);
+  }
+  if (chip > 0.0) albedo = mix(albedo, uConcrete * mix(0.45, 0.95, valueNoise(p * 70.0)), 0.85 * chip);
   float arris = (1.0 - smoothstep(0.0, 0.025 + footprint, edge)) * (1.0 - chip);
   albedo *= 1.0 + 0.15 * arris;
   height -= 1.5 * chip;
 
-  vec2 scuffCell = floor(p * 0.9);
-  float angle = hash12(scuffCell + 5.0) * 3.14159;
-  vec2 scratch = mat2(cos(angle), -sin(angle), sin(angle), cos(angle)) * p;
-  float scuff = smoothstep(0.7, 0.9, valueNoise(p * 1.3 + 17.0))
-    * smoothstep(0.55, 0.9, valueNoise(scratch * vec2(2.0, 60.0))) * resolved(60.0, footprint);
-  albedo *= 1.0 + (hash12(scuffCell + 8.0) > 0.3 ? 0.2 : -0.25) * scuff;
+  if (footprint < 0.01) {
+    vec2 scuffCell = floor(p * 0.9);
+    float angle = hash12(scuffCell + 5.0) * 3.14159;
+    vec2 scratch = mat2(cos(angle), -sin(angle), sin(angle), cos(angle)) * p;
+    float scuff = smoothstep(0.7, 0.9, valueNoise(p * 1.3 + 17.0))
+      * smoothstep(0.55, 0.9, valueNoise(scratch * vec2(2.0, 60.0))) * resolved(60.0, footprint);
+    albedo *= 1.0 + (hash12(scuffCell + 8.0) > 0.3 ? 0.2 : -0.25) * scuff;
+  }
 
   return Concrete(albedo, height, detail, vec3(0.0));
 }
 
-vec3 windowLight(vec2 room) {
+vec3 windowLight(vec2 room, float x) {
+  if (abs(x) + 1.05 > uOuterX || mod(room.y, uPlantEvery) < 0.5) return vec3(0.0);
   float cluster = valueNoise(room * vec2(0.9, 0.2) + 5.0);
   float chance = mix(0.1, 0.6, smoothstep(0.3, 0.75, cluster));
-  float pick = hash12(room + 19.0);
-  vec3 tint = pick < 0.5 ? uLamp : pick < 0.75 ? uLampSoft : pick < 0.88 ? uLampCool : uLampCold;
   float era = floor(uTime / SWITCH_PERIOD + hash12(room + 43.0));
   float on = abs(step(hash12(room + 41.0), chance) - step(0.93, hash12(room + era * 1.37)));
+  if (on < 0.5) return vec3(0.0);
+  float pick = hash12(room + 19.0);
+  vec3 tint = pick < 0.5 ? uLamp : pick < 0.75 ? uLampSoft : pick < 0.88 ? uLampCool : uLampCold;
   float faulty = step(0.75, pick) * step(pick, 0.88) * step(0.5, hash12(room + 47.0));
-  float bursts = step(0.6, valueNoise(vec2(uTime * 0.7, room.x * 3.1 + room.y)));
-  float flicker = step(0.7, valueNoise(vec2(uTime * 14.0, room.x * 13.0 + room.y * 7.0)));
-  on *= step(0.5, mod(room.y, uPlantEvery));
-  return tint * on * (1.0 - 0.85 * faulty * bursts * flicker) * mix(0.35, 1.0, hash12(room + 7.0));
+  float dim = 1.0;
+  if (faulty > 0.5) {
+    float bursts = step(0.6, valueNoise(vec2(uTime * 0.7, room.x * 3.1 + room.y)));
+    float flicker = step(0.7, valueNoise(vec2(uTime * 14.0, room.x * 13.0 + room.y * 7.0)));
+    dim = 1.0 - 0.85 * bursts * flicker;
+  }
+  return tint * dim * mix(0.35, 1.0, hash12(room + 7.0));
 }
 
 float clouds(vec3 from, vec3 to) {
@@ -321,8 +362,9 @@ float clouds(vec3 from, vec3 to) {
   for (int i = 0; i < 4; i++) {
     float center = (floor(from.y / CLOUD_SPACING) + float(i)) * CLOUD_SPACING;
     vec3 crossing = from + (to - from) * clamp((center - from.y) / rise, 0.0, 1.0);
-    float puffs = fbm(vec3(crossing.xz * vec2(0.06, 0.1) + vec2(uTime * 0.05, center), uTime * 0.03));
     float across = atan((to.y - center) / CLOUD_THICKNESS) - atan((from.y - center) / CLOUD_THICKNESS);
+    if (across < 0.02) continue;
+    float puffs = fbm(vec3(crossing.xz * vec2(0.06, 0.1) + vec2(uTime * 0.05, center), uTime * 0.03));
     depth += smoothstep(0.35, 0.7, puffs) * CLOUD_THICKNESS * across;
   }
   return 1.0 - exp(-CLOUD_DENSITY * depth * length(to - from) / rise);
@@ -332,7 +374,7 @@ float lampDepth(vec2 room) {
   return hash12(room + 5.0);
 }
 
-vec3 fromWindow(vec3 point, vec2 tile, vec3 origin, float below, out vec3 light, out vec2 room) {
+vec3 fromWindow(vec3 point, vec2 tile, float below, out vec2 room) {
   float storey = 0.5 * uTileHeight;
   float column = floor((point.x + 0.5 * uBay) / uBay);
   float columnTile = tile.x + column;
@@ -341,7 +383,6 @@ vec3 fromWindow(vec3 point, vec2 tile, vec3 origin, float below, out vec3 light,
   float row = floor(point.y / storey - shift) - below;
   vec3 window = WINDOW + vec3(column * uBay, (row + shift) * storey, 0.0);
   room = vec2(columnTile, mod(2.0 * tile.y + row + parity, 8192.0));
-  light = windowLight(room) * step(abs(origin.x + window.x) + 1.05, uOuterX);
   return point - window;
 }
 
@@ -530,66 +571,147 @@ Concrete ventGrille(Concrete surface, vec2 at, vec2 seed) {
 Concrete airConditioner(Concrete surface, vec3 normal) {
   vec3 inUnit = vLocal - 0.5 * (vMin + vMax);
   vec3 halfSize = 0.5 * (vMax - vMin);
+  float storey = floor(vMin.y / (0.5 * uTileHeight));
+  float seed = hash12(vec2(vTile.x, mod(vTile.y + uTilesClimbed, 4096.0)) + storey * 3.7);
   surface.detail = vec3(0.0, 0.0, 1.0);
   surface.height = 0.0;
-  if (halfSize.x < 0.3) {
+  if (abs(vKind - 4.0) < 0.5) {
+    float hub = 1.0 - smoothstep(0.07, 0.075, length(inUnit.xy));
+    surface.albedo = mix(uAppliance * mix(0.35, 0.55, seed), uGrime * 2.0, 0.3) * (1.0 + 0.6 * hub);
+    return surface;
+  }
+  if (vKind < 2.5 && halfSize.x < 0.3) {
     surface.albedo = uGrime * mix(1.2, 2.0, valueNoise(inUnit.zy * 40.0));
     return surface;
   }
-  float seed = hash12(vec2(vTile.x, mod(vTile.y + uTilesClimbed, 4096.0)) + vMin.y * 3.7);
   vec3 facing = abs(normal);
   vec2 onFace = facing.z > 0.5 ? inUnit.xy : facing.x > 0.5 ? inUnit.zy : inUnit.xz;
   vec2 faceHalf = facing.z > 0.5 ? halfSize.xy : facing.x > 0.5 ? halfSize.zy : halfSize.xz;
-  float front = step(0.5, normal.z);
+  float rise = vLocal.y - storey * 0.5 * uTileHeight - 1.15;
 
   vec3 paint = mix(uAppliance, uNewsprintAged * 0.85, 0.35 * seed) * mix(0.6, 0.9, valueNoise(onFace * 6.0 + seed * 9.0));
-  paint *= mix(0.55, 1.0, smoothstep(-halfSize.y, halfSize.y * 0.4, inUnit.y));
+  paint *= mix(0.55, 1.0, smoothstep(0.0, 0.7, rise));
   paint = mix(paint, uGrime * 1.5, step(0.5, normal.y) * 0.6 * smoothstep(0.3, 0.7, valueNoise(onFace * 12.0 + seed)));
-  float runs = smoothstep(0.55, 0.85, valueNoise(vec2(onFace.x * 30.0, onFace.y * 1.5 + seed * 20.0)))
-    * smoothstep(halfSize.y, -halfSize.y * 0.5, inUnit.y) * (1.0 - step(0.5, normal.y));
+  float runs = smoothstep(0.55, 0.85, valueNoise(vec2(vLocal.x * 30.0, rise * 1.5 + seed * 20.0)))
+    * smoothstep(1.0, 0.25, rise) * (1.0 - step(0.5, normal.y));
   paint *= 1.0 - 0.35 * runs;
   vec2 fromEdge = faceHalf - abs(onFace);
   float rim = min(fromEdge.x, fromEdge.y);
   float rust = (1.0 - smoothstep(0.0, 0.05, rim)) * smoothstep(0.4, 0.75, valueNoise(onFace * 25.0 + seed * 5.0));
   paint = mix(paint, uRust * 0.75, 0.7 * rust);
-  surface.height += 0.6 * (1.0 - smoothstep(0.0, 0.015, rim)) - 0.8 * (1.0 - smoothstep(0.012, 0.018, abs(rim - 0.03)));
+  surface.albedo = paint;
+  if (vKind > 4.5) {
+    if (halfSize.y > 0.2) surface.albedo = mix(uGrime * 0.5, paint, line(inUnit.y + 0.3, 0.06, 0.011) * step(0.5, normal.z));
+    return surface;
+  }
 
+  float front = step(0.5, normal.z);
   vec2 fanCenter = vec2(halfSize.x - FAN_RADIUS - 0.08, -0.02);
-  vec2 toFan = inUnit.xy - fanCenter;
-  float radius = length(toFan);
-  float angle = atan(toFan.y, toFan.x);
-  float speed = mix(3.0, 8.0, fract(seed * 13.7)) * step(0.15, seed);
-  float sweep = 0.5 + 0.5 * cos(5.0 * (angle + radius * 3.0 - uTime * speed));
-  float blades = mix(smoothstep(0.3, 0.6, sweep), 0.45 + 0.1 * sweep, smoothstep(3.0, 8.0, speed));
-  float hub = 1.0 - smoothstep(0.065, 0.07, radius);
-  float bladeArea = blades * smoothstep(0.07, 0.1, radius);
-  vec3 cavity = mix(uGrime * 0.3, paint * 0.55, bladeArea) + paint * 0.6 * hub;
-  float opening = front * (1.0 - smoothstep(FAN_RADIUS - 0.004, FAN_RADIUS, radius));
-  float bezel = front * (1.0 - smoothstep(FAN_RADIUS + 0.02, FAN_RADIUS + 0.026, radius)) * (1.0 - opening);
-  paint = mix(paint, cavity, opening);
-  surface.height += bezel * 0.8 - opening * (3.0 - 1.8 * max(bladeArea, hub));
+  float radius = length(inUnit.xy - fanCenter);
+  float housing = front * (1.0 - smoothstep(FAN_RADIUS - 0.005, FAN_RADIUS, radius));
+  float motor = 1.0 - smoothstep(0.1, 0.105, radius);
+  paint = mix(paint, mix(uGrime * 0.4, paint * 0.35, motor), housing);
 
   float intakeRight = fanCenter.x - FAN_RADIUS - 0.07;
   vec2 intakeCenter = vec2(0.5 * (intakeRight - halfSize.x + 0.07), 0.04);
   vec2 intakeHalf = vec2(0.5 * (intakeRight + halfSize.x - 0.07), halfSize.y - 0.14);
   vec2 inIntake = abs(inUnit.xy - intakeCenter) - intakeHalf;
-  float intake = front * (1.0 - step(0.0, max(inIntake.x, inIntake.y)));
-  float slots = intake * smoothstep(0.2, 0.35, abs(fract(inUnit.y / 0.032) - 0.5));
-  paint *= 1.0 - 0.8 * slots;
-  surface.height -= 2.0 * slots;
+  float intake = front * (1.0 - smoothstep(-0.004, 0.0, max(inIntake.x, inIntake.y)));
+  paint = mix(paint, uGrime * 0.5, intake);
   vec2 badge = abs(inUnit.xy - vec2(intakeCenter.x, -halfSize.y + 0.06)) - vec2(0.06, 0.014);
   float label = front * (1.0 - step(0.0, max(badge.x, badge.y)));
   paint = mix(paint, uSalt * 0.9, 0.7 * label);
-  surface.height += 0.5 * label;
-
-  float sideVents = step(0.5, facing.x) * smoothstep(0.2, 0.4, abs(fract(inUnit.z / 0.025) - 0.5))
-    * step(abs(inUnit.z), halfSize.z - 0.08) * step(abs(inUnit.y), halfSize.y - 0.1);
-  paint *= 1.0 - 0.75 * sideVents;
-  surface.height -= 1.5 * sideVents;
 
   float led = front * step(0.55, fract(seed * 31.0)) * (1.0 - smoothstep(0.006, 0.01, length(inUnit.xy - vec2(halfSize.x - 0.05, -halfSize.y + 0.05))));
   surface.emission = uBeaconColor * led * (0.6 + 0.4 * sin(uTime * 1.3 + seed * 6.0));
   surface.albedo = paint;
+  return surface;
+}
+
+float seam(float distance, float width) {
+  return groove(abs(distance), fwidth(distance), width);
+}
+
+Concrete laundry(Concrete surface) {
+  vec3 halfSize = 0.5 * (vMax - vMin);
+  surface.detail = vec3(0.0, 0.0, 1.0);
+  surface.height = 0.0;
+  if (halfSize.y < 0.02) {
+    surface.albedo = uSalt * mix(0.4, 0.6, valueNoise(vLocal.xx * 30.0));
+    return surface;
+  }
+  float seed = hash12(vec2(vTile.x, mod(vTile.y + uTilesClimbed, 4096.0)) + vMin.y * 3.7 + vMin.x * 5.3);
+  float u = vCloth.x;
+  float au = abs(u);
+  float drop = vCloth.y;
+  float size = fract(seed * 7.31);
+  int garment = int(seed * 6.0);
+  if (garment == 0) discard;
+  float shape = 1.0;
+  float pegs = 0.09;
+  float stitches = 0.0;
+  float trim = 0.0;
+  float worn = 0.0;
+  if (garment == 1) {
+    float width = mix(0.15, 0.23, size);
+    float hem = mix(0.4, 0.6, fract(seed * 11.7));
+    shape = max(au - width, drop - hem);
+    trim = step(abs(drop - hem + 0.09), 0.025) + step(abs(drop - hem + 0.15), 0.01);
+    stitches = seam(drop - 0.03, 0.004) + seam(drop - hem + 0.03, 0.004);
+    pegs = width - 0.03;
+  } else if (garment == 2) {
+    float body = max(au - 0.17, drop - 0.58);
+    float sleeve = max(au - min(0.17 + 0.6 * (drop - 0.36), 0.26), max(0.36 - drop, drop - 0.56));
+    float neck = length(vec2(u, drop - 0.6)) - 0.065;
+    shape = max(min(body, sleeve), -neck);
+    stitches = seam(neck - 0.018, 0.004) + seam(au - 0.17, 0.004) * step(0.36, drop) + seam(drop - 0.03, 0.004);
+    vec2 print = abs(vec2(u, drop - 0.3)) - vec2(0.07, 0.05);
+    trim = step(0.45, fract(seed * 41.0)) * (1.0 - step(0.0, max(print.x, print.y)));
+    worn = 1.0 - smoothstep(0.0, 0.02, neck);
+    pegs = 0.14;
+  } else if (garment == 3) {
+    float hem = mix(0.7, 0.85, size);
+    shape = max(au - 0.15 + 0.02 * drop / hem, drop - hem);
+    float crotch = min(0.012 + 0.03 * (drop - 0.3) - au, drop - 0.3);
+    shape = max(shape, crotch);
+    vec2 pocket = abs(vec2(au - 0.08, drop - 0.14)) - vec2(0.04, 0.05);
+    stitches = seam(drop - 0.05, 0.004) + seam(au - 0.13, 0.003) * step(0.05, drop)
+      + seam(max(pocket.x, pocket.y), 0.003) + seam(crotch + 0.012, 0.003) + seam(drop - hem + 0.025, 0.003);
+    trim = 1.0 - smoothstep(0.045, 0.05, drop);
+    worn = exp(-pow((drop - 0.5) / 0.08, 2.0)) * (1.0 - smoothstep(0.04, 0.1, abs(au - 0.075)));
+    pegs = 0.12;
+  } else if (garment == 4) {
+    float leg = max(abs(au - 0.09) - 0.035, drop - 0.24);
+    float foot = max(abs(drop - 0.22) - 0.035, abs(au - 0.13) - 0.05);
+    shape = min(leg, foot);
+    trim = (1.0 - smoothstep(0.05, 0.055, drop)) + step(0.17, au) + step(0.23, drop) * step(au, 0.1);
+    stitches = seam(drop - 0.055, 0.003);
+  } else if (garment == 5) {
+    float width = mix(0.22, 0.26, size);
+    float hem = mix(0.75, 0.92, fract(seed * 13.3));
+    shape = max(au - width, drop - hem);
+    trim = 1.0 - step(0.06, drop);
+    stitches = 0.6 * (seam(u, 0.003) + seam(drop - hem * 0.5, 0.003)) + seam(drop - hem + 0.02, 0.003);
+    pegs = width - 0.03;
+  }
+  float droop = 0.025 * max(1.0 - pow(au / pegs, 2.0), 0.0) + 0.3 * max(au - pegs - 0.02, 0.0);
+  if (garment != 4) shape = max(shape, droop - drop);
+  float peg = max(abs(au - pegs) - 0.008, drop + 0.01 - 0.05);
+  if (min(shape, peg) > 0.0) discard;
+
+  float tone = fract(seed * 23.0);
+  vec3 cloth = tone < 0.3 ? uLinen : tone < 0.5 ? uDenim : tone < 0.65 ? uMadder
+    : tone < 0.82 ? mix(uLinen, uDenim, 0.5) : mix(uLinen, uMadder, 0.45);
+  if (garment == 3) cloth = mix(uDenim, uGrime * 3.0, step(0.7, tone));
+  if (garment == 5) cloth = mix(uLinen, cloth, 0.2);
+  vec3 accent = tone < 0.5 ? uMadder : uLinen;
+  cloth = mix(cloth, garment == 3 || garment == 5 ? cloth * 0.75 : accent, 0.6 * min(trim, 1.0));
+  cloth = mix(cloth, uLinen, 0.25 * worn);
+  cloth *= 1.0 - 0.3 * min(stitches, 1.0);
+  cloth *= 1.0 - 0.25 * (1.0 - smoothstep(0.004, 0.016, -shape));
+  cloth *= mix(0.75, 1.05, valueNoise(vec2(u * 12.0, drop * 2.0 + seed * 9.0)));
+  cloth *= mix(0.75, 1.0, smoothstep(0.0, 0.1, drop - droop));
+  surface.albedo = mix(cloth, mix(uMadder, uDenim, step(0.5, fract(seed * 53.0))) * 1.2, step(peg, 0.0));
   return surface;
 }
 
@@ -653,12 +775,13 @@ void main() {
 
   vec3 origin = vWorld - vLocal;
   mat3 frame = faceFrame(normal);
-  Concrete surface = concrete(frame, seed, weathering);
-  if (vKind > 1.5) surface = airConditioner(surface, normal);
+  Concrete surface = Concrete(uConcrete, 0.0, vec3(0.0, 0.0, 1.0), vec3(0.0));
+  if (vKind < 0.5) surface = concrete(frame, seed, weathering);
+  if (abs(vKind - 3.0) < 0.5) surface = laundry(surface);
+  else if (vKind > 1.5) surface = airConditioner(surface, normal);
   if (vKind < 0.5 && normal.z > 0.5 && abs(vMax.z - SPANDREL_Z) < 0.01) {
-    vec3 unlit;
     vec2 bay;
-    vec3 q = fromWindow(vLocal, tile, origin, 0.0, unlit, bay);
+    vec3 q = fromWindow(vLocal, tile, 0.0, bay);
     vec2 at = vec2(q.x - mix(-0.8, 0.8, hash12(bay + 227.0)), vLocal.y - 0.5 * (vMin.y + vMax.y));
     if (hash12(bay + 229.0) > 0.55) surface = ventGrille(surface, at, bay);
   }
@@ -673,20 +796,28 @@ void main() {
   float beaconReach = length(toBeacon);
   light += uBeaconColor * uBeacon * BEACON_LIGHT * max(dot(shading, toBeacon / beaconReach), 0.0)
     / (1.0 + 3.0 * beaconReach * beaconReach) * mix(0.4, 1.0, occlusion);
+  vec3 toSpot = uSpot - vWorld;
+  float spotReach = length(toSpot);
+  float cone = smoothstep(SPOT_CONE.x, SPOT_CONE.y, dot(-toSpot / spotReach, normalize(SPOT_AIM)));
+  light += uSpotColor * SPOT_LIGHT * cone * max(dot(shading, toSpot / spotReach), 0.0)
+    / (1.0 + pow(spotReach / SPOT_FALLOFF, 4.0)) * mix(0.3, 1.0, occlusion);
 
   float distance = length(vWorld - cameraPosition);
   float depth = 1.0 - smoothstep(14.0, 40.0, distance);
-  if (abs(vKind - 1.0) > 0.5) {
+  if (abs(vKind - 1.0) > 0.5 && depth > 0.0) {
     for (int below = 0; below < 2; below++) {
-      vec3 glow;
       vec2 room;
-      vec3 q = fromWindow(vLocal + normal * 0.02, tile, origin, float(below), glow, room);
+      vec3 point = vLocal + normal * 0.02;
+      vec3 q = fromWindow(point, tile, float(below), room);
       float reach = length(q);
-      float facing = max(dot(shading, -q / reach), 0.0);
+      float facing = max(dot(shading, -q / reach), 0.0) + step(abs(vKind - 3.0), 0.5) * 0.35 * max(dot(shading, q / reach), 0.0);
       float ahead = smoothstep(-0.1, 0.5, q.z / reach);
       float falloff = (1.0 - smoothstep(0.5 * WINDOW_REACH, WINDOW_REACH, reach)) / (0.5 + reach * reach);
-      light += glow * mix(1.0, 0.35, lampDepth(room)) * WASH * depth * facing * ahead * falloff
-        * mix(0.4, 1.0, occlusion);
+      float wash = facing * ahead * falloff;
+      if (wash > 0.0) {
+        light += windowLight(room, origin.x + point.x - q.x) * mix(1.0, 0.35, lampDepth(room)) * WASH * depth * wash
+          * mix(0.4, 1.0, occlusion);
+      }
     }
   }
 
@@ -694,9 +825,9 @@ void main() {
   vec3 color = surface.albedo * light + surface.emission;
   float lit = 0.0;
   if (abs(vKind - 1.0) < 0.5) {
-    vec3 glow;
     vec2 room;
-    vec3 q = fromWindow(vLocal, tile, origin, 0.0, glow, room);
+    vec3 q = fromWindow(vLocal, tile, 0.0, room);
+    vec3 glow = windowLight(room, origin.x + vLocal.x - q.x);
     lit = step(1e-3, glow.r + glow.g + glow.b);
     vec3 window = vLocal - q;
     vec2 pane = vLocal.xy - window.xy;
@@ -770,17 +901,27 @@ void main() {
   float near = clamp((eye.z - 1.2) / (eye.z - vLocal.z), 0.0, 1.0);
   float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
   vec3 scatter = vec3(0.0);
-  for (int i = 0; i < GLOW_STEPS; i++) {
-    vec3 point = eye + ray * mix(near, 1.0, (float(i) + jitter) / float(GLOW_STEPS));
-    vec3 glow;
-    vec2 room;
-    vec3 q = fromWindow(point, tile, origin, 0.0, glow, room);
-    vec3 drift = point + origin + vec3(0.0, uClimb - uTime * 0.2, 0.0);
-    float dust = valueNoise(drift * vec3(2.5, 1.0, 2.5)) * mix(0.6, 1.4, valueNoise(drift * 9.0));
-    scatter += glow * mix(1.0, 0.35, lampDepth(room)) * recessGlow(q) * mix(0.25, 1.6, dust);
+  if (depth > 0.0) {
+    vec2 litRoom = vec2(-1.0);
+    vec3 glow = vec3(0.0);
+    for (int i = 0; i < GLOW_STEPS; i++) {
+      vec3 point = eye + ray * mix(near, 1.0, (float(i) + jitter) / float(GLOW_STEPS));
+      vec2 room;
+      vec3 q = fromWindow(point, tile, 0.0, room);
+      float shape = recessGlow(q);
+      if (shape < 1e-3) continue;
+      if (room != litRoom) {
+        glow = windowLight(room, origin.x + point.x - q.x);
+        litRoom = room;
+      }
+      if (glow.r + glow.g + glow.b < 1e-3) continue;
+      vec3 drift = point + origin + vec3(0.0, uClimb - uTime * 0.2, 0.0);
+      float dust = valueNoise(drift * vec3(2.5, 1.0, 2.5)) * mix(0.6, 1.4, valueNoise(drift * 9.0));
+      scatter += glow * mix(1.0, 0.35, lampDepth(room)) * shape * mix(0.25, 1.6, dust);
+    }
+    scatter *= (1.0 - near) * length(ray) / float(GLOW_STEPS) * depth;
+    scatter *= mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
   }
-  scatter *= (1.0 - near) * length(ray) / float(GLOW_STEPS) * depth;
-  scatter *= mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
 
   color = mix(color, haze, fog * mix(1.0, 0.6, lit)) + SCATTER * scatter * (1.0 - 0.5 * fog);
   vec3 climbed = vec3(0.0, uClimb, 0.0);

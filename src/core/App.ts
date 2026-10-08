@@ -25,7 +25,7 @@ export class App {
   private scene = new Scene();
   private camera = new PerspectiveCamera(22, 1, 0.1, 100);
   private loop = new Loop((frame) => this.update(frame));
-  private target = new WebGLRenderTarget(1, 1, { samples: 4 });
+  private target = new WebGLRenderTarget(1, 1, { samples: 2 });
   private input = new Input();
   private roleText = new RoleText(this.input);
   private film = new Film(this.target.texture, this.roleText.uniforms);

@@ -11,11 +11,10 @@ export class Backdrop extends Mesh<PlaneGeometry, RawShaderMaterial> {
         vertexShader,
         fragmentShader,
         uniforms,
-        depthTest: false,
         depthWrite: false,
       }),
     );
     this.frustumCulled = false;
-    this.renderOrder = -1;
+    this.renderOrder = 2;
   }
 }

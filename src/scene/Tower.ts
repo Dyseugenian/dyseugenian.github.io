@@ -15,15 +15,19 @@ import {
 } from 'three';
 import vertexShader from '../shaders/facade.vert';
 import fragmentShader from '../shaders/facade.frag';
+import depthShader from '../shaders/facade-depth.frag';
 import type { Input } from '../core/Input';
 import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 import { Cables } from './Cables';
 import { Backdrop } from './Backdrop';
 import { Beacons, beaconSpot } from './Beacons';
+import { Drift, STILL } from './Drift';
 import { MAP_METERS, bakeConcreteMaps } from './concreteMaps';
+import { fbmTexture, noiseTexture } from './noise';
 import {
   BAY,
+  type Detail,
   OCCLUSION_MIN,
   OCCLUSION_SIZE,
   EDGE_WIDTH,
@@ -35,13 +39,16 @@ import {
   facadeGeometry,
   surroundings,
   tileParts,
+  type Part,
 } from './facade';
 
 const VIEW = { fov: 64, narrowestFov: 45, distance: 6.5, vanish: 0.82 };
 const COLUMNS = { left: -3, right: 3 };
 const ROWS = { below: 2, above: 32 };
+const DETAIL_ROWS = { full: 5, reduced: 11 };
 const CLIMB_SPEED = 0.9;
-const SWAY = { pitch: 0.04, yaw: 0.06 };
+const SWAY = { pitch: 0.04, shift: 1 };
+const SPOT = { reach: 8, y: -4, z: 3 };
 const REDUCED_MOTION_SPEED = 0.1;
 const TILE_SEEDS = 4096;
 const EXPOSURE = 0.42;
@@ -60,24 +67,32 @@ export class Tower extends Scene {
     uHaze: { value: new Color(palette.haze).convertLinearToSRGB() },
     uRim: { value: new Color(palette.rim).convertLinearToSRGB() },
     uExposure: { value: EXPOSURE },
+    uNoise: { value: noiseTexture() },
+    uFbm: { value: fbmTexture() },
   };
   private facadeUniforms = {
     uClimb: { value: 0 },
     uTilesClimbed: { value: 0 },
     uBeacon: { value: 0 },
+    uSpot: { value: new Vector3(0, SPOT.y, SPOT.z) },
   };
   private building = new Group();
   private material: RawShaderMaterial;
   private lift = 0;
   private pitch = 0;
   private swayPitch = new Spring(4, 5);
-  private swayYaw = new Spring(4, 5);
+  private aim = new Spring(9, 6);
+  private shift = new Spring(9, 6);
+  private drift = new Drift();
+  private spot = new Spring(4, 4);
+  private fov = VIEW.fov;
   private projected = new Vector3();
 
   constructor(private input: Input) {
     super();
-    const parts = tileParts();
-    const windows = parts.filter((part) => part.min.x >= PIER.max.x);
+    const parts = tileParts('full');
+    const inWindowBay = (part: Part) => part.min.x >= PIER.max.x;
+    const windows = parts.filter(inWindowBay);
     const outerX = (COLUMNS.right + 1) * BAY + PIER.min.x + EDGE_WIDTH;
     const spot = beaconSpot(outerX);
     const uniforms = {
@@ -92,9 +107,13 @@ export class Tower extends Scene {
       uGrime: { value: new Color(palette.grime).convertLinearToSRGB() },
       uRust: { value: new Color(palette.rust).convertLinearToSRGB() },
       uBeaconColor: { value: new Color(palette.beacon).convertLinearToSRGB() },
+      uSpotColor: { value: new Color(palette.spot).convertLinearToSRGB() },
       uNewsprint: { value: new Color(palette.newsprint).convertLinearToSRGB() },
       uNewsprintAged: { value: new Color(palette.newsprintAged).convertLinearToSRGB() },
       uAppliance: { value: new Color(palette.appliance).convertLinearToSRGB() },
+      uLinen: { value: new Color(palette.linen).convertLinearToSRGB() },
+      uDenim: { value: new Color(palette.denim).convertLinearToSRGB() },
+      uMadder: { value: new Color(palette.madder).convertLinearToSRGB() },
       uBay: { value: BAY },
       uTileHeight: { value: TILE_HEIGHT },
       uPlantEvery: { value: PLANT_EVERY },
@@ -127,10 +146,18 @@ export class Tower extends Scene {
       { length: COLUMNS.right - COLUMNS.left },
       (_, index) => COLUMNS.left + 1 + index,
     );
-    const meshes = [
-      new Mesh(facadeGeometry(parts, columns, rows), material),
-      new Mesh(facadeGeometry(windows, [COLUMNS.left], rows), material),
+    const bands: [Detail, number[]][] = [
+      ['full', rows.filter((row) => row < DETAIL_ROWS.full)],
+      ['reduced', rows.filter((row) => row >= DETAIL_ROWS.full && row < DETAIL_ROWS.reduced)],
+      ['distant', rows.filter((row) => row >= DETAIL_ROWS.reduced)],
     ];
+    const meshes = bands.flatMap(([detail, band]) => {
+      const banded = tileParts(detail);
+      return [
+        new Mesh(facadeGeometry(banded, columns, band), material),
+        new Mesh(facadeGeometry(banded.filter(inWindowBay), [COLUMNS.left], band), material),
+      ];
+    });
     for (const [outward, column] of [
       [-1, COLUMNS.left],
       [1, COLUMNS.right + 1],
@@ -140,8 +167,22 @@ export class Tower extends Scene {
         new Mesh(facadeGeometry(parts, [column], rows), facadeMaterial(occlusion, min, size)),
       );
     }
-    for (const mesh of meshes) mesh.frustumCulled = false;
-    this.building.add(...meshes, new Beacons(spot, rows, uniforms), new Cables(rows, uniforms));
+    const depthMaterial = new RawShaderMaterial({
+      glslVersion: GLSL3,
+      vertexShader,
+      fragmentShader: depthShader,
+      uniforms,
+      colorWrite: false,
+    });
+    const depthMeshes = meshes.map((mesh) => new Mesh(mesh.geometry, depthMaterial));
+    for (const mesh of meshes) mesh.renderOrder = 1;
+    for (const mesh of [...meshes, ...depthMeshes]) mesh.frustumCulled = false;
+    this.building.add(
+      ...depthMeshes,
+      ...meshes,
+      new Beacons(spot, rows, uniforms),
+      new Cables(rows, uniforms),
+    );
     this.camera.position.z = VIEW.distance;
     this.add(new Backdrop(this.uniforms), this.building);
   }
@@ -154,7 +195,8 @@ export class Tower extends Scene {
     this.uniforms.uResolution.value.set(width, height);
     const narrowest = Math.tan(MathUtils.degToRad(VIEW.narrowestFov / 2)) / aspect;
     const halfFov = Math.max(Math.tan(MathUtils.degToRad(VIEW.fov / 2)), narrowest);
-    this.camera.fov = MathUtils.radToDeg(2 * Math.atan(halfFov));
+    this.fov = MathUtils.radToDeg(2 * Math.atan(halfFov));
+    this.camera.fov = this.fov;
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
     this.pitch = Math.atan(1 / (VIEW.vanish * halfFov));
@@ -163,20 +205,29 @@ export class Tower extends Scene {
   update(dt: number): void {
     const { pointer, isPointerInside, reducedMotion } = this.input;
     const follow = isPointerInside && !reducedMotion;
+    const drift = reducedMotion ? STILL : this.drift.update(dt);
     this.swayPitch.target = follow ? pointer.y * SWAY.pitch : 0;
-    this.swayYaw.target = follow ? -pointer.x * SWAY.yaw : 0;
+    const towardEdge = 1 - (1 - Math.abs(pointer.x)) ** 3;
+    this.aim.target = follow ? Math.sign(pointer.x) * towardEdge * SWAY.shift : 0;
+    this.shift.target = this.aim.update(dt);
+    this.camera.position.set(this.shift.update(dt) + drift.x, drift.y, VIEW.distance);
     this.camera.rotation.set(
-      this.pitch + this.swayPitch.update(dt),
-      this.swayYaw.update(dt),
-      0,
+      this.pitch + this.swayPitch.update(dt) + drift.pitch,
+      drift.yaw,
+      drift.roll,
       'YXZ',
     );
+    this.spot.target = follow ? pointer.x * SPOT.reach : 0;
+    this.facadeUniforms.uSpot.value.x = this.spot.update(dt);
+    this.camera.fov = this.fov + drift.zoom;
+    this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
 
     const step = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
     this.uniforms.uTime.value += step;
-    this.facadeUniforms.uClimb.value += step * CLIMB_SPEED;
-    this.lift += step * CLIMB_SPEED;
+    const climb = step * CLIMB_SPEED * drift.pace;
+    this.facadeUniforms.uClimb.value += climb;
+    this.lift += climb;
     if (this.lift >= TILE_HEIGHT) {
       this.lift -= TILE_HEIGHT;
       this.facadeUniforms.uTilesClimbed.value =

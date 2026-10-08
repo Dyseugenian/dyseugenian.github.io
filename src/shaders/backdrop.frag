@@ -1,6 +1,6 @@
 precision highp float;
 
-#include "chunks/noise.glsl"
+#include "chunks/noise-texture.glsl"
 #include "chunks/sky.glsl"
 
 uniform float uTime;
