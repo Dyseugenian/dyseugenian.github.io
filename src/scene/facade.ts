@@ -18,6 +18,7 @@ import {
   Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { OCCLUSION } from './occlusion';
 
 export const BAY = 4.2;
 export const STOREY = 3.6;
@@ -39,16 +40,6 @@ const PLANT_FLOOR = { front: 0.6, louvre: 0.06, louvreSpacing: 0.24 };
 const CLOTHES_LINE = { height: 1.05, z: -0.8, span: 1.12, slots: 4, drop: 0.95, thickness: 0.012 };
 
 const ROTOR = { radius: 0.34, hub: 0.07, blades: 4, pitch: 0.45, rim: 0.04, depth: 0.08 };
-
-const OCCLUSION = {
-  width: 20,
-  height: 40,
-  depth: 24,
-  reach: 1.4,
-  probes: 48,
-  back: -3.6,
-  front: 1.6,
-};
 
 const EDGE = { pitch: 3.6, rib: 0.45, depth: 0.7, margin: 0.85 };
 export const EDGE_WIDTH = 1.75;
@@ -183,6 +174,18 @@ const BLOCK = {
   role: REGULAR,
 };
 
+export const SURFACES = { concrete: 0, glass: 1, fittings: 2 };
+
+export function surfaceOf({ kind }: Part): number {
+  if (kind === CONCRETE) return SURFACES.concrete;
+  if (kind === GLASS) return SURFACES.glass;
+  return SURFACES.fittings;
+}
+
+export function inWindowBay(part: Part): boolean {
+  return part.min.x >= PIER.max.x;
+}
+
 function regular(part: Part): Part {
   return { ...part, role: REGULAR };
 }
@@ -305,20 +308,6 @@ export function facadeGeometry(parts: Part[], columns: number[], rows: number[])
   return geometry;
 }
 
-function probePoints(): Vector3[] {
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  return Array.from({ length: OCCLUSION.probes }, (_, index) => {
-    const y = 1 - (2 * (index + 0.5)) / OCCLUSION.probes;
-    const ring = Math.sqrt(1 - y * y);
-    const radius = OCCLUSION.reach * Math.cbrt((index + 0.5) / OCCLUSION.probes);
-    return new Vector3(
-      Math.cos(golden * index) * ring,
-      y,
-      Math.sin(golden * index) * ring,
-    ).multiplyScalar(radius);
-  });
-}
-
 function stack(parts: Part[], column: number): Part[] {
   const stacked: Part[] = [];
   for (let row = -1; row <= 1; row++) {
@@ -355,58 +344,15 @@ export function edge(outward: number, windows: Part[]) {
     OCCLUSION.front - OCCLUSION.back,
   );
   const around = [...stack(parts, 0), ...stack(windows, outward < 0 ? 0 : -1)];
-  return { parts, min, size, occlusion: bakeOcclusion(around, min, size) };
+  return { parts, min, size, around };
 }
 
-function contains({ min, max }: Part, point: Vector3): boolean {
-  return (
-    point.x > min.x &&
-    point.x < max.x &&
-    point.y > min.y &&
-    point.y < max.y &&
-    point.z > min.z &&
-    point.z < max.z
-  );
+export function occluders(around: Part[]): Part[] {
+  return around.filter(({ role }) => role !== PLANT && role !== OCCASIONAL && role !== LAUNDRY);
 }
 
-export function bakeOcclusion(
-  around: Part[],
-  corner = OCCLUSION_MIN,
-  extent = OCCLUSION_SIZE,
-): Data3DTexture {
+export function occlusionTexture(openness: Uint8Array): Data3DTexture {
   const { width, height, depth } = OCCLUSION;
-  const probes = probePoints();
-  const solids = around.filter(
-    ({ role }) => role !== PLANT && role !== OCCASIONAL && role !== LAUNDRY,
-  );
-  const openness = new Uint8Array(width * height * depth);
-  const cell = new Vector3();
-  const sample = new Vector3();
-  for (let z = 0; z < depth; z++) {
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        cell
-          .set((x + 0.5) / width, (y + 0.5) / height, (z + 0.5) / depth)
-          .multiply(extent)
-          .add(corner);
-        const near = solids.filter(
-          ({ min, max }) =>
-            cell.x > min.x - OCCLUSION.reach &&
-            cell.x < max.x + OCCLUSION.reach &&
-            cell.y > min.y - OCCLUSION.reach &&
-            cell.y < max.y + OCCLUSION.reach &&
-            cell.z > min.z - OCCLUSION.reach &&
-            cell.z < max.z + OCCLUSION.reach,
-        );
-        let open = 0;
-        for (const probe of probes) {
-          sample.addVectors(cell, probe);
-          if (!near.some((solid) => contains(solid, sample))) open++;
-        }
-        openness[x + width * (y + height * z)] = Math.round((255 * open) / probes.length);
-      }
-    }
-  }
   const texture = new Data3DTexture(openness, width, height, depth);
   texture.format = RedFormat;
   texture.minFilter = texture.magFilter = LinearFilter;

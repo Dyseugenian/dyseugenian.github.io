@@ -1,5 +1,7 @@
 import {
   Color,
+  Data3DTexture,
+  DataTexture,
   GLSL3,
   Group,
   MathUtils,
@@ -25,6 +27,9 @@ import { Beacons, beaconSpot } from './Beacons';
 import { Drift, STILL } from './Drift';
 import { MAP_METERS, bakeConcreteMaps } from './concreteMaps';
 import { fbmTexture, noiseTexture } from './noise';
+import { Veil } from './Veil';
+import type { MapsRequest, TowerMaps } from './bake.worker';
+import BakeWorker from './bake.worker?worker';
 import {
   BAY,
   type Detail,
@@ -34,10 +39,14 @@ import {
   PIER,
   PLANT_EVERY,
   TILE_HEIGHT,
-  bakeOcclusion,
   edge,
   facadeGeometry,
+  inWindowBay,
+  occluders,
+  occlusionTexture,
+  SURFACES,
   surroundings,
+  surfaceOf,
   tileParts,
   type Part,
 } from './facade';
@@ -68,7 +77,8 @@ export class Tower extends Scene {
     uRim: { value: new Color(palette.rim).convertLinearToSRGB() },
     uExposure: { value: EXPOSURE },
     uNoise: { value: noiseTexture() },
-    uFbm: { value: fbmTexture() },
+    uFbm: { value: new DataTexture() },
+    uSurface: { value: new Texture() },
   };
   private facadeUniforms = {
     uClimb: { value: 0 },
@@ -77,7 +87,11 @@ export class Tower extends Scene {
     uSpot: { value: new Vector3(0, SPOT.y, SPOT.z) },
   };
   private building = new Group();
-  private material: RawShaderMaterial;
+  private occlusion = { value: new Data3DTexture() };
+  private leftOcclusion = { value: new Data3DTexture() };
+  private rightOcclusion = { value: new Data3DTexture() };
+  private maps: Promise<TowerMaps>;
+  private veil = new Veil(palette.bg);
   private lift = 0;
   private pitch = 0;
   private swayPitch = new Spring(4, 5);
@@ -91,14 +105,26 @@ export class Tower extends Scene {
   constructor(private input: Input) {
     super();
     const parts = tileParts('full');
-    const inWindowBay = (part: Part) => part.min.x >= PIER.max.x;
     const windows = parts.filter(inWindowBay);
+    const leftEdge = edge(-1, windows);
+    const rightEdge = edge(1, windows);
+    const occlusionBake = (around: Part[], min: Vector3, size: Vector3) => ({
+      solids: occluders(around),
+      corner: min,
+      extent: size,
+    });
+    this.maps = bakeMaps({
+      occlusion: occlusionBake(surroundings(parts), OCCLUSION_MIN, OCCLUSION_SIZE),
+      leftOcclusion: occlusionBake(leftEdge.around, leftEdge.min, leftEdge.size),
+      rightOcclusion: occlusionBake(rightEdge.around, rightEdge.min, rightEdge.size),
+    });
     const outerX = (COLUMNS.right + 1) * BAY + PIER.min.x + EDGE_WIDTH;
     const spot = beaconSpot(outerX);
     const uniforms = {
       ...this.uniforms,
       ...this.facadeUniforms,
       uConcrete: { value: new Color(palette.concrete).convertLinearToSRGB() },
+      uConcreteWarm: { value: new Color(palette.concreteWarm).convertLinearToSRGB() },
       uLamp: { value: new Color(palette.lamp).convertLinearToSRGB() },
       uLampSoft: { value: new Color(palette.lampSoft).convertLinearToSRGB() },
       uLampCool: { value: new Color(palette.lampCool).convertLinearToSRGB() },
@@ -120,28 +146,32 @@ export class Tower extends Scene {
       uPlantEvery: { value: PLANT_EVERY },
       uOuterX: { value: outerX },
       uBeaconSpot: { value: spot },
-      uSurface: { value: new Texture() },
       uSurfaceMeters: { value: MAP_METERS },
       uLight: { value: new Vector3(-0.45, 0.7, 0.55).normalize() },
       uFogDensity: { value: 0.022 },
     };
-    const facadeMaterial = (occlusion: Texture, min: Vector3, size: Vector3) =>
+    const facadeMaterial = (
+      surface: number,
+      occlusion: { value: Texture },
+      min: Vector3,
+      size: Vector3,
+    ) =>
       new RawShaderMaterial({
+        defines: { SURFACE: surface },
         glslVersion: GLSL3,
         vertexShader,
         fragmentShader,
         uniforms: {
           ...uniforms,
-          uOcclusion: { value: occlusion },
+          uOcclusion: occlusion,
           uOcclusionMin: { value: min },
           uOcclusionSize: { value: size },
         },
       });
-    const material = (this.material = facadeMaterial(
-      bakeOcclusion(surroundings(parts)),
-      OCCLUSION_MIN,
-      OCCLUSION_SIZE,
-    ));
+    const surfaces = Object.values(SURFACES);
+    const materials = surfaces.map((surface) =>
+      facadeMaterial(surface, this.occlusion, OCCLUSION_MIN, OCCLUSION_SIZE),
+    );
     const rows = Array.from({ length: ROWS.below + ROWS.above }, (_, index) => index - ROWS.below);
     const columns = Array.from(
       { length: COLUMNS.right - COLUMNS.left },
@@ -154,18 +184,24 @@ export class Tower extends Scene {
     ];
     const meshes = bands.flatMap(([detail, band]) => {
       const banded = tileParts(detail);
-      return [
-        new Mesh(facadeGeometry(banded, columns, band), material),
-        new Mesh(facadeGeometry(banded.filter(inWindowBay), [COLUMNS.left], band), material),
-      ];
+      return surfaces.flatMap((surface) => {
+        const material = materials[surface]!;
+        const parts = banded.filter((part) => surfaceOf(part) === surface);
+        return [
+          new Mesh(facadeGeometry(parts, columns, band), material),
+          new Mesh(facadeGeometry(parts.filter(inWindowBay), [COLUMNS.left], band), material),
+        ];
+      });
     });
-    for (const [outward, column] of [
-      [-1, COLUMNS.left],
-      [1, COLUMNS.right + 1],
+    for (const [{ parts, min, size }, column, occlusion] of [
+      [leftEdge, COLUMNS.left, this.leftOcclusion],
+      [rightEdge, COLUMNS.right + 1, this.rightOcclusion],
     ] as const) {
-      const { parts, occlusion, min, size } = edge(outward, windows);
       meshes.push(
-        new Mesh(facadeGeometry(parts, [column], rows), facadeMaterial(occlusion, min, size)),
+        new Mesh(
+          facadeGeometry(parts, [column], rows),
+          facadeMaterial(SURFACES.concrete, occlusion, min, size),
+        ),
       );
     }
     const depthMaterial = new RawShaderMaterial({
@@ -185,11 +221,33 @@ export class Tower extends Scene {
       new Cables(rows, uniforms),
     );
     this.camera.position.z = VIEW.distance;
-    this.add(new Backdrop(this.uniforms), this.building);
+    this.add(new Backdrop(this.uniforms), this.building, this.veil);
   }
 
-  bakeSurface(renderer: WebGLRenderer): void {
-    this.material.uniforms.uSurface!.value = bakeConcreteMaps(renderer);
+  async load(renderer: WebGLRenderer): Promise<void> {
+    const [maps, surface] = await Promise.all([
+      this.maps,
+      bakeConcreteMaps(renderer),
+      renderer.compileAsync(this, this.camera),
+    ]);
+    this.uniforms.uFbm.value = fbmTexture(maps.fbm);
+    this.uniforms.uSurface.value = surface;
+    this.occlusion.value = occlusionTexture(maps.occlusion);
+    this.leftOcclusion.value = occlusionTexture(maps.leftOcclusion);
+    this.rightOcclusion.value = occlusionTexture(maps.rightOcclusion);
+    for (const texture of [
+      this.uniforms.uFbm,
+      this.occlusion,
+      this.leftOcclusion,
+      this.rightOcclusion,
+    ]) {
+      renderer.initTexture(texture.value);
+    }
+  }
+
+  setOpacity(opacity: number): void {
+    this.veil.uniforms.uOpacity.value = 1 - opacity;
+    this.veil.visible = opacity < 1;
   }
 
   fit(aspect: number, width: number, height: number): void {
@@ -253,4 +311,16 @@ export class Tower extends Scene {
     this.projected.project(this.camera);
     return [((this.projected.x + 1) / 2) * width, ((this.projected.y + 1) / 2) * height];
   }
+}
+
+function bakeMaps(request: MapsRequest): Promise<TowerMaps> {
+  const worker = new BakeWorker();
+  worker.postMessage(request);
+  return new Promise((resolve, reject) => {
+    worker.addEventListener('message', (event: MessageEvent<TowerMaps>) => {
+      worker.terminate();
+      resolve(event.data);
+    });
+    worker.addEventListener('error', reject);
+  });
 }

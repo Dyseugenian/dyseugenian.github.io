@@ -17,7 +17,7 @@ import fragmentShader from '../shaders/concrete-maps.frag';
 export const MAP_METERS = 2;
 const MAP_SIZE = 1024;
 
-export function bakeConcreteMaps(renderer: WebGLRenderer): Texture {
+export async function bakeConcreteMaps(renderer: WebGLRenderer): Promise<Texture> {
   const target = new WebGLRenderTarget(MAP_SIZE, MAP_SIZE, {
     wrapS: RepeatWrapping,
     wrapT: RepeatWrapping,
@@ -38,9 +38,11 @@ export function bakeConcreteMaps(renderer: WebGLRenderer): Texture {
       depthWrite: false,
     }),
   );
+  const camera = new Camera();
+  await renderer.compileAsync(quad, camera);
   const previous = renderer.getRenderTarget();
   renderer.setRenderTarget(target);
-  renderer.render(quad, new Camera());
+  renderer.render(quad, camera);
   renderer.setRenderTarget(previous);
   quad.geometry.dispose();
   quad.material.dispose();

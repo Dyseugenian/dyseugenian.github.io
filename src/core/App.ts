@@ -17,6 +17,7 @@ import { Logo } from '../scene/Logo';
 import { Tower } from '../scene/Tower';
 
 const MAX_DRAWING_PIXELS = 3840 * 2160;
+const TOWER_FADE_SECONDS = 2.5;
 
 export class App {
   readonly quality = new Quality(() => this.applyQuality());
@@ -31,12 +32,14 @@ export class App {
   private film = new Film(this.target.texture, this.roleText.uniforms);
   readonly logo = new Logo(this.input);
   private tower = new Tower(this.input);
+  private isTowerRevealed = false;
+  private towerFade = 0;
 
   constructor(canvas: HTMLCanvasElement, context: WebGL2RenderingContext) {
     this.renderer = new WebGLRenderer({ canvas, context });
+    this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
     this.renderer.setClearColor(new Color(palette.bg).convertLinearToSRGB());
     this.renderer.autoClear = false;
-    this.tower.bakeSurface(this.renderer);
 
     this.camera.position.z = 10;
     this.logo.visible = false;
@@ -56,10 +59,17 @@ export class App {
 
   async compile(): Promise<void> {
     await Promise.all([
-      this.renderer.compileAsync(this.tower, this.tower.camera),
       this.renderer.compileAsync(this.scene, this.camera),
       this.renderer.compileAsync(this.film, this.camera),
     ]);
+  }
+
+  loadTower(): Promise<void> {
+    return this.tower.load(this.renderer);
+  }
+
+  revealTower(): void {
+    this.isTowerRevealed = true;
   }
 
   setStageLive(live: boolean): void {
@@ -69,14 +79,23 @@ export class App {
   }
 
   private update({ dt, time }: Frame): void {
-    this.tower.update(dt);
+    if (this.isTowerRevealed) {
+      this.towerFade = Math.min(this.towerFade + dt / TOWER_FADE_SECONDS, 1);
+      const opacity = MathUtils.smootherstep(this.towerFade, 0, 1);
+      this.tower.setOpacity(opacity);
+      this.logo.stars.uniforms.uOpacity.value = 1 - opacity;
+      this.logo.stars.visible = opacity < 1;
+      this.tower.update(dt);
+    }
     this.logo.update(dt);
     this.roleText.update(dt);
     this.film.update(time);
     this.renderer.setRenderTarget(this.target);
     this.renderer.clear();
-    this.renderer.render(this.tower, this.tower.camera);
-    this.renderer.clearDepth();
+    if (this.isTowerRevealed) {
+      this.renderer.render(this.tower, this.tower.camera);
+      this.renderer.clearDepth();
+    }
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.film, this.camera);

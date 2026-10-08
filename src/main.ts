@@ -10,6 +10,7 @@ const context = canvas?.getContext('webgl2', {
 if (canvas && context) {
   const app = new App(canvas, context);
   app.start();
+  const towerLoaded = app.loadTower();
 
   if (new URLSearchParams(location.search).has('debug')) {
     const { mountDebugPanel } = await import('./debug/panel');
@@ -19,6 +20,8 @@ if (canvas && context) {
   await app.logo.ready;
   await app.compile();
   app.setStageLive(true);
+  await towerLoaded;
+  app.revealTower();
 } else {
   setPageState('no-webgl', true);
 }

@@ -2,6 +2,8 @@ precision highp float;
 precision highp sampler3D;
 
 #include "chunks/noise-texture.glsl"
+#include "chunks/chips.glsl"
+#include "chunks/cracks.glsl"
 #include "chunks/sky.glsl"
 
 uniform vec3 cameraPosition;
@@ -20,6 +22,7 @@ uniform vec3 uRim;
 uniform float uExposure;
 uniform float uOuterX;
 uniform vec3 uConcrete;
+uniform vec3 uConcreteWarm;
 uniform vec3 uLamp;
 uniform vec3 uLampSoft;
 uniform vec3 uLampCool;
@@ -68,7 +71,7 @@ const float DRIP_SPACING = 0.9;
 const float SPALL_SPACING = 1.4;
 const float PIT_SPACING = 0.12;
 const vec3 STAIN_SIZES = vec3(4.0, 1.8, 0.7);
-const float STAIN_COVER = 0.55;
+const vec3 STAIN_COVER = vec3(0.5, 0.4, 0.2);
 const float SPECK_SPACING = 0.35;
 const float RIM_STRENGTH = 0.9;
 const float NIGHT_SKY = 2.3;
@@ -99,6 +102,9 @@ const float SPOT_FALLOFF = 10.0;
 const float CLOUD_SPACING = 60.0;
 const float CLOUD_THICKNESS = 2.5;
 const float CLOUD_DENSITY = 0.35;
+const bool CONCRETE = SURFACE == 0;
+const bool GLASS = SURFACE == 1;
+const bool FITTINGS = SURFACE == 2;
 
 struct Concrete {
   vec3 albedo;
@@ -171,43 +177,75 @@ vec3 stain(vec3 albedo, vec2 wall, vec2 warp, float size, float salt, float cove
   at.y *= mix(1.0, 0.6, upright);
   vec2 cell = floor(at);
   vec2 key = cell + salt;
-  if (hash12(key) > cover) return albedo;
-  vec2 center = cell + 0.35 + 0.3 * vec2(hash12(key + 7.0), hash12(key + 13.0));
-  float radius = mix(0.12, 0.28, hash12(key + 19.0));
-  vec2 offset = at - center;
-  offset.y *= offset.y < 0.0 ? mix(1.0, 0.45, upright) : 1.0;
-  float spread = length(offset) / radius + (fbm(at * 2.5 + salt) - 0.5) * 1.2;
-  if (spread > 1.3) return albedo;
-  vec2 inCell = at - cell;
-  float bounded = smoothstep(0.0, 0.15, min(min(inCell.x, 1.0 - inCell.x), min(inCell.y, 1.0 - inCell.y)));
-  float fill = (1.0 - smoothstep(0.55, 1.0, spread)) * mix(0.6, 1.0, valueNoise(at * 9.0 + salt + 3.0)) * bounded;
-  float low = mix(1.0, clamp(0.5 + (center.y - at.y) / radius, 0.4, 1.0), upright);
-  float depth = mix(0.2, 0.5, hash12(key + 29.0));
-  float kind = hash12(key + 23.0);
-  if (kind < 0.55) {
-    float tide = exp(-abs(spread - 0.95) / 0.05) * resolved(20.0 / size, footprint) * bounded;
-    float halo = smoothstep(0.95, 1.05, spread) * (1.0 - smoothstep(1.05, 1.3, spread)) * bounded;
-    return albedo * (1.0 - depth * fill * low - 0.25 * tide * low) * (1.0 + 0.08 * halo);
+  if (hash12(key) > cover * smoothstep(0.2, 0.6, valueNoise(cell * 0.43 + salt))) return albedo;
+  vec2 inCell = at - cell + 0.12 * (vec2(valueNoise(at * 6.0 + salt), valueNoise(at * 6.0 + salt + 17.0)) - 0.5);
+  vec2 sag = mix(vec2(1.0), vec2(1.6, 0.35), upright);
+  float runLength = mix(0.1, 0.7, hash12(key + 41.0)) * step(0.45, hash12(key + 53.0))
+    * mix(0.2, 1.0, valueNoise(vec2(inCell.x * 25.0, key.x + 9.0)));
+  float body = 0.0;
+  float runs = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec2 lobeKey = key + float(i) * 7.31;
+    if (i > 0 && hash12(lobeKey + 1.0) < 0.4) continue;
+    vec2 center = vec2(0.25 + 0.5 * hash12(lobeKey + 2.0), mix(0.25, 0.5, upright) + mix(0.5, 0.3, upright) * hash12(lobeKey + 3.0));
+    float radius = mix(0.05, 0.19, hash12(lobeKey + 4.0)) * (i == 0 ? 1.0 : 0.75) * mix(1.5, 1.0, upright);
+    float angle = 3.1416 * hash12(lobeKey + 5.0);
+    vec2 offset = inCell - center;
+    offset.y *= offset.y < 0.0 ? sag.y : sag.x;
+    offset = mat2(cos(angle), sin(angle), -sin(angle), cos(angle)) * offset;
+    offset.x /= mix(1.0, 2.5, hash12(lobeKey + 6.0));
+    body = max(body, exp(-dot(offset, offset) / (radius * radius)));
+    float column = (inCell.x - center.x) / (1.2 * radius);
+    float below = center.y - inCell.y - 0.5 * radius;
+    runs = max(runs, exp(-column * column) * smoothstep(-radius, 0.0, below) * exp(-max(below, 0.0) / max(runLength, 1e-3)));
   }
-  if (kind < 0.72) return mix(albedo, uGrime, 1.6 * depth * fill);
-  if (kind < 0.86) return mix(albedo, uRust * 0.75, depth * fill * low);
-  float clumps = smoothstep(0.35, 0.75, valueNoise(at * 14.0 + salt));
-  return mix(albedo, uMoss, min(2.0 * depth * fill * low * clumps, 0.85));
+  float coarse = fbm(at * 2.3 + salt);
+  float fine = valueNoise(at * 9.0 + salt + 3.0);
+  float grain = mix(0.5, valueNoise(at * 31.0 + salt), resolved(31.0 / size, footprint));
+  float field = body * mix(0.3, 1.7, coarse) + 0.35 * (fine - 0.5) + 0.15 * (grain - 0.5);
+  float threshold = mix(0.25, 0.5, hash12(key + 31.0));
+  float soft = mix(0.04, 0.6, sqrt(hash12(key + 37.0))) + 0.25 / size;
+  float fill = smoothstep(threshold, threshold + soft, field);
+  float drips = upright * runs * smoothstep(0.4, 0.75, valueNoise(vec2(inCell.x * mix(12.0, 30.0, hash12(key + 43.0)), key.y + 5.0)));
+  float bounded = smoothstep(0.0, 0.12, min(min(inCell.x, 1.0 - inCell.x), min(inCell.y, 1.0 - inCell.y)));
+  float pooled = mix(1.0, mix(1.2, 0.6, smoothstep(0.2, 0.75, inCell.y)), upright);
+  float flow = mix(1.0, mix(0.55, 1.1, valueNoise(vec2(at.x * 20.0, at.y * 1.5) + salt)), upright);
+  float core = mix(0.45, 1.0, smoothstep(threshold, threshold + 0.6, field));
+  float amount = max(fill * core * flow * mix(0.55, 1.0, valueNoise(at * 7.0 + salt + 11.0)) * pooled, 0.8 * drips) * bounded;
+  float depth = mix(0.15, 0.5, hash12(key + 29.0));
+  float kind = hash12(key + 23.0);
+  if (kind < 0.4) {
+    float lines = resolved(25.0 / size, footprint) * bounded * step(0.4, hash12(key + 59.0));
+    float inner = threshold + mix(0.15, 0.4, hash12(key + 47.0));
+    float tide = exp(-abs(field - threshold) / 0.02) + 0.6 * exp(-abs(field - inner) / 0.015);
+    float halo = smoothstep(threshold - 0.12, threshold, field) * (1.0 - fill) * bounded;
+    return albedo * (1.0 - depth * amount - 0.12 * tide * lines) * (1.0 + 0.06 * halo);
+  }
+  if (kind < 0.6) return mix(albedo, uGrime, min(1.5 * depth * amount, 0.85));
+  if (kind < 0.72) {
+    float crust = smoothstep(threshold, threshold + 0.1, field) * mix(0.2, 1.0, grain) * mix(0.5, 1.0, fine);
+    return mix(albedo, uSalt * 1.08, min(1.2 * depth, 0.45) * max(crust, 0.6 * drips) * bounded);
+  }
+  if (kind < 0.84) return mix(albedo, uRust * mix(0.6, 0.9, fine), depth * amount);
+  float clumps = mix(0.35, 1.0, smoothstep(0.3, 0.7, valueNoise(at * 14.0 + salt))) * mix(0.6, 1.0, grain);
+  return mix(albedo, uMoss * mix(0.7, 1.1, fine), min(1.6 * depth * fill * core * clumps * bounded, 0.7));
 }
 
 float streaks(vec2 wall, float footprint) {
   float region = smoothstep(0.45, 0.75, valueNoise(wall * vec2(0.12, 0.03) + 61.0));
   if (region == 0.0) return 0.0;
   float column = valueNoise(vec2(wall.x * 1.6, wall.y * 0.05 + 11.0));
+  float reach = smoothstep(0.25, 0.65, valueNoise(vec2(wall.x * 0.9 + 3.0, wall.y * 0.4)));
   float strand = mix(0.5, valueNoise(vec2(wall.x * 7.0, wall.y * 0.15 + 5.0)), resolved(7.0, footprint));
-  return region * smoothstep(0.5, 0.8, column) * mix(0.3, 1.0, strand);
+  float fibre = mix(0.5, valueNoise(vec2(wall.x * 23.0, wall.y * 0.3 + 2.0)), resolved(23.0, footprint));
+  return region * smoothstep(0.5, 0.8, column) * reach * mix(0.3, 1.0, strand) * mix(0.6, 1.2, fibre);
 }
 
 float speck(vec2 wall, float footprint, out float pale) {
   vec2 cell = floor(wall / SPECK_SPACING);
   float density = smoothstep(0.4, 0.8, valueNoise(wall * 0.5 + 91.0));
   pale = step(0.75, hash12(cell + 127.0));
-  if (hash12(cell + 103.0) > 0.7 * density) return 0.0;
+  if (hash12(cell + 103.0) > 0.58 * density) return 0.0;
   vec2 center = (cell + 0.25 + 0.5 * vec2(hash12(cell + 107.0), hash12(cell + 109.0))) * SPECK_SPACING;
   float radius = mix(0.008, 0.06, pow(hash12(cell + 113.0), 2.0));
   float ragged = mix(0.8, 1.2, valueNoise(wall * 60.0 + cell));
@@ -241,8 +279,15 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   float upTo = count.x - 1.0 - shifted;
   vec2 block = vec2(clamp(floor(staggered), 0.0, upTo), course);
   float fromJoint = min(toJoint(staggered, 1.0, upTo, blockSize.x), toJoint(laid.y, 1.0, count.y - 1.0, blockSize.y));
-  float blockTone = mix(0.86, 1.08, hash12(block + seed + vMin.xy * 3.1 + vMin.z));
+  vec2 blockKey = block + seed + vMin.xy * 3.1 + vMin.z;
+  float blockTone = mix(0.86, 1.08, hash12(blockKey));
   float partTone = mix(0.86, 1.08, hash13(vMin * 3.1 + vMax * 1.7 + seed.xyx));
+  float pour = hash12(blockKey + 13.0);
+  float shift = hash12(blockKey + 29.0);
+  float warmth = (pour > 0.4 && pour < 0.7) || pour > 0.9 ? mix(0.15, 0.3, shift) : 0.0;
+  warmth = max(warmth, 0.15 * step(0.7, hash13(vMin * 2.3 + vMax * 4.1 + seed.yxy)));
+  float darker = pour > 0.7 ? mix(0.06, 0.12, shift) : 0.0;
+  vec3 body = mix(uConcrete, uConcreteWarm, warmth) * (1.0 - darker) * blockTone * partTone;
 
   vec4 coarse = texture(uSurface, p / uSurfaceMeters);
   mat2 turn = mat2(0.8, 0.6, -0.6, 0.8);
@@ -258,7 +303,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   float relief = mix(coarse.z, fine.z, 0.4);
   float cavity = coarse.w;
 
-  vec3 albedo = uConcrete * blockTone * partTone * mix(0.7, 1.12, blotch) * mix(0.86, 1.08, mottle);
+  vec3 albedo = body * mix(0.7, 1.12, blotch) * mix(0.86, 1.08, mottle);
   albedo *= mix(0.7, 1.08, weathering) * mix(0.84, 1.06, relief);
   albedo *= mix(0.7, 1.0, smoothstep(0.1, 0.5, cavity)) * mix(0.9, 1.06, grain);
   float height = 0.5 * mottle;
@@ -276,10 +321,10 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   vec3 climbed = vWorld + vec3(0.0, uClimb, 0.0);
   vec2 wall = vec2(dot(climbed, frame[0]), dot(climbed, frame[1])) + dot(climbed, normal) * vec2(1.37, 0.71);
   vec2 wallWarp = vec2(fbm(wall * 0.3 + 71.0), fbm(wall * 0.3 + 79.0)) - 0.5;
-  float cover = STAIN_COVER * mix(0.6, 1.4, weathering);
-  albedo = stain(albedo, wall, wallWarp, STAIN_SIZES.x, 0.0, cover, upright, footprint);
-  albedo = stain(albedo, wall, wallWarp, STAIN_SIZES.y, 31.0, cover, upright, footprint);
-  albedo = stain(albedo, wall, wallWarp, STAIN_SIZES.z, 67.0, cover, upright, footprint);
+  vec3 cover = STAIN_COVER * mix(0.6, 1.4, weathering);
+  albedo = stain(albedo, wall, wallWarp, STAIN_SIZES.x, 0.0, cover.x, upright, footprint);
+  albedo = stain(albedo, wall, wallWarp, STAIN_SIZES.y, 31.0, cover.y, upright, footprint);
+  albedo = stain(albedo, wall, wallWarp, STAIN_SIZES.z, 67.0, cover.z, upright, footprint);
   albedo *= 1.0 - 0.3 * upright * streaks(wall, footprint);
   if (footprint < 0.02) {
     float pale;
@@ -287,28 +332,22 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
     albedo = mix(albedo, pale > 0.5 ? uSalt : uGrime, 0.6 * flecked);
   }
 
-  float crackZone = smoothstep(0.5, 0.75, valueNoise(p * 0.35 + 3.0)) * resolved(6.0, footprint);
-  float crack = 0.0;
-  float damp = 0.0;
-  float crackShade = 0.0;
-  if (crackZone > 0.0) {
-    float crackField = fbm(q * 1.4 + warp * 2.0 + 41.0);
-    crackShade = mix(0.35, 0.65, valueNoise(p * 0.2 + 51.0));
-    float crackWidth = mix(0.002, 0.007, valueNoise(q * 3.0 + 9.0));
-    crack = (1.0 - smoothstep(0.0, crackWidth + fwidth(crackField), abs(crackField - 0.5)))
-      * crackZone * smoothstep(0.2, 0.55, valueNoise(q * 5.0 + 2.0));
-    damp = exp(-abs(crackField - 0.5) / 0.025) * crackZone;
+  float cracked = 1.0 - smoothstep(0.025, 0.05, footprint);
+  if (cracked > 0.0) {
+    Fracture fracture = fractures(p, fromLow, extent, upright, footprint);
+    vec3 residue = fracture.residue < 0.5 ? uGrime : fracture.residue < 0.85 ? uSalt : uRust * 0.8;
+    albedo = mix(albedo, residue, 0.5 * fracture.leach * cracked);
+    albedo *= (1.0 - 0.25 * fracture.halo * cracked) * (1.0 + 0.18 * fracture.lip * cracked);
+    albedo = mix(albedo, uSalt * 1.05, 0.55 * fracture.healed * cracked);
+    albedo *= 1.0 - mix(0.45, 0.9, fracture.deep) * fracture.open * cracked;
+    height -= (1.6 * fracture.open + 0.3 * fracture.halo - 0.3 * fracture.healed) * cracked;
   }
-  float hairZone = smoothstep(0.6, 0.85, valueNoise(p * 0.6 + 21.0)) * resolved(20.0, footprint);
-  float hairline = 0.0;
-  if (hairZone > 0.0) {
-    float hairField = fbm(q * 4.5 + 63.0);
-    hairline = (1.0 - smoothstep(0.0, 0.0015 + fwidth(hairField), abs(hairField - 0.5)))
-      * hairZone * smoothstep(0.35, 0.7, valueNoise(q * 8.0));
+  float crazeZone = smoothstep(0.55, 0.8, valueNoise(p * 0.5 + 21.0)) * resolved(30.0, footprint);
+  if (crazeZone > 0.0) {
+    float craze = crazing(p, footprint) * crazeZone;
+    albedo *= 1.0 - 0.3 * craze;
+    height -= 0.4 * craze;
   }
-  albedo *= (1.0 - crackShade * crack - 0.15 * hairline) * (1.0 - 0.25 * damp);
-  albedo = mix(albedo, uSalt, 0.3 * crack * smoothstep(0.55, 0.8, mottle));
-  height -= 1.2 * crack + 0.3 * hairline;
 
   vec2 spallCell = floor(p / SPALL_SPACING);
   vec2 center = spallCenter(spallCell);
@@ -319,11 +358,11 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
     float outline = length((p - center) * vec2(1.0, 1.4)) - size * mix(0.6, 1.3, valueNoise(p * 9.0 + spallCell));
     spall = (1.0 - smoothstep(-footprint, footprint + 0.003, outline)) * step(0.62, kind);
     float repair = (1.0 - smoothstep(-footprint, footprint + 0.01, outline - 0.08)) * (1.0 - step(0.62, kind));
-    albedo = mix(albedo, mix(uConcrete, uSalt, 0.6) * mix(0.85, 1.05, mottle), 0.75 * repair);
+    albedo = mix(albedo, mix(body, uSalt, 0.5) * mix(0.85, 1.05, mottle), 0.75 * repair);
     height += 0.4 * repair;
 
     float rubble = spall > 0.0 ? valueNoise(p * 45.0) : 0.0;
-    albedo = mix(albedo, uConcrete * mix(0.3, 0.75, rubble) * mix(0.7, 1.0, weathering), spall);
+    albedo = mix(albedo, body * mix(0.3, 0.75, rubble) * mix(0.7, 1.0, weathering), spall);
     albedo *= 1.0 + 0.35 * exp(-abs(outline) / max(0.012, footprint)) * step(0.62, kind);
     height -= spall * (2.5 + rubble);
     float bar = spall * rusted(spallCell)
@@ -361,7 +400,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
       * exp(-drop / mix(0.1, 0.55, hash12(above + seed + 3.0)));
     albedo *= 1.0 - 0.35 * leak * holes;
   }
-  albedo = mix(albedo, uConcrete * 1.1, 0.5 * plug * holes);
+  albedo = mix(albedo, body * 1.1, 0.5 * plug * holes);
   albedo *= 1.0 - 0.6 * tieHole * (1.0 - plugged) * holes;
   height -= tieHole;
 
@@ -387,7 +426,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
     float ragged = valueNoise(p * 35.0) * 0.03;
     chip = 1.0 - smoothstep(chipSize * 0.6, chipSize + 1e-3, edge + ragged);
   }
-  if (chip > 0.0) albedo = mix(albedo, uConcrete * mix(0.45, 0.95, valueNoise(p * 70.0)), 0.85 * chip);
+  if (chip > 0.0) albedo = mix(albedo, body * mix(0.45, 0.95, valueNoise(p * 70.0)), 0.85 * chip);
   float arris = (1.0 - smoothstep(0.0, 0.025 + footprint, edge)) * (1.0 - chip);
   albedo *= 1.0 + 0.15 * arris;
   height -= 1.5 * chip;
@@ -841,18 +880,30 @@ void main() {
   float occlusion = smoothstep(0.08, 0.55, openness);
 
   vec3 origin = vWorld - vLocal;
+  vec3 hit;
+  vec3 hitNormal;
+  float margin = 1e3;
+  int broken = CONCRETE ? carve(vLocal, normal, vMin, vMax, seed, cameraPosition - origin, hit, hitNormal, margin) : 0;
   mat3 frame = faceFrame(normal);
   Concrete surface = Concrete(uConcrete, 0.0, vec3(0.0, 0.0, 1.0), vec3(0.0));
-  if (vKind < 0.5) surface = concrete(frame, seed, weathering);
-  if (abs(vKind - 3.0) < 0.5) surface = laundry(surface);
-  else if (vKind > 1.5) surface = airConditioner(surface, normal);
-  if (vKind < 0.5 && normal.z > 0.5 && abs(vMax.z - SPANDREL_Z) < 0.01) {
+  if (CONCRETE) surface = concrete(frame, seed, weathering);
+  if (FITTINGS && abs(vKind - 3.0) < 0.5) surface = laundry(surface);
+  else if (FITTINGS) surface = airConditioner(surface, normal);
+  if (CONCRETE && normal.z > 0.5 && abs(vMax.z - SPANDREL_Z) < 0.01) {
     vec2 bay;
     vec3 q = fromWindow(vLocal, tile, 0.0, bay);
     vec2 at = vec2(q.x - mix(-0.8, 0.8, hash12(bay + 227.0)), vLocal.y - 0.5 * (vMin.y + vMax.y));
     if (hash12(bay + 229.0) > 0.55) surface = ventGrille(surface, at, bay);
   }
   vec3 shading = bumped(normalize(frame * surface.detail), surface.height * BUMP);
+  if (broken > 0) {
+    float sunk = abs(dot(hit - vLocal, normal)) + (broken == 2 ? 0.08 : 0.0);
+    float aggregate = valueNoise(hit * 40.0) * 0.6 + valueNoise(hit * 110.0) * 0.4;
+    surface.albedo *= mix(0.75, 1.3, aggregate) * mix(1.0, 0.6, smoothstep(0.0, 0.12, sunk));
+    shading = hitNormal;
+    occlusion *= mix(1.0, 0.55, smoothstep(0.0, 0.12, sunk));
+  }
+  surface.albedo *= 1.0 + 0.3 * (1.0 - smoothstep(0.0, 0.015, margin)) * step(0.0, margin);
   float skyLight = mix(0.12, 0.9, shading.y * 0.5 + 0.5);
   float key = max(dot(shading, uLight), 0.0);
   vec3 light = uHaze * NIGHT_SKY * skyLight * occlusion
@@ -871,7 +922,7 @@ void main() {
 
   float distance = length(vWorld - cameraPosition);
   float depth = 1.0 - smoothstep(14.0, 40.0, distance);
-  if (abs(vKind - 1.0) > 0.5 && depth > 0.0) {
+  if (!GLASS && depth > 0.0) {
     for (int below = 0; below < 2; below++) {
       vec2 room;
       vec3 point = vLocal + normal * 0.02;
@@ -891,7 +942,7 @@ void main() {
   vec3 haze = skyColor(gl_FragCoord.xy, uResolution, uVanish, uBacklights, uTime, uSky, uHaze, uRim);
   vec3 color = surface.albedo * light + surface.emission;
   float lit = 0.0;
-  if (abs(vKind - 1.0) < 0.5) {
+  if (GLASS) {
     vec2 room;
     vec3 q = fromWindow(vLocal, tile, 0.0, room);
     vec3 glow = windowLight(room, origin.x + vLocal.x - q.x);

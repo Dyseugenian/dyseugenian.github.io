@@ -3,6 +3,7 @@ export const palette = {
   sky: '#0a1222',
   haze: '#1f2b3e',
   concrete: '#8f969b',
+  concreteWarm: '#8c6d50',
   salt: '#aab0b2',
   grime: '#181d1b',
   rust: '#7d4527',
