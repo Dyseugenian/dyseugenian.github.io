@@ -6,6 +6,7 @@ export const palette = {
   salt: '#aab0b2',
   grime: '#181d1b',
   rust: '#7d4527',
+  moss: '#2f3529',
   rim: '#7a90ad',
   lamp: '#e8a25c',
   lampSoft: '#f0d6a8',

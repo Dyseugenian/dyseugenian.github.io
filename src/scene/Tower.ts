@@ -47,7 +47,7 @@ const COLUMNS = { left: -3, right: 3 };
 const ROWS = { below: 2, above: 32 };
 const DETAIL_ROWS = { full: 5, reduced: 11 };
 const CLIMB_SPEED = 0.9;
-const SWAY = { pitch: 0.04, shift: 1 };
+const SWAY = { pitch: 0.12, shift: 1 };
 const SPOT = { reach: 8, y: -4, z: 3 };
 const REDUCED_MOTION_SPEED = 0.1;
 const TILE_SEEDS = 4096;
@@ -106,6 +106,7 @@ export class Tower extends Scene {
       uSalt: { value: new Color(palette.salt).convertLinearToSRGB() },
       uGrime: { value: new Color(palette.grime).convertLinearToSRGB() },
       uRust: { value: new Color(palette.rust).convertLinearToSRGB() },
+      uMoss: { value: new Color(palette.moss).convertLinearToSRGB() },
       uBeaconColor: { value: new Color(palette.beacon).convertLinearToSRGB() },
       uSpotColor: { value: new Color(palette.spot).convertLinearToSRGB() },
       uNewsprint: { value: new Color(palette.newsprint).convertLinearToSRGB() },

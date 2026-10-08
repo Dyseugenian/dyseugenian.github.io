@@ -1,18 +1,18 @@
 import { Spring } from '../core/Spring';
 
 const CHANNELS = {
-  x: { breath: 0.12, settle: 0.35, sway: 0.25 },
-  y: { breath: 0.08, settle: 0.2, sway: 0 },
-  pitch: { breath: 0.006, settle: 0.01, sway: 0 },
-  yaw: { breath: 0.008, settle: 0.012, sway: -0.006 },
-  roll: { breath: 0.006, settle: 0.008, sway: 0.016 },
+  x: { breath: 0.5, settle: 1.2, sway: 1 },
+  y: { breath: 0.35, settle: 0.8, sway: 0 },
+  pitch: { breath: 0.035, settle: 0.06, sway: 0 },
+  yaw: { breath: 0.045, settle: 0.07, sway: -0.035 },
+  roll: { breath: 0.035, settle: 0.045, sway: 0.08 },
 };
-const BREATH_FREQUENCY = { min: 0.05, max: 0.13 };
-const SETTLE_PAUSE = { min: 4, max: 9 };
-const SWAY_PAUSE = { min: 12, max: 26 };
+const BREATH_FREQUENCY = { min: 0.1, max: 0.25 };
+const SETTLE_PAUSE = { min: 2.5, max: 6 };
+const SWAY_PAUSE = { min: 6, max: 14 };
 const SWAY_LENGTH = { min: 6, max: 10 };
-const SWAY_FREQUENCY = 0.12;
-const ZOOM = { degrees: 0.6, frequency: 0.045 };
+const SWAY_FREQUENCY = 0.18;
+const ZOOM = { degrees: 3, frequency: 0.07 };
 const PACE = { range: 0.15, frequency: 0.03 };
 
 type Range = { min: number; max: number };
