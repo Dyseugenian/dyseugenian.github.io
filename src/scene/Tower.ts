@@ -25,10 +25,13 @@ import {
   OCCLUSION_MIN,
   OCCLUSION_SIZE,
   BLOCK,
+  EDGE_WIDTH,
   PIER,
   TILE_HEIGHT,
   bakeOcclusion,
+  edge,
   facadeGeometry,
+  surroundings,
   tileParts,
 } from './facade';
 
@@ -70,40 +73,63 @@ export class Tower extends Scene {
   constructor(private input: Input) {
     super();
     const parts = tileParts();
-    const material = (this.material = new RawShaderMaterial({
-      glslVersion: GLSL3,
-      vertexShader,
-      fragmentShader,
-      uniforms: {
-        ...this.uniforms,
-        ...this.facadeUniforms,
-        uConcrete: { value: new Color(palette.concrete).convertLinearToSRGB() },
-        uLamp: { value: new Color(palette.lamp).convertLinearToSRGB() },
-        uLampSoft: { value: new Color(palette.lampSoft).convertLinearToSRGB() },
-        uLampCool: { value: new Color(palette.lampCool).convertLinearToSRGB() },
-        uSalt: { value: new Color(palette.salt).convertLinearToSRGB() },
-        uGrime: { value: new Color(palette.grime).convertLinearToSRGB() },
-        uBay: { value: BAY },
-        uTileHeight: { value: TILE_HEIGHT },
-        uOuterX: { value: (COLUMNS.right + 1) * BAY + PIER.max.x },
-        uSurface: { value: new Texture() },
-        uSurfaceMeters: { value: MAP_METERS },
-        uLight: { value: new Vector3(-0.45, 0.7, 0.55).normalize() },
-        uFogDensity: { value: 0.022 },
-        uOcclusion: { value: bakeOcclusion(parts) },
-        uOcclusionMin: { value: OCCLUSION_MIN },
-        uOcclusionSize: { value: OCCLUSION_SIZE },
-      },
-    }));
+    const windows = parts.filter((part) => part !== PIER && part !== BLOCK);
+    const uniforms = {
+      ...this.uniforms,
+      ...this.facadeUniforms,
+      uConcrete: { value: new Color(palette.concrete).convertLinearToSRGB() },
+      uLamp: { value: new Color(palette.lamp).convertLinearToSRGB() },
+      uLampSoft: { value: new Color(palette.lampSoft).convertLinearToSRGB() },
+      uLampCool: { value: new Color(palette.lampCool).convertLinearToSRGB() },
+      uLampCold: { value: new Color(palette.lampCold).convertLinearToSRGB() },
+      uSalt: { value: new Color(palette.salt).convertLinearToSRGB() },
+      uGrime: { value: new Color(palette.grime).convertLinearToSRGB() },
+      uRust: { value: new Color(palette.rust).convertLinearToSRGB() },
+      uBay: { value: BAY },
+      uTileHeight: { value: TILE_HEIGHT },
+      uOuterX: { value: (COLUMNS.right + 1) * BAY + PIER.min.x + EDGE_WIDTH },
+      uSurface: { value: new Texture() },
+      uSurfaceMeters: { value: MAP_METERS },
+      uLight: { value: new Vector3(-0.45, 0.7, 0.55).normalize() },
+      uFogDensity: { value: 0.022 },
+    };
+    const facadeMaterial = (occlusion: Texture, min: Vector3, size: Vector3) =>
+      new RawShaderMaterial({
+        glslVersion: GLSL3,
+        vertexShader,
+        fragmentShader,
+        uniforms: {
+          ...uniforms,
+          uOcclusion: { value: occlusion },
+          uOcclusionMin: { value: min },
+          uOcclusionSize: { value: size },
+        },
+      });
+    const material = (this.material = facadeMaterial(
+      bakeOcclusion(surroundings(parts)),
+      OCCLUSION_MIN,
+      OCCLUSION_SIZE,
+    ));
     const rows = Array.from({ length: ROWS.below + ROWS.above }, (_, index) => index - ROWS.below);
     const columns = Array.from(
-      { length: COLUMNS.right - COLUMNS.left + 1 },
-      (_, index) => COLUMNS.left + index,
+      { length: COLUMNS.right - COLUMNS.left },
+      (_, index) => COLUMNS.left + 1 + index,
     );
-    const facade = new Mesh(facadeGeometry(parts, columns, rows), material);
-    const edge = new Mesh(facadeGeometry([PIER, BLOCK], [COLUMNS.right + 1], rows), material);
-    facade.frustumCulled = edge.frustumCulled = false;
-    this.building.add(facade, edge);
+    const meshes = [
+      new Mesh(facadeGeometry(parts, columns, rows), material),
+      new Mesh(facadeGeometry(windows, [COLUMNS.left], rows), material),
+    ];
+    for (const [outward, column] of [
+      [-1, COLUMNS.left],
+      [1, COLUMNS.right + 1],
+    ] as const) {
+      const { parts, occlusion, min, size } = edge(outward, windows);
+      meshes.push(
+        new Mesh(facadeGeometry(parts, [column], rows), facadeMaterial(occlusion, min, size)),
+      );
+    }
+    for (const mesh of meshes) mesh.frustumCulled = false;
+    this.building.add(...meshes);
     this.camera.position.z = VIEW.distance;
     this.add(new Backdrop(this.uniforms), this.building);
   }

@@ -30,6 +30,9 @@ const OCCLUSION = {
   front: 1.6,
 };
 
+const EDGE = { rib: 0.12, pitch: 0.25, depth: 0.1, margin: 0.3 };
+export const EDGE_WIDTH = 1.75;
+
 export const OCCLUSION_MIN = new Vector3(-BAY / 2, 0, OCCLUSION.back);
 export const OCCLUSION_SIZE = new Vector3(BAY, TILE_HEIGHT, OCCLUSION.front - OCCLUSION.back);
 
@@ -127,17 +130,43 @@ function probePoints(): Vector3[] {
   });
 }
 
-function surroundings(parts: Part[]): Part[] {
-  const around: Part[] = [];
-  for (let column = -1; column <= 1; column++) {
-    for (let row = -1; row <= 1; row++) {
-      const shift = new Vector3(column * BAY, row * TILE_HEIGHT + Math.abs(column) * STOREY, 0);
-      for (const { kind, min, max } of parts) {
-        around.push({ kind, min: min.clone().add(shift), max: max.clone().add(shift) });
-      }
+function stack(parts: Part[], column: number): Part[] {
+  const stacked: Part[] = [];
+  for (let row = -1; row <= 1; row++) {
+    const shift = new Vector3(column * BAY, row * TILE_HEIGHT + Math.abs(column) * STOREY, 0);
+    for (const { kind, min, max } of parts) {
+      stacked.push({ kind, min: min.clone().add(shift), max: max.clone().add(shift) });
     }
   }
-  return around;
+  return stacked;
+}
+
+export function surroundings(parts: Part[]): Part[] {
+  return [-1, 0, 1].flatMap((column) => stack(parts, column));
+}
+
+export function edge(outward: number, windows: Part[]) {
+  const [left, right] =
+    outward < 0 ? [PIER.max.x - EDGE_WIDTH, PIER.max.x] : [PIER.min.x, PIER.min.x + EDGE_WIDTH];
+  const outer = outward < 0 ? left : right;
+  const parts = [part(CONCRETE, [left, right], [0, TILE_HEIGHT], [PIER.min.z, PIER.max.z])];
+  for (let x = left + EDGE.pitch / 2; x < right; x += EDGE.pitch) {
+    parts.push(
+      part(CONCRETE, [x - EDGE.rib / 2, x + EDGE.rib / 2], [0, TILE_HEIGHT], [0, EDGE.depth]),
+    );
+  }
+  for (let z = PIER.min.z + EDGE.pitch / 2; z < 0; z += EDGE.pitch) {
+    const flank: Span = outward < 0 ? [outer - EDGE.depth, outer] : [outer, outer + EDGE.depth];
+    parts.push(part(CONCRETE, flank, [0, TILE_HEIGHT], [z - EDGE.rib / 2, z + EDGE.rib / 2]));
+  }
+  const min = new Vector3(left - EDGE.margin, 0, OCCLUSION.back);
+  const size = new Vector3(
+    EDGE_WIDTH + 2 * EDGE.margin,
+    TILE_HEIGHT,
+    OCCLUSION.front - OCCLUSION.back,
+  );
+  const around = [...stack(parts, 0), ...stack(windows, outward < 0 ? 0 : -1)];
+  return { parts, min, size, occlusion: bakeOcclusion(around, min, size) };
 }
 
 function contains({ min, max }: Part, point: Vector3): boolean {
@@ -151,10 +180,13 @@ function contains({ min, max }: Part, point: Vector3): boolean {
   );
 }
 
-export function bakeOcclusion(parts: Part[]): Data3DTexture {
+export function bakeOcclusion(
+  around: Part[],
+  corner = OCCLUSION_MIN,
+  extent = OCCLUSION_SIZE,
+): Data3DTexture {
   const { width, height, depth } = OCCLUSION;
   const probes = probePoints();
-  const around = surroundings(parts);
   const openness = new Uint8Array(width * height * depth);
   const cell = new Vector3();
   const sample = new Vector3();
@@ -163,8 +195,8 @@ export function bakeOcclusion(parts: Part[]): Data3DTexture {
       for (let x = 0; x < width; x++) {
         cell
           .set((x + 0.5) / width, (y + 0.5) / height, (z + 0.5) / depth)
-          .multiply(OCCLUSION_SIZE)
-          .add(OCCLUSION_MIN);
+          .multiply(extent)
+          .add(corner);
         const near = around.filter(
           ({ min, max }) =>
             cell.x > min.x - OCCLUSION.reach &&
