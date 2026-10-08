@@ -45,6 +45,7 @@ flat in vec3 vMax;
 out vec4 outColor;
 
 const vec2 PANEL = vec2(1.2, 0.6);
+const vec2 BLOCK = vec2(2.4, 1.2);
 const float TIE_HOLE = 0.022;
 const float BUMP = 0.008;
 const float GRIT = 26.0;
@@ -78,6 +79,10 @@ struct Concrete {
 
 float resolved(float frequency, float footprint) {
   return 1.0 - smoothstep(0.2, 0.6, footprint * frequency);
+}
+
+float toJoint(float at, float first, float last, float size) {
+  return last < first ? 1e3 : abs(at - clamp(round(at), first, last)) * size;
 }
 
 float line(float coordinate, float period, float width) {
@@ -145,8 +150,18 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   vec2 q = p + warp * 0.8;
   float blotch = fbm(q * 0.45);
   float mottle = fbm(q * 2.6 + 11.0);
-  vec2 panel = floor(face / PANEL);
-  float panelTone = mix(0.9, 1.07, hash12(panel + seed));
+  vec2 wander = vec2(valueNoise(face * 0.9 + seed), valueNoise(face * 0.9 + seed + 19.0)) - 0.5;
+  vec2 extent = fromLow + toHigh;
+  vec2 count = max(round(extent / BLOCK), 1.0);
+  vec2 blockSize = extent / count;
+  vec2 laid = (fromLow + 0.03 * wander) / blockSize;
+  float course = clamp(floor(laid.y), 0.0, count.y - 1.0);
+  float shifted = mod(course, 2.0);
+  float staggered = laid.x - 0.5 * shifted;
+  float upTo = count.x - 1.0 - shifted;
+  vec2 block = vec2(clamp(floor(staggered), 0.0, upTo), course);
+  float fromJoint = min(toJoint(staggered, 1.0, upTo, blockSize.x), toJoint(laid.y, 1.0, count.y - 1.0, blockSize.y));
+  float blockTone = mix(0.86, 1.08, hash12(block + seed + vMin.xy * 3.1 + vMin.z));
   float partTone = mix(0.86, 1.08, hash13(vMin * 3.1 + vMax * 1.7 + seed.xyx));
 
   vec4 coarse = texture(uSurface, p / uSurfaceMeters);
@@ -160,7 +175,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   float relief = mix(coarse.z, fine.z, 0.4);
   float cavity = coarse.w;
 
-  vec3 albedo = uConcrete * panelTone * partTone * mix(0.7, 1.12, blotch) * mix(0.86, 1.08, mottle);
+  vec3 albedo = uConcrete * blockTone * partTone * mix(0.7, 1.12, blotch) * mix(0.86, 1.08, mottle);
   albedo *= mix(0.7, 1.08, weathering) * mix(0.84, 1.06, relief);
   albedo *= mix(0.7, 1.0, smoothstep(0.1, 0.5, cavity)) * mix(0.9, 1.06, grain);
   float height = 0.5 * mottle;
@@ -239,11 +254,16 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   albedo *= 1.0 - 0.6 * tieHole * (1.0 - plugged) * holes;
   height -= tieHole;
 
-  float joint = max(line(face.x, PANEL.x, 0.005), line(face.y, PANEL.y * 2.0, 0.005))
-    * mix(0.3, 1.0, hash12(panel + seed + 2.0));
+  float jointWidth = mix(0.006, 0.02, valueNoise(face * 2.5 + seed + 29.0));
+  float rough = (valueNoise(face * 60.0 + seed) - 0.5) * 0.008 * resolved(60.0, footprint);
+  float joint = 1.0 - smoothstep(jointWidth - footprint, jointWidth + footprint, fromJoint + rough);
+  float wear = mix(0.015, 0.05, hash12(block + seed + 2.0));
+  float bevel = (1.0 - smoothstep(jointWidth, jointWidth + wear, fromJoint + rough)) * (1.0 - joint);
+  vec3 mortar = mix(uGrime, uConcrete * 0.6, valueNoise(face * 30.0 + 7.0));
   float lift = line(vLocal.y, uTileHeight, 0.012) * upright;
-  albedo *= 1.0 - 0.3 * joint - 0.35 * lift;
-  height -= 0.5 * joint + lift;
+  albedo = mix(albedo, mortar, 0.8 * joint);
+  albedo *= 1.0 - 0.15 * bevel - 0.35 * lift;
+  height -= 1.4 * joint + 0.6 * bevel + lift;
 
   float along = face.x + face.y;
   float chipSize = 0.14 * smoothstep(0.4, 0.85, valueNoise(vec2(along * 5.0, seed.x + 2.0)));

@@ -30,7 +30,7 @@ const OCCLUSION = {
   front: 1.6,
 };
 
-const EDGE = { rib: 0.12, pitch: 0.25, depth: 0.1, margin: 0.3 };
+const EDGE = { pitch: 1.8, rib: 0.45, depth: 0.35, margin: 0.55 };
 export const EDGE_WIDTH = 1.75;
 
 export const OCCLUSION_MIN = new Vector3(-BAY / 2, 0, OCCLUSION.back);
@@ -148,16 +148,16 @@ export function surroundings(parts: Part[]): Part[] {
 export function edge(outward: number, windows: Part[]) {
   const [left, right] =
     outward < 0 ? [PIER.max.x - EDGE_WIDTH, PIER.max.x] : [PIER.min.x, PIER.min.x + EDGE_WIDTH];
-  const outer = outward < 0 ? left : right;
+  const [inner, outer] = outward < 0 ? [right, left] : [left, right];
+  const out = (distance: number) => outer + outward * distance;
+  const across = (from: number, to: number): Span => (from < to ? [from, to] : [to, from]);
   const parts = [part(CONCRETE, [left, right], [0, TILE_HEIGHT], [PIER.min.z, PIER.max.z])];
-  for (let x = left + EDGE.pitch / 2; x < right; x += EDGE.pitch) {
+  for (let y = EDGE.pitch / 2; y < TILE_HEIGHT; y += EDGE.pitch) {
+    const rib: Span = [y - EDGE.rib / 2, y + EDGE.rib / 2];
     parts.push(
-      part(CONCRETE, [x - EDGE.rib / 2, x + EDGE.rib / 2], [0, TILE_HEIGHT], [0, EDGE.depth]),
+      part(CONCRETE, across(inner, out(EDGE.depth)), rib, [0, EDGE.depth]),
+      part(CONCRETE, across(outer, out(EDGE.depth)), rib, [PIER.min.z, 0]),
     );
-  }
-  for (let z = PIER.min.z + EDGE.pitch / 2; z < 0; z += EDGE.pitch) {
-    const flank: Span = outward < 0 ? [outer - EDGE.depth, outer] : [outer, outer + EDGE.depth];
-    parts.push(part(CONCRETE, flank, [0, TILE_HEIGHT], [z - EDGE.rib / 2, z + EDGE.rib / 2]));
   }
   const min = new Vector3(left - EDGE.margin, 0, OCCLUSION.back);
   const size = new Vector3(
