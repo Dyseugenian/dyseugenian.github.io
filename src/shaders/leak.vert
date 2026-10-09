@@ -32,7 +32,7 @@ void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
   if (!airConditioned(room) || hash12(room + 271.0) > 0.4) return;
-  float x = 0.78 + airConditionerShift(room);
+  float x = 0.4 + airConditionerShift(room);
   vec3 storey = vec3(0.0, aStorey * 0.5 * uTileHeight, 0.0);
   vec3 local = vec3(x - 0.02, 0.85, -1.295) + storey + vec3(position.xy * vec2(0.2, 0.62), 0.0);
   vAlpha = 1.0;

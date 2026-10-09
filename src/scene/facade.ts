@@ -45,7 +45,7 @@ const RAG_SIZE = { width: 0.42, drop: 0.5, z: -1.27 };
 const SHEET_Z = -2.75;
 const CLOTHES_LINE = { height: 1.05, z: -0.8, span: 1.12, slots: 4, drop: 0.95, thickness: 0.012 };
 
-const ROTOR = { radius: 0.34, hub: 0.07, blades: 4, pitch: 0.45, rim: 0.04, depth: 0.08 };
+const ROTOR = { radius: 0.2, hub: 0.045, blades: 4, pitch: 0.45, rim: 0.025, depth: 0.05 };
 
 const EDGE = { pitch: 3.6, rib: 0.45, depth: 0.7, margin: 0.85 };
 export const EDGE_WIDTH = 1.75;
@@ -123,14 +123,14 @@ function blade(steps: number): BufferGeometry {
 function rotor(center: Vector3, segments: number, steps: number): BufferGeometry {
   const { hub, blades, pitch } = ROTOR;
   const pieces: BufferGeometry[] = [
-    new CylinderGeometry(hub, hub, 0.05, segments).rotateX(Math.PI / 2).translate(0, 0, 0.035),
+    new CylinderGeometry(hub, hub, 0.035, segments).rotateX(Math.PI / 2).translate(0, 0, 0.025),
   ];
   for (let index = 0; index < blades; index++) {
     pieces.push(
       blade(steps)
         .rotateX(pitch)
         .rotateZ((index * 2 * Math.PI) / blades)
-        .translate(0, 0, 0.03),
+        .translate(0, 0, 0.02),
     );
   }
   return mergeGeometries(pieces)!.translate(center.x, center.y, center.z);
@@ -138,28 +138,31 @@ function rotor(center: Vector3, segments: number, steps: number): BufferGeometry
 
 function airConditioner(y: number, detail: Detail): Part[] {
   const bottom = y + 0.05;
-  const top = y + 1.0;
-  const front = -1.3;
-  const fan = new Vector3(0.33, (bottom + top) / 2 - 0.02, front);
-  const intake = (bottom + top) / 2 + 0.04;
+  const top = bottom + 0.6;
+  const front = -1.32;
+  const back = front - 0.32;
+  const fan = new Vector3(0.175, (bottom + top) / 2 - 0.02, front);
+  const intake = (bottom + top) / 2 + 0.02;
   const parts = [
-    part(APPLIANCE, [-0.75, 0.75], [bottom, top], [-2.3, front]),
-    part(APPLIANCE, [0.75, 0.81], [y + 0.15, y + 0.21], [-2.9, -2.0]),
-    part(TRIM, [-0.77, 0.77], [top, top + 0.025], [-2.32, front + 0.03]),
+    part(APPLIANCE, [-0.425, 0.425], [bottom, top], [back, front]),
+    part(APPLIANCE, [0.425, 0.465], [bottom + 0.1, bottom + 0.14], [-3.05, back + 0.08]),
+    part(TRIM, [-0.44, 0.44], [top, top + 0.02], [back - 0.015, front + 0.02]),
   ];
   if (detail !== 'distant') {
     parts.push(
-      part(TRIM, [-0.65, -0.5], [y, bottom], [-2.2, -1.4]),
-      part(TRIM, [0.5, 0.65], [y, bottom], [-2.2, -1.4]),
+      part(TRIM, [-0.36, -0.3], [y, bottom], [back + 0.02, front - 0.02]),
+      part(TRIM, [0.3, 0.36], [y, bottom], [back + 0.02, front - 0.02]),
     );
   }
   if (detail === 'full') {
     parts.push(shaped(TRIM, shroud(fan, 24)), shaped(FAN, rotor(fan, 12, 5)));
-    for (let slat = intake - 0.3; slat < intake + 0.31; slat += 0.06) {
-      parts.push(part(TRIM, [-0.68, -0.08], [slat - 0.011, slat + 0.011], [front, front + 0.03]));
+    for (let slat = intake - 0.2; slat < intake + 0.21; slat += 0.04) {
+      parts.push(part(TRIM, [-0.375, -0.075], [slat - 0.007, slat + 0.007], [front, front + 0.02]));
     }
   } else {
-    parts.push(part(TRIM, [-0.68, -0.08], [intake - 0.311, intake + 0.311], [front, front + 0.03]));
+    parts.push(
+      part(TRIM, [-0.375, -0.075], [intake - 0.207, intake + 0.207], [front, front + 0.02]),
+    );
   }
   if (detail === 'reduced') {
     parts.push(shaped(TRIM, shroud(fan, 12)), shaped(FAN, rotor(fan, 6, 2)));

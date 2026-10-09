@@ -29,7 +29,7 @@ void main() {
   vec2 room = roomOf(aTile, aStorey);
   float vent = step(PUFFS, aIndex);
   float puff = aIndex - vent * PUFFS;
-  vec3 origin = vec3(0.33 + airConditionerShift(room), 1.655, -1.28);
+  vec3 origin = vec3(0.175 + airConditionerShift(room), 1.48, -1.3);
   vec3 blow = vec3(0.0, 0.0, 0.7);
   if (vent > 0.5) {
     if (plantFloor(room) || hash12(room + 229.0) <= 0.55 || hash12(room + 263.0) > 0.5) return;
@@ -56,7 +56,7 @@ void main() {
   vSeed = seed * 31.0;
   vCorner = position.xy;
 
-  float size = mix(0.1, 0.75, sqrt(age));
+  float size = mix(0.08, 0.6, sqrt(age));
   float turn = seed * 6.2832 + age * (seed - 0.5) * 2.0;
   vec2 corner = mat2(cos(turn), sin(turn), -sin(turn), cos(turn)) * position.xy * size;
   vec4 view = viewMatrix * world;

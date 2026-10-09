@@ -10,6 +10,7 @@ uniform mat4 projectionMatrix;
 uniform float uTime;
 uniform float uTileHeight;
 uniform float uBay;
+uniform float uOuterX;
 
 in vec3 position;
 in vec3 normal;
@@ -38,12 +39,18 @@ const float STAY = 46.0;
 const float SLOT = 6.0;
 const float CROUCH = 0.45;
 const float SPEED = 5.0;
-const float FLAP = 7.0;
-const float STRIDE = 2.6;
+const float FLAP = 6.0;
+const float STRIDE = 0.08;
+const float PECK = 3.2;
 const float GLANCE = 1.9;
 const float FACING = 11.0;
 const float LEDGE_Y = 1.15;
 const float LEDGE_Z = -1.42;
+const float SILL_Y = 0.55;
+const float AC_TOP = 1.82;
+const float AC_Z = -1.48;
+const float RIB_TOP = 2.025;
+const float EDGE_WIDTH = 1.75;
 const float AWAY = 1e3;
 const float WRIST = 0.14;
 const float TAIL_LENGTH = 0.12;
@@ -111,49 +118,76 @@ Wing unfold(Wing folded, Wing spread, float open) {
     mix(folded.hand, spread.hand, bend));
 }
 
-Perch homePerch(vec2 room, vec2 tile) {
-  float pick = hash12(room + 293.0);
-  float place = hash12(room + 297.0) + 0.12 * aIndex;
-  if (aStorey < 0.5 && pick < 0.4) {
-    return Perch(vec3(clamp(mix(-2.8, -1.4, place), -2.9, -1.3), 2.7, 0.75 - blockInset(tile)), vec2(-2.9, -1.3));
-  }
-  if (airConditioned(room) && (pick < 0.7 || aIndex > 0.5)) {
-    float shift = airConditionerShift(room);
-    return Perch(vec3(clamp(shift + mix(-0.5, 0.5, place), shift - 0.65, shift + 0.65), 2.175, -1.6),
-      vec2(shift - 0.65, shift + 0.65));
-  }
-  if (airConditioned(room)) {
-    float side = sign(place - 0.5);
-    return Perch(vec3(side * 0.98, LEDGE_Y, LEDGE_Z), side > 0.0 ? vec2(0.9, 1.1) : vec2(-1.1, -0.9));
-  }
-  return Perch(vec3(clamp(mix(-1.0, 1.0, place), -1.1, 1.1), LEDGE_Y, LEDGE_Z), vec2(-1.1, 1.1));
+vec2 tileOf(vec2 room, out float storey) {
+  float parity = mod(abs(room.x), 2.0);
+  storey = mod(room.y - parity, 2.0);
+  return vec2(room.x, mod((room.y - parity - storey) / 2.0, 4096.0));
 }
 
-Perch landing(vec2 room, float side) {
-  if (airConditioned(room)) {
-    float shift = airConditionerShift(room);
-    return Perch(vec3(shift + side * (0.5 - 0.25 * aIndex), 2.175, -1.6), vec2(shift - 0.65, shift + 0.65));
+Perch ledgeIn(vec2 room, float pick, float place) {
+  float x = room.x * uBay;
+  if (abs(x) + 1.4 > uOuterX + 0.01) return Perch(vec3(0.0, 2.0 * AWAY, 0.0), vec2(0.0));
+  float storey;
+  vec2 tile = tileOf(room, storey);
+  float plant = plantFloor(room) ? 1.0 : 0.0;
+  float cooled = airConditioned(room) ? 1.0 : 0.0;
+  float pier = step(-uOuterX + 0.01, x - 2.8);
+  float block = pier * (plantFloor(vec2(room.x, room.y - storey)) ? 0.0 : 1.0);
+  float edgeSide = x - 1.4 - EDGE_WIDTH < -uOuterX + 0.01 ? -1.0 : x + 1.4 + EDGE_WIDTH > uOuterX - 0.01 ? 1.0 : 0.0;
+  float weights[7] = float[7](1.0 - plant, 1.2 * cooled, 0.3 * (1.0 - plant), 0.6 * block, 0.8 * abs(edgeSide), plant, 0.6 * plant);
+  float total = 0.0;
+  for (int i = 0; i < 7; i++) total += weights[i];
+  float chosen = pick * total;
+  int kind = 6;
+  for (int i = 0; i < 7; i++) {
+    chosen -= weights[i];
+    if (chosen < 0.0) {
+      kind = i;
+      break;
+    }
   }
-  return Perch(vec3(side * (0.98 - 0.22 * aIndex), LEDGE_Y, LEDGE_Z), vec2(-1.1, 1.1));
+  float side = place < 0.5 ? -1.0 : 1.0;
+  float along = fract(place * 2.0);
+  if (kind == 0) return Perch(vec3(mix(-1.1, 1.1, along), LEDGE_Y, LEDGE_Z), vec2(-1.1, 1.1));
+  if (kind == 1) {
+    float shift = airConditionerShift(room);
+    return Perch(vec3(shift + mix(-0.3, 0.3, along), AC_TOP, AC_Z), vec2(shift - 0.3, shift + 0.3));
+  }
+  if (kind == 2) return Perch(vec3(side * 1.3, SILL_Y, -2.05), vec2(side * 1.3));
+  if (kind == 3) {
+    return Perch(vec3(mix(-2.9, -1.3, along), 2.7 - storey * 0.5 * uTileHeight, 0.75 - blockInset(tile)), vec2(-2.9, -1.3));
+  }
+  if (kind == 4) {
+    vec2 rib = edgeSide * vec2(1.55, 3.7);
+    return Perch(vec3(mix(rib.x, rib.y, along), RIB_TOP, 0.4), edgeSide > 0.0 ? rib : rib.yx);
+  }
+  vec2 ledge = vec2(pier > 0.5 ? -2.7 : -1.3, 1.3);
+  return Perch(vec3(mix(ledge.x, ledge.y, along), kind == 5 ? SILL_Y : 0.5 * uTileHeight, 0.45), ledge);
 }
 
 Perch perchIn(float stay, vec2 room, Perch home, float seed) {
   float choice = hash12(vec2(stay, seed * 113.0));
-  float side = sign(hash12(vec2(stay, seed * 71.0)) - 0.5);
-  vec2 above = room + vec2(0.0, 1.0);
-  vec2 beside = room + vec2(side, 0.0);
   if (choice < 0.5) return home;
-  if (choice < 0.65) return landing(room, side);
-  if (choice < 0.77 && !plantFloor(above)) {
-    Perch next = landing(above, side);
-    return Perch(next.at + vec3(0.0, 0.5 * uTileHeight, 0.0), next.range);
-  }
-  if (choice < 0.89 && !plantFloor(beside)) {
-    Perch next = landing(beside, side);
-    return Perch(next.at + vec3(side * uBay, 0.0, 0.0), next.range + side * uBay);
-  }
-  if (choice < 0.89) return home;
-  return Perch(vec3(0.0, 2.0 * AWAY, 0.0), vec2(0.0));
+  if (choice > 0.9) return Perch(vec3(0.0, 2.0 * AWAY, 0.0), vec2(0.0));
+  float side = sign(hash12(vec2(stay, seed * 71.0)) - 0.5);
+  vec2 hop = choice < 0.62 ? vec2(0.0) : choice < 0.72 ? vec2(0.0, 1.0) : choice < 0.8 ? vec2(0.0, -1.0) : vec2(side, 0.0);
+  vec2 target = vec2(room.x + hop.x, mod(room.y + hop.y, 8192.0));
+  Perch next = ledgeIn(target, hash12(vec2(stay, seed * 101.0)), hash12(vec2(stay, seed * 103.0)));
+  if (next.at.y > AWAY) return home;
+  return Perch(next.at + vec3(hop.x * uBay, hop.y * 0.5 * uTileHeight, 0.0), next.range + hop.x * uBay);
+}
+
+float ramped(float from, float to, float t) {
+  float x = clamp((t - from) / (to - from), 0.0, 1.0);
+  return (to - from) * (x * x * x - 0.5 * x * x * x * x) + max(t - to, 0.0);
+}
+
+float arrive(float t) {
+  return -2.0 * t * t * t + 3.0 * t * t + 0.5 * (t * t * t - 2.0 * t * t + t) + 0.12 * (t * t * t - t * t);
+}
+
+float arriveRate(float t) {
+  return -6.0 * t * t + 6.0 * t + 0.5 * (3.0 * t * t - 4.0 * t + 1.0) + 0.12 * (3.0 * t * t - 2.0 * t);
 }
 
 vec3 bezier(vec3 a, vec3 b, vec3 c, vec3 d, float t) {
@@ -212,10 +246,11 @@ void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
   float present = aIndex < 0.5 ? 0.18 : aIndex < 1.5 ? 0.08 : 0.05;
-  if (plantFloor(room) || hash12(room + 291.0 + 7.0 * aIndex) > present) return;
+  if (hash12(room + 291.0 + 7.0 * aIndex) > present) return;
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
   float seed = hash12(room + aIndex * 5.0);
-  Perch home = homePerch(room, tile);
+  Perch home = ledgeIn(room, hash12(room + 293.0 + 3.0 * aIndex), fract(hash12(room + 297.0) + 0.31 * aIndex));
+  if (home.at.y > AWAY) return;
 
   float clock = uTime / STAY + seed * 10.0;
   float stay = floor(clock);
@@ -242,8 +277,8 @@ void main() {
   if (leaving && flight >= duration) return;
 
   float progress = clamp(flight / duration, 0.0, 1.0);
-  float eased = mix(progress, progress * progress * (3.0 - 2.0 * progress), 0.65);
-  float pace = mix(1.0, 6.0 * progress * (1.0 - progress), 0.65) / duration;
+  float eased = arrive(progress);
+  float pace = arriveRate(progress) / duration;
   vec3 course = bezier(from.at, lift, approach, to.at, eased);
   vec3 velocity = bezierVelocity(from.at, lift, approach, to.at, eased) * pace;
   vec3 bend = bezierBend(from.at, lift, approach, to.at, eased) * pace * pace;
@@ -270,22 +305,36 @@ void main() {
   float stretch = allowed * (1.0 - loafing) * step(0.75, kind) * step(kind, 0.8) * window(0.8, 0.6, 3.8, 0.6, inSlot);
   float flick = allowed * step(0.8, kind) * step(kind, 0.9) * window(0.6, 0.1, 1.5, 0.3, inSlot);
   float strolling = allowed * (1.0 - loafing) * step(0.9, kind);
+  float foraging = allowed * (1.0 - loafing) * step(0.4, kind) * step(kind, 0.55);
 
-  float wanted = (hash12(vec2(stay * 8.0 + slot, seed * 47.0)) - 0.5) * 0.7;
+  float wanted = (hash12(vec2(stay * 8.0 + slot, seed * 47.0)) - 0.5) * mix(0.7, 0.3, foraging);
   float walkSpan = clamp(perch.at.x + wanted, perch.range.x, perch.range.y) - perch.at.x;
-  strolling *= step(0.08, abs(walkSpan));
-  float outbound = clamp((inSlot - 0.6) / 1.6, 0.0, 1.0);
-  float inbound = clamp((inSlot - 3.2) / 1.6, 0.0, 1.0);
-  float walked = walkSpan * (smoothstep(0.0, 1.0, outbound) - smoothstep(0.0, 1.0, inbound)) * strolling;
-  float walking = strolling * (window(0.0, 0.15, 1.0, 0.15, outbound) + window(0.0, 0.15, 1.0, 0.15, inbound));
+  float route = abs(walkSpan) * max(strolling * step(0.08, abs(walkSpan)), foraging * step(0.04, abs(walkSpan)));
+  float cycle = max(route / max(floor(route / STRIDE + 0.5), 1.0), 1e-3);
+  float walkTime = mix(1.6, 0.9, foraging);
+  float outbound = route * smoothstep(0.0, 1.0, clamp((inSlot - 0.6) / walkTime, 0.0, 1.0));
+  float inbound = route * smoothstep(0.0, 1.0, clamp((inSlot - 3.2) / walkTime, 0.0, 1.0));
+  float walked = sign(walkSpan) * (outbound - inbound);
+  float gait = (outbound + inbound) / cycle;
+  float walking = step(1e-3, route)
+    * (window(0.0, 0.5 * cycle, route, 0.5 * cycle, outbound) + window(0.0, 0.5 * cycle, route, 0.5 * cycle, inbound));
   float walkFacing = mix(sign(walkSpan), -sign(walkSpan), smoothstep(2.5, 3.1, inSlot)) * 0.5 * PI;
-  float walkTurn = strolling * window(0.25, 0.35, 5.2, 0.4, inSlot);
+  float walkTurn = step(1e-3, route) * window(0.25, 0.35, 5.2, 0.4, inSlot);
+  float lowered = foraging * (window(1.55, 0.25, 2.55, 0.3, inSlot) + window(4.15, 0.25, 5.5, 0.35, inSlot));
+  float peckCycle = floor(inSlot * PECK);
+  float strike = smoothstep(0.7, 0.95, lowered) * step(0.3, hash12(vec2(peckCycle, seed * 89.0)))
+    * pow(sin(PI * clamp(fract(inSlot * PECK) / 0.4, 0.0, 1.0)), 2.0);
 
   float facingClock = (uTime + seed * 50.0) / FACING;
   float facingStep = floor(facingClock);
+  float turning = fract(facingClock) * FACING;
+  float turnBy = abs(wrapAngle(facingTarget(facingStep, seed) - facingTarget(facingStep - 1.0, seed)));
   float idleHeading = mixAngle(facingTarget(facingStep - 1.0, seed), facingTarget(facingStep, seed),
-    smoothstep(0.0, 0.5, fract(facingClock) * FACING));
+    smoothstep(0.0, 0.6, turning));
+  float shuffle = (1.0 - walkTurn) * step(0.3, turnBy) * window(0.0, 0.05, 0.65, 0.05, turning);
   idleHeading = mixAngle(idleHeading, walkFacing, walkTurn);
+  float narrow = 1.0 - step(0.05, perch.range.y - perch.range.x);
+  idleHeading = mixAngle(idleHeading, step(0.5 * PI, abs(wrapAngle(idleHeading))) * PI, narrow);
   vec3 departure = bezierVelocity(from.at, lift, approach, to.at, 0.0);
   vec3 arrival = bezierVelocity(from.at, lift, approach, to.at, 1.0);
   vec3 travel = flight < 0.0 ? departure : flight > duration ? arrival : velocity;
@@ -298,11 +347,12 @@ void main() {
   float sideways = (velocity.z * bend.x - velocity.x * bend.z) / horizontal;
   float shake = sin(TAU * 13.0 * inSlot) * window(1.0, 0.1, 1.7, 0.3, inSlot) * ruffle;
   float posture = moves * smoothstep(-0.02, 0.12, flight) * (1.0 - smoothstep(duration, duration + 0.35, flight));
-  float bank = posture * clamp(-atan(sideways / 9.8), -0.8, 0.8) + 0.18 * shake - 0.06 * preen * eventSide;
-  float bodyPitch = mix(0.04 - 0.16 * crouch - 0.1 * stretch - 0.06 * loaf, -0.4 + 0.4 * climb + 0.75 * flare, posture);
-  float drop = 0.018 * crouch + 0.032 * loaf + 0.012 * touch;
-  float stride = fract(inSlot * STRIDE);
-  float bounce = 0.003 * walking * sin(2.0 * TAU * stride);
+  float sway = 0.045 * walking * sin(TAU * gait);
+  float bank = posture * clamp(-atan(sideways / 9.8), -0.8, 0.8) + 0.18 * shake - 0.06 * preen * eventSide + sway;
+  float bodyPitch = mix(0.04 - 0.16 * crouch - 0.1 * stretch - 0.06 * loaf - 0.5 * lowered - 0.12 * touch,
+    -0.4 + 0.4 * climb + 0.75 * flare, posture);
+  float drop = 0.018 * crouch + 0.032 * loaf + 0.02 * touch;
+  float bounce = 0.0025 * walking * cos(2.0 * TAU * gait);
   float puff = 1.0 + 0.12 * ruffle + 0.06 * loaf + 0.008 * sin(TAU * 0.8 * uTime + seed * 20.0) * (1.0 - flying);
 
   float glanceClock = (uTime + seed * 13.0) / GLANCE;
@@ -314,20 +364,29 @@ void main() {
   look = mix(look, vec3(eventSide * 2.3, -0.55, eventSide * 0.35), preen);
   look.x += 0.5 * shake;
   look.y -= 0.8 * bodyPitch + 0.25 * crouch;
-  float bob = walking * 0.012 * (stride < 0.7 ? 1.0 - 2.0 * stride / 0.7 : -1.0 + 2.0 * smoothstep(0.7, 1.0, stride));
+  float footfall = fract(2.0 * gait);
+  float thrust = smoothstep(0.0, 1.0, (footfall - 0.55) / 0.45);
+  float bob = walking * 0.5 * cycle * (thrust - footfall + 0.28);
+  float headRise = walking * 0.004 * sin(PI * thrust);
+  look.x += (hash12(vec2(peckCycle, seed * 97.0)) - 0.5) * 0.5 * smoothstep(0.7, 1.0, lowered);
+  look.y -= 0.55 * lowered + 0.35 * strike;
   vec3 neckShift = vec3(0.0, -0.01, 0.022) * flying + vec3(0.0, -0.012, -0.01) * loaf
-    + vec3(0.0, 0.0, bob) + vec3(0.0, -0.004, 0.006) * preen * sin(TAU * 4.0 * inSlot);
+    + vec3(0.0, headRise, bob) + vec3(0.0, -0.004, 0.006) * preen * sin(TAU * 4.0 * inSlot)
+    + vec3(0.0, -0.085, 0.045) * lowered + vec3(0.0, -0.035, 0.018) * strike + vec3(0.0, -0.004, 0.012) * touch;
 
-  float flapPhase = fract(max(flight, 0.0) * FLAP);
+  float flown = max(flight, 0.0);
+  float flapPhase = fract(FLAP * flown + 3.0 * (flown - ramped(0.1, 0.6, flown))
+    + 2.0 * ramped(duration - 0.6, duration - 0.2, flown));
   float descending = smoothstep(0.15, 0.45, -velocity.y / (length(velocity) + 1e-3));
   float cruise = step(3.0, span) * smoothstep(0.6, 0.9, sin(flight * 2.2 + seed * 9.0));
   float gliding = flying * (1.0 - launch) * (1.0 - flare) * max(descending, cruise);
-  Wing flown = mixWing(flapping(flapPhase, launch, flare), GLIDE, gliding);
-  flown = mixWing(flown, SETTLING, moves * smoothstep(duration - 0.05, duration + 0.12, flight));
+  Wing beat = mixWing(flapping(flapPhase, launch, flare), GLIDE, gliding);
+  beat = mixWing(beat, SETTLING, moves * smoothstep(duration - 0.05, duration + 0.12, flight));
 
   float tailSpread = clamp(max(launch, flare) + 0.35 * flying + 0.5 * abs(bank) * flying + 0.35 * ruffle + 0.7 * stretch
     + 0.25 * flick, 0.0, 1.0);
-  float tailPitch = 0.35 * (1.0 - flying) + 0.45 * flare - 0.3 * crouch - 0.05 * flying + 0.25 * sin(TAU * 5.0 * inSlot) * flick;
+  float tailPitch = 0.35 * (1.0 - flying) + 0.45 * flare - 0.3 * crouch - 0.05 * flying + 0.25 * sin(TAU * 5.0 * inSlot) * flick
+    + 0.3 * lowered;
 
   float size = mix(0.78, 0.88, hash12(vec2(seed * 43.0, 7.0)));
   vec3 p = position;
@@ -339,7 +398,7 @@ void main() {
     float wingSide = side;
     float handWeight = smoothstep(0.38, 0.47, aSurface.x);
     float ownEvent = step(0.0, eventSide * wingSide);
-    Wing wing = unfold(FOLDED, flown, open);
+    Wing wing = unfold(FOLDED, beat, open);
     wing = mixWing(wing, STRETCH, stretch * ownEvent);
     p.x *= wingSide;
     n.x *= wingSide;
@@ -362,16 +421,22 @@ void main() {
     n = tilt * normalize(vec3(0.6 * aSurface.x * (1.0 - aSurface.y), aSurface.z, 0.0));
   } else if (aPart > 8.5) {
     float legSide = side;
-    float gait = fract(inSlot * STRIDE + 0.5 * step(0.0, legSide));
-    float swing = gait < 0.6 ? mix(-0.35, 0.35, gait / 0.6) : mix(0.35, -0.35, smoothstep(0.6, 1.0, gait));
-    float raised = gait < 0.6 ? 0.0 : 0.012 * sin(PI * (gait - 0.6) / 0.4);
+    float phase = fract(gait + 0.5 * step(0.0, legSide));
+    float swinging = smoothstep(0.0, 1.0, clamp(2.0 * phase - 1.0, 0.0, 1.0));
+    float reach = walking * 0.25 * cycle * (phase < 0.5 ? 1.0 - 4.0 * phase : 2.0 * swinging - 1.0);
+    float raised = 0.012 * walking * sin(PI * swinging)
+      + 0.01 * shuffle * max(sin(TAU * (2.5 * turning + 0.5 * step(0.0, legSide))), 0.0);
     float stretched = stretch * step(0.0, eventSide * legSide);
-    float angle = walking * swing + 2.1 * flying * (1.0 - flare) - 0.7 * flare + 0.9 * stretched;
+    float angle = 2.1 * flying * (1.0 - flare) - 0.7 * flare + 0.9 * stretched;
     vec3 hip = HIP * vec3(legSide, 1.0, 1.0);
+    float lower = clamp((HIP.y - p.y) / HIP.y, 0.0, 1.0);
+    p += vec3(0.0, raised, reach) * lower;
     mat3 leg = pitch(-angle);
-    p = hip + leg * (p - hip) + vec3(0.0, walking * raised + 0.026 * flying * (1.0 - flare) + 0.02 * stretched, -0.03 * flying * (1.0 - flare));
+    p = hip + leg * (p - hip) + vec3(0.0, 0.026 * flying * (1.0 - flare) + 0.02 * stretched, -0.03 * flying * (1.0 - flare));
     n = leg * n;
     p.y += drop * (1.0 - flying);
+    mat3 upright = transpose(pitch(bodyPitch - 0.04) * roll(bank));
+    p = mix(p, CENTER + upright * (p - CENTER), lower * (1.0 - posture));
   }
   if (aPart < 4.5) {
     float nodding = aHead;

@@ -12,6 +12,9 @@ const vec3 WINDOW = vec3(0.0, 2.175, -3.4);
 const float WINDOW_REACH = 4.5;
 const float WASH = 3.2;
 const float SWITCH_PERIOD = 30.0;
+const vec3 GLOW = vec3(1.2, 1.1, 1.8);
+const float SCATTER = 1.2;
+const int GLOW_STEPS = 8;
 
 vec3 windowLight(vec2 room, float x) {
   if (abs(x) + 1.05 > uOuterX || plantFloor(room)) return vec3(0.0);
@@ -62,4 +65,33 @@ vec3 windowWash(vec3 local, vec3 normal, vec3 shading, vec2 tile, float originX,
     if (wash > 0.0) light += windowLight(room, originX + point.x - q.x) * mix(1.0, 0.35, lampDepth(room)) * WASH * wash;
   }
   return light;
+}
+
+float recessGlow(vec3 q) {
+  vec3 shape = (q - vec3(0.0, -0.1, 2.3)) / GLOW;
+  return exp(-1.5 * dot(shape, shape)) * smoothstep(0.4, 1.4, q.z);
+}
+
+vec3 windowScatter(vec3 eye, vec3 local, vec2 tile, vec3 origin, float jitter) {
+  vec3 ray = local - eye;
+  float near = clamp((eye.z - 1.2) / (eye.z - local.z), 0.0, 1.0);
+  vec2 litRoom = vec2(-1.0);
+  vec3 glow = vec3(0.0);
+  vec3 scatter = vec3(0.0);
+  for (int i = 0; i < GLOW_STEPS; i++) {
+    vec3 point = eye + ray * mix(near, 1.0, (float(i) + jitter) / float(GLOW_STEPS));
+    vec2 room;
+    vec3 q = fromWindow(point, tile, 0.0, room);
+    float shape = recessGlow(q);
+    if (shape < 1e-3) continue;
+    if (room != litRoom) {
+      glow = windowLight(room, origin.x + point.x - q.x);
+      litRoom = room;
+    }
+    if (glow.r + glow.g + glow.b < 1e-3) continue;
+    vec3 drift = point + origin + vec3(0.0, uClimb - uTime * 0.2, 0.0);
+    float dust = valueNoise(drift * vec3(2.5, 1.0, 2.5)) * mix(0.6, 1.4, valueNoise(drift * 9.0));
+    scatter += glow * mix(1.0, 0.35, lampDepth(room)) * shape * mix(0.25, 1.6, dust);
+  }
+  return scatter * (1.0 - near) * length(ray) / float(GLOW_STEPS);
 }

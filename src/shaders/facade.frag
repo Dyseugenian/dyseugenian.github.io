@@ -60,11 +60,10 @@ const vec3 STAIN_COVER = vec3(0.4, 0.45, 0.2);
 const vec3 STAIN_SALTS = vec3(0.0, 31.0, 67.0);
 const float SPECK_SPACING = 0.35;
 const float RIM_STRENGTH = 0.9;
-const vec3 GLOW = vec3(1.2, 1.1, 1.8);
 const float GLASS_Z = -3.05;
 const float SPANDREL_Z = -1.8;
 const vec2 VENT = vec2(0.26, 0.13);
-const float FAN_RADIUS = 0.34;
+const float FAN_RADIUS = 0.2;
 const vec3 GLASS_NORMAL = vec3(0.0, 0.0, 1.0);
 const vec3 ROOM = vec3(2.0, 3.2, 4.0);
 const float ROOM_LIGHT = 10.0;
@@ -72,8 +71,6 @@ const vec2 GLASS_HALF = vec2(1.05, 1.025);
 const vec3 BEAMS[5] = vec3[5](
   vec3(0.9, 0.14, 0.3), vec3(0.8, 0.2, 0.35), vec3(0.8, 0.2, 0.35), vec3(1.6, 0.28, 0.5), vec3(1.8, 0.4, 0.55));
 const vec2 BEAM_AXES[5] = vec2[5](vec2(1.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0), vec2(0.0, 1.0));
-const float SCATTER = 1.2;
-const int GLOW_STEPS = 8;
 const float CLOUD_SPACING = 60.0;
 const float CLOUD_THICKNESS = 2.5;
 const float CLOUD_DENSITY = 0.35;
@@ -481,11 +478,6 @@ float clouds(vec3 from, vec3 to) {
   return 1.0 - exp(-CLOUD_DENSITY * depth * length(to - from) / rise);
 }
 
-float recessGlow(vec3 q) {
-  vec3 shape = (q - vec3(0.0, -0.1, 2.3)) / GLOW;
-  return exp(-1.5 * dot(shape, shape)) * smoothstep(0.4, 1.4, q.z);
-}
-
 float groove(float toEdge, float blur, float width) {
   return 1.0 - smoothstep(width - blur, width + blur, toEdge);
 }
@@ -671,11 +663,11 @@ Concrete airConditioner(Concrete surface, vec3 normal) {
   surface.detail = vec3(0.0, 0.0, 1.0);
   surface.height = 0.0;
   if (abs(vKind - 4.0) < 0.5) {
-    float hub = 1.0 - smoothstep(0.07, 0.075, length(inUnit.xy));
+    float hub = 1.0 - smoothstep(0.045, 0.05, length(inUnit.xy));
     surface.albedo = mix(uAppliance * mix(0.35, 0.55, seed), uGrime * 2.0, 0.3) * (1.0 + 0.6 * hub);
     return surface;
   }
-  if (vKind < 2.5 && halfSize.x < 0.3) {
+  if (vKind < 2.5 && halfSize.x < 0.1) {
     surface.albedo = uGrime * mix(1.2, 2.0, valueNoise(inUnit.zy * 40.0));
     return surface;
   }
@@ -685,10 +677,10 @@ Concrete airConditioner(Concrete surface, vec3 normal) {
   float rise = vLocal.y - storey * 0.5 * uTileHeight - 1.15;
 
   vec3 paint = mix(uAppliance, uNewsprintAged * 0.85, 0.35 * seed) * mix(0.6, 0.9, valueNoise(onFace * 6.0 + seed * 9.0));
-  paint *= mix(0.55, 1.0, smoothstep(0.0, 0.7, rise));
+  paint *= mix(0.55, 1.0, smoothstep(0.0, 0.45, rise));
   paint = mix(paint, uGrime * 1.5, step(0.5, normal.y) * 0.6 * smoothstep(0.3, 0.7, valueNoise(onFace * 12.0 + seed)));
   float runs = smoothstep(0.55, 0.85, valueNoise(vec2(vLocal.x * 30.0, rise * 1.5 + seed * 20.0)))
-    * smoothstep(1.0, 0.25, rise) * (1.0 - step(0.5, normal.y));
+    * smoothstep(0.65, 0.15, rise) * (1.0 - step(0.5, normal.y));
   paint *= 1.0 - 0.35 * runs;
   vec2 fromEdge = faceHalf - abs(onFace);
   float rim = min(fromEdge.x, fromEdge.y);
@@ -696,28 +688,28 @@ Concrete airConditioner(Concrete surface, vec3 normal) {
   paint = mix(paint, uRust * 0.75, 0.7 * rust);
   surface.albedo = paint;
   if (vKind > 4.5) {
-    if (halfSize.y > 0.2) surface.albedo = mix(uGrime * 0.5, paint, line(inUnit.y + 0.3, 0.06, 0.011) * step(0.5, normal.z));
+    if (halfSize.y > 0.1) surface.albedo = mix(uGrime * 0.5, paint, line(inUnit.y + 0.2, 0.04, 0.007) * step(0.5, normal.z));
     return surface;
   }
 
   float front = step(0.5, normal.z);
-  vec2 fanCenter = vec2(halfSize.x - FAN_RADIUS - 0.08, -0.02);
+  vec2 fanCenter = vec2(halfSize.x - FAN_RADIUS - 0.05, -0.02);
   float radius = length(inUnit.xy - fanCenter);
   float housing = front * (1.0 - smoothstep(FAN_RADIUS - 0.005, FAN_RADIUS, radius));
-  float motor = 1.0 - smoothstep(0.1, 0.105, radius);
+  float motor = 1.0 - smoothstep(0.065, 0.07, radius);
   paint = mix(paint, mix(uGrime * 0.4, paint * 0.35, motor), housing);
 
-  float intakeRight = fanCenter.x - FAN_RADIUS - 0.07;
-  vec2 intakeCenter = vec2(0.5 * (intakeRight - halfSize.x + 0.07), 0.04);
-  vec2 intakeHalf = vec2(0.5 * (intakeRight + halfSize.x - 0.07), halfSize.y - 0.14);
+  float intakeRight = fanCenter.x - FAN_RADIUS - 0.05;
+  vec2 intakeCenter = vec2(0.5 * (intakeRight - halfSize.x + 0.05), 0.02);
+  vec2 intakeHalf = vec2(0.5 * (intakeRight + halfSize.x - 0.05), halfSize.y - 0.09);
   vec2 inIntake = abs(inUnit.xy - intakeCenter) - intakeHalf;
   float intake = front * (1.0 - smoothstep(-0.004, 0.0, max(inIntake.x, inIntake.y)));
   paint = mix(paint, uGrime * 0.5, intake);
-  vec2 badge = abs(inUnit.xy - vec2(intakeCenter.x, -halfSize.y + 0.06)) - vec2(0.06, 0.014);
+  vec2 badge = abs(inUnit.xy - vec2(intakeCenter.x, -halfSize.y + 0.045)) - vec2(0.05, 0.012);
   float label = front * (1.0 - step(0.0, max(badge.x, badge.y)));
   paint = mix(paint, uSalt * 0.9, 0.7 * label);
 
-  float led = front * step(0.55, fract(seed * 31.0)) * (1.0 - smoothstep(0.006, 0.01, length(inUnit.xy - vec2(halfSize.x - 0.05, -halfSize.y + 0.05))));
+  float led = front * step(0.55, fract(seed * 31.0)) * (1.0 - smoothstep(0.005, 0.008, length(inUnit.xy - vec2(halfSize.x - 0.035, -halfSize.y + 0.035))));
   surface.emission = uBeaconColor * led * (0.6 + 0.4 * sin(uTime * 1.3 + seed * 6.0));
   surface.albedo = paint;
   return surface;
@@ -1016,31 +1008,11 @@ void main() {
 
   float mist = fbm(vec3(vWorld.x * 0.05, building.y * 0.04, uTime * 0.04));
   float fog = 1.0 - exp(-distance * uFogDensity * mix(0.5, 1.7, mist));
-  vec3 eye = cameraPosition - origin;
-  vec3 ray = vLocal - eye;
-  float near = clamp((eye.z - 1.2) / (eye.z - vLocal.z), 0.0, 1.0);
-  float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
   vec3 scatter = vec3(0.0);
   if (depth > 0.0) {
-    vec2 litRoom = vec2(-1.0);
-    vec3 glow = vec3(0.0);
-    for (int i = 0; i < GLOW_STEPS; i++) {
-      vec3 point = eye + ray * mix(near, 1.0, (float(i) + jitter) / float(GLOW_STEPS));
-      vec2 room;
-      vec3 q = fromWindow(point, tile, 0.0, room);
-      float shape = recessGlow(q);
-      if (shape < 1e-3) continue;
-      if (room != litRoom) {
-        glow = windowLight(room, origin.x + point.x - q.x);
-        litRoom = room;
-      }
-      if (glow.r + glow.g + glow.b < 1e-3) continue;
-      vec3 drift = point + origin + vec3(0.0, uClimb - uTime * 0.2, 0.0);
-      float dust = valueNoise(drift * vec3(2.5, 1.0, 2.5)) * mix(0.6, 1.4, valueNoise(drift * 9.0));
-      scatter += glow * mix(1.0, 0.35, lampDepth(room)) * shape * mix(0.25, 1.6, dust);
-    }
-    scatter *= (1.0 - near) * length(ray) / float(GLOW_STEPS) * depth;
-    scatter *= mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
+    float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
+    scatter = windowScatter(cameraPosition - origin, vLocal, tile, origin, jitter) * depth
+      * mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
   }
 
   color = mix(color, haze, fog * mix(1.0, 0.6, lit)) + SCATTER * scatter * (1.0 - 0.5 * fog);
