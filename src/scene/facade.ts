@@ -30,13 +30,19 @@ const APPLIANCE = 2;
 const CLOTH = 3;
 const FAN = 4;
 const TRIM = 5;
+const RAG = 6;
+const SHEET = 7;
 
 const REGULAR = 1;
 const PLANT = 2;
 const OCCASIONAL = 3;
 const LAUNDRY = 4;
+const RAGGED = 5;
+const SHEETED = 6;
 export const PLANT_EVERY = 16;
 const PLANT_FLOOR = { front: 0.6, louvre: 0.06, louvreSpacing: 0.24 };
+const RAG_SIZE = { width: 0.42, drop: 0.5, z: -1.27 };
+const SHEET_Z = -2.75;
 const CLOTHES_LINE = { height: 1.05, z: -0.8, span: 1.12, slots: 4, drop: 0.95, thickness: 0.012 };
 
 const ROTOR = { radius: 0.34, hub: 0.07, blades: 4, pitch: 0.45, rim: 0.04, depth: 0.08 };
@@ -162,8 +168,8 @@ function airConditioner(y: number, detail: Detail): Part[] {
 }
 
 const LAUNDRY_SEGMENTS: Record<Detail, { line: number; across: number; down: number }> = {
-  full: { line: 8, across: 8, down: 4 },
-  reduced: { line: 4, across: 4, down: 2 },
+  full: { line: 8, across: 14, down: 10 },
+  reduced: { line: 4, across: 6, down: 4 },
   distant: { line: 4, across: 2, down: 1 },
 };
 
@@ -200,6 +206,14 @@ function occasional(part: Part): Part {
 
 function hung(part: Part): Part {
   return { ...part, role: LAUNDRY };
+}
+
+function ragged(part: Part): Part {
+  return { ...part, role: RAGGED };
+}
+
+function sheeted(part: Part): Part {
+  return { ...part, role: SHEETED };
 }
 
 export function tileParts(detail: Detail): Part[] {
@@ -246,6 +260,17 @@ export function tileParts(detail: Detail): Part[] {
       const cloth = new PlaneGeometry(slot, drop, segments.across, segments.down);
       parts.push(hung(shaped(CLOTH, cloth.translate(center, line - drop / 2, z))));
     }
+    const rag = new PlaneGeometry(
+      RAG_SIZE.width,
+      RAG_SIZE.drop,
+      segments.across,
+      2 * segments.down,
+    );
+    const sheet = new PlaneGeometry(2.1, glassTop - glassBottom, segments.across, segments.across);
+    parts.push(
+      ragged(shaped(RAG, rag.translate(0, glassBottom - RAG_SIZE.drop / 2, RAG_SIZE.z))),
+      sheeted(shaped(SHEET, sheet.translate(0, (glassBottom + glassTop) / 2, SHEET_Z))),
+    );
     for (let blade = sill + louvreSpacing / 2; blade < glassTop; blade += louvreSpacing) {
       parts.push(
         plant(
@@ -308,6 +333,41 @@ export function facadeGeometry(parts: Part[], columns: number[], rows: number[])
   return geometry;
 }
 
+export function storeyGeometry(
+  shape: BufferGeometry,
+  columns: number[],
+  rows: number[],
+  count: number,
+): InstancedBufferGeometry {
+  const geometry = new InstancedBufferGeometry();
+  geometry.setIndex(shape.index);
+  for (const [name, attribute] of Object.entries(shape.attributes)) {
+    geometry.setAttribute(name, attribute);
+  }
+  const offsets: number[] = [];
+  const tiles: number[] = [];
+  const storeys: number[] = [];
+  const indices: number[] = [];
+  for (const column of columns) {
+    for (const row of rows) {
+      for (const storey of [0, 1]) {
+        for (let index = 0; index < count; index++) {
+          offsets.push(column * BAY, row * TILE_HEIGHT + (Math.abs(column) % 2) * STOREY, 0);
+          tiles.push(column, row);
+          storeys.push(storey);
+          indices.push(index);
+        }
+      }
+    }
+  }
+  geometry.setAttribute('aOffset', new InstancedBufferAttribute(new Float32Array(offsets), 3));
+  geometry.setAttribute('aTile', new InstancedBufferAttribute(new Float32Array(tiles), 2));
+  geometry.setAttribute('aStorey', new InstancedBufferAttribute(new Float32Array(storeys), 1));
+  geometry.setAttribute('aIndex', new InstancedBufferAttribute(new Float32Array(indices), 1));
+  geometry.instanceCount = storeys.length;
+  return geometry;
+}
+
 function stack(parts: Part[], column: number): Part[] {
   const stacked: Part[] = [];
   for (let row = -1; row <= 1; row++) {
@@ -348,7 +408,7 @@ export function edge(outward: number, windows: Part[]) {
 }
 
 export function occluders(around: Part[]): Part[] {
-  return around.filter(({ role }) => role !== PLANT && role !== OCCASIONAL && role !== LAUNDRY);
+  return around.filter(({ role }) => role === undefined || role === REGULAR);
 }
 
 export function occlusionTexture(openness: Uint8Array): Data3DTexture {

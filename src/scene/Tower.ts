@@ -22,6 +22,8 @@ import type { Input } from '../core/Input';
 import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 import { Cables } from './Cables';
+import { Rebar } from './Rebar';
+import { traces } from './traces';
 import { Backdrop } from './Backdrop';
 import { Beacons, beaconSpot } from './Beacons';
 import { Drift, STILL } from './Drift';
@@ -55,6 +57,8 @@ const VIEW = { fov: 64, narrowestFov: 45, distance: 6.5, vanish: 0.82 };
 const COLUMNS = { left: -3, right: 3 };
 const ROWS = { below: 2, above: 32 };
 const DETAIL_ROWS = { full: 5, reduced: 11 };
+const REBAR_ROWS = { below: 1, above: 4 };
+const TRACE_ROWS = { below: 2, above: 8 };
 const CLIMB_SPEED = 0.9;
 const SWAY = { pitch: 0.12, shift: 1 };
 const SPOT = { reach: 8, y: -4, z: 3 };
@@ -87,6 +91,7 @@ export class Tower extends Scene {
     uSpot: { value: new Vector3(0, SPOT.y, SPOT.z) },
   };
   private building = new Group();
+  private rebar: Rebar;
   private occlusion = { value: new Data3DTexture() };
   private leftOcclusion = { value: new Data3DTexture() };
   private rightOcclusion = { value: new Data3DTexture() };
@@ -204,6 +209,23 @@ export class Tower extends Scene {
         ),
       );
     }
+    const concrete = (list: Part[]) =>
+      occluders(list).filter((part) => surfaceOf(part) === SURFACES.concrete);
+    const around = occluders(surroundings(parts));
+    this.rebar = new Rebar(
+      [
+        { parts: concrete(parts), around, columns },
+        { parts: concrete(windows), around, columns: [COLUMNS.left] },
+        { parts: leftEdge.parts, around: occluders(leftEdge.around), columns: [COLUMNS.left] },
+        {
+          parts: rightEdge.parts,
+          around: occluders(rightEdge.around),
+          columns: [COLUMNS.right + 1],
+        },
+      ],
+      rows.filter((row) => row >= -REBAR_ROWS.below && row < REBAR_ROWS.above),
+      uniforms,
+    );
     const depthMaterial = new RawShaderMaterial({
       glslVersion: GLSL3,
       vertexShader,
@@ -219,6 +241,12 @@ export class Tower extends Scene {
       ...meshes,
       new Beacons(spot, rows, uniforms),
       new Cables(rows, uniforms),
+      this.rebar,
+      ...traces(
+        [COLUMNS.left, ...columns],
+        rows.filter((row) => row >= -TRACE_ROWS.below && row < TRACE_ROWS.above),
+        uniforms,
+      ),
     );
     this.camera.position.z = VIEW.distance;
     this.add(new Backdrop(this.uniforms), this.building, this.veil);
@@ -291,6 +319,7 @@ export class Tower extends Scene {
       this.lift -= TILE_HEIGHT;
       this.facadeUniforms.uTilesClimbed.value =
         (this.facadeUniforms.uTilesClimbed.value + 1) % TILE_SEEDS;
+      this.rebar.climb(this.facadeUniforms.uTilesClimbed.value);
     }
     this.building.position.y = -this.lift;
 

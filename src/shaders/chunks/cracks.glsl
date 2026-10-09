@@ -1,5 +1,6 @@
 const float CRACK_CELL = 3.2;
 const vec3 CRACK_WAVES = vec3(0.45, 0.16, 0.05);
+const vec3 CRACK_SALTS = vec3(0.0, 17.0, 29.0);
 const vec2 CRACK_WIDTH = vec2(0.0012, 0.028);
 const float CORNER_CRACKS = 0.3;
 const float LEACH_DROP = 0.7;
@@ -34,12 +35,19 @@ float jag(float x, float key, out float slope) {
 }
 
 float crackPath(float s, float key, out float slope) {
-  vec3 slopes;
-  float offset = CRACK_WAVES.x * jag(s / CRACK_WAVES.x, key, slopes.x)
-    + CRACK_WAVES.y * jag(s / CRACK_WAVES.y, key + 17.0, slopes.y)
-    + CRACK_WAVES.z * jag(s / CRACK_WAVES.z, key + 29.0, slopes.z);
+  vec3 waves = CRACK_WAVES;
+  vec3 salts = CRACK_SALTS;
+  float offset = 0.0;
+  slope = 0.0;
+  for (int wave = 0; wave < 3; wave++) {
+    float waveSlope;
+    offset += waves.x * jag(s / waves.x, key + salts.x, waveSlope);
+    slope += waveSlope;
+    waves = waves.yzx;
+    salts = salts.yzx;
+  }
   float ramp = smoothstep(0.0, 0.1, s);
-  slope = 0.5 * (slopes.x + slopes.y + slopes.z) * ramp;
+  slope *= 0.5 * ramp;
   return (0.5 * offset + 0.25 * (valueNoise(vec2(s * 0.6, key)) - 0.5)) * ramp;
 }
 
@@ -75,9 +83,8 @@ void crackSegment(vec2 p, vec2 start, vec2 dir, float len, float peak, float wid
     }
   }
 
-  if (upright < 0.5 || healed || abs(dir.x) < 0.25 || widest < 0.003) return;
   float along = (p.x - start.x) / dir.x;
-  if (along < 0.0 || along > len) return;
+  if (upright < 0.5 || healed || abs(dir.x) < 0.25 || widest < 0.003 || along < 0.0 || along > len) return;
   float slope;
   float drop = start.y + dir.y * along + dir.x * crackPath(along, key, slope) - p.y;
   if (drop < 0.0 || drop > LEACH_DROP) return;
@@ -152,19 +159,13 @@ Fracture fractures(vec2 p, vec2 fromLow, vec2 extent, float upright, float footp
   Fracture fracture = Fracture(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
   vec2 home = floor(p / CRACK_CELL);
   vec2 toward = sign(fract(p / CRACK_CELL) - 0.5);
-  vec2 nearby[4];
-  int count = 0;
-  for (int n = 0; n < 4; n++) {
-    vec2 cell = home + toward * vec2(n % 2, n / 2);
-    if (crackNear(p, cell, upright)) {
-      nearby[count] = cell;
-      count++;
-    }
-  }
-  int segments = 3 * count + (upright > 0.5 ? 1 : 0);
-  for (int n = 0; n < segments; n++) {
+  for (int n = 0; n < 13; n++) {
+    int slot = n / 3;
+    vec2 cell = home + toward * vec2(slot % 2, slot / 2);
+    bool corner = n == 12;
+    if (corner ? upright < 0.5 : !crackNear(p, cell, upright)) continue;
     Crack crack;
-    bool found = n == 3 * count ? cornerCrack(p, fromLow, extent, crack) : cellCrack(nearby[n / 3], n % 3, upright, crack);
+    bool found = corner ? cornerCrack(p, fromLow, extent, crack) : cellCrack(cell, n % 3, upright, crack);
     if (found) {
       crackSegment(p, crack.start, crack.dir, crack.len, crack.peak, crack.widest, crack.key, upright, footprint,
         fracture);
