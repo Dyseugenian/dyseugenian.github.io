@@ -13,6 +13,7 @@ import {
 import vertexShader from '../shaders/stars.vert';
 import fragmentShader from '../shaders/specks.frag';
 import { palette } from '../core/palette';
+import { beneathGrain } from '../post/Film';
 
 const STARS = { pixelsPerStar: 900, twinkle: [0.3, 1.4], drift: 1 / 12, depth: 0.3 } as const;
 
@@ -22,7 +23,7 @@ export class Stars extends Points<BufferGeometry, RawShaderMaterial> {
     uPixelRatio: { value: 1 },
     uDim: { value: new Color(palette.ochreDim).convertLinearToSRGB() },
     uBright: { value: new Color(palette.ochreHi).convertLinearToSRGB() },
-    uBackground: { value: new Color(palette.bg).convertLinearToSRGB() },
+    uBackground: { value: beneathGrain(palette.bg) },
     uCenter: { value: new Vector2() },
     uKeepOutMin: { value: new Vector2() },
     uKeepOutMax: { value: new Vector2() },

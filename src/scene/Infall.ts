@@ -12,6 +12,7 @@ import {
 import vertexShader from '../shaders/infall.vert';
 import fragmentShader from '../shaders/specks.frag';
 import { palette } from '../core/palette';
+import { beneathGrain } from '../post/Film';
 
 const INFALL = {
   start: [4, 12],
@@ -31,7 +32,7 @@ export class Infall extends Points<BufferGeometry, RawShaderMaterial> {
       uStretch: stretch,
       uDim: { value: new Color(palette.ochreDim).convertLinearToSRGB() },
       uHi: { value: new Color(palette.ochreHi).convertLinearToSRGB() },
-      uBackground: { value: new Color(palette.bg).convertLinearToSRGB() },
+      uBackground: { value: beneathGrain(palette.bg) },
     };
     const material = new RawShaderMaterial({
       glslVersion: GLSL3,

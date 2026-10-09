@@ -22,9 +22,9 @@ import depthShader from '../shaders/facade-depth.frag';
 import type { Input } from '../core/Input';
 import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
-import { Cables } from './Cables';
+import { beneathGrain } from '../post/Film';
 import { Rebar } from './Rebar';
-import { pigeons, traces } from './traces';
+import { pigeons, spouts, traces } from './traces';
 import { Backdrop } from './Backdrop';
 import { Beacons, beaconSpot } from './Beacons';
 import { Drift, STILL } from './Drift';
@@ -98,7 +98,7 @@ export class Tower extends Scene {
   private leftOcclusion = { value: new Data3DTexture() };
   private rightOcclusion = { value: new Data3DTexture() };
   private maps: Promise<TowerMaps>;
-  private veil = new Veil(palette.bg);
+  private veil = new Veil(beneathGrain(palette.bg));
   private lift = 0;
   private pitch = 0;
   private swayPitch = new Spring(4, 5);
@@ -248,8 +248,8 @@ export class Tower extends Scene {
       ...depthMeshes,
       ...meshes,
       new Beacons(spot, rows, uniforms),
-      new Cables(rows, uniforms),
       this.rebar,
+      ...spouts(traceColumns, traceRows, uniforms),
       ...traces(traceColumns, traceRows, uniforms),
       this.pigeons,
     );

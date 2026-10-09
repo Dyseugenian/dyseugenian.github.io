@@ -1,5 +1,4 @@
 import {
-  Color,
   MathUtils,
   PerspectiveCamera,
   Scene,
@@ -11,7 +10,7 @@ import { Input } from './Input';
 import { Loop, type Frame } from './Loop';
 import { Quality } from './Quality';
 import { palette } from './palette';
-import { Film } from '../post/Film';
+import { Film, beneathGrain } from '../post/Film';
 import { RoleText } from '../post/RoleText';
 import { Logo } from '../scene/Logo';
 import { Tower } from '../scene/Tower';
@@ -34,11 +33,11 @@ export class App {
   private tower = new Tower(this.input);
   private isTowerRevealed = false;
   private towerFade = 0;
+  private background = beneathGrain(palette.bg);
 
   constructor(canvas: HTMLCanvasElement, context: WebGL2RenderingContext) {
     this.renderer = new WebGLRenderer({ canvas, context });
     this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
-    this.renderer.setClearColor(new Color(palette.bg).convertLinearToSRGB());
     this.renderer.autoClear = false;
 
     this.camera.position.z = 10;
@@ -91,6 +90,7 @@ export class App {
     this.roleText.update(dt);
     this.film.update(time);
     this.renderer.setRenderTarget(this.target);
+    this.renderer.setClearColor(this.background);
     this.renderer.clear();
     if (this.isTowerRevealed) {
       this.renderer.render(this.tower, this.tower.camera);

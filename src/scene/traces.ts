@@ -1,5 +1,9 @@
 import {
   AdditiveBlending,
+  BoxGeometry,
+  CylinderGeometry,
+  DoubleSide,
+  Float32BufferAttribute,
   BufferGeometry,
   CustomBlending,
   GLSL3,
@@ -7,6 +11,7 @@ import {
   OneFactor,
   OneMinusSrcAlphaFactor,
   PlaneGeometry,
+  RingGeometry,
   RawShaderMaterial,
   type IUniform,
   type ShaderMaterialParameters,
@@ -19,12 +24,24 @@ import motesVertex from '../shaders/motes.vert';
 import motesFragment from '../shaders/motes.frag';
 import pigeonVertex from '../shaders/pigeon.vert';
 import pigeonFragment from '../shaders/pigeon.frag';
+import wireVertex from '../shaders/wire.vert';
+import wireFragment from '../shaders/wire.frag';
+import fastenerVertex from '../shaders/fastener.vert';
+import fastenerFragment from '../shaders/fastener.frag';
+import spoutVertex from '../shaders/spout.vert';
+import spoutFragment from '../shaders/spout.frag';
+import spoutDripVertex from '../shaders/spout-drip.vert';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { storeyGeometry } from './facade';
 
 const PUFFS = 16;
 const LEAK_PIECES = 4;
 const MOTES = 12;
 const PIGEONS = 3;
+const WIRES = 13;
+const WIRE_SEGMENTS = 64;
+const FASTENERS = 8;
+const SPOUT_DROPS = 3;
 
 const LAYERED: ShaderMaterialParameters = {
   blending: CustomBlending,
@@ -45,7 +62,7 @@ export function traces(
     [LEAK_PIECES, leakVertex, leakFragment, LAYERED],
     [MOTES, motesVertex, motesFragment, { ...LAYERED, blending: AdditiveBlending }],
   ];
-  return layers.map(([count, vertexShader, fragmentShader, options]) =>
+  const meshes = layers.map(([count, vertexShader, fragmentShader, options]) =>
     instanced(
       storeyGeometry(quad, columns, rows, count),
       vertexShader,
@@ -54,6 +71,24 @@ export function traces(
       options,
     ),
   );
+  const ribbon = new PlaneGeometry(1, 1, 1, WIRE_SEGMENTS);
+  meshes.push(
+    instanced(
+      storeyGeometry(ribbon, columns, rows, WIRES),
+      wireVertex,
+      wireFragment,
+      uniforms,
+      LAYERED,
+    ),
+    instanced(
+      storeyGeometry(new BoxGeometry(1, 1, 1), columns, rows, WIRES * FASTENERS),
+      fastenerVertex,
+      fastenerFragment,
+      uniforms,
+      {},
+    ),
+  );
+  return meshes;
 }
 
 export function pigeons(
@@ -63,6 +98,44 @@ export function pigeons(
 ): Mesh {
   const geometry = storeyGeometry(new BufferGeometry(), columns, rows, PIGEONS);
   return instanced(geometry, pigeonVertex, pigeonFragment, uniforms, {});
+}
+
+export function spouts(
+  columns: number[],
+  rows: number[],
+  uniforms: Record<string, IUniform>,
+): Mesh[] {
+  const pieces = [
+    new CylinderGeometry(1, 1, 1, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5),
+    new CylinderGeometry(1.35, 1.35, 0.03, 16).rotateX(Math.PI / 2).translate(0, 0, 0.015),
+    new CylinderGeometry(1.1, 1.1, 0.06, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.94),
+    new RingGeometry(1, 1.1, 16).translate(0, 0, 0.97),
+  ].map((piece, index) => {
+    const part = Math.min(index, 2);
+    const plain = piece.toNonIndexed();
+    plain.deleteAttribute('uv');
+    const count = plain.getAttribute('position').count;
+    plain.setAttribute('aPart', new Float32BufferAttribute(new Float32Array(count).fill(part), 1));
+    return plain;
+  });
+  const shape = mergeGeometries(pieces)!;
+  for (const piece of pieces) piece.dispose();
+  const spout = instanced(
+    storeyGeometry(shape, columns, rows, 1),
+    spoutVertex,
+    spoutFragment,
+    uniforms,
+    { side: DoubleSide },
+  );
+  spout.renderOrder = 1;
+  const drips = instanced(
+    storeyGeometry(new PlaneGeometry(1, 1), columns, rows, SPOUT_DROPS),
+    spoutDripVertex,
+    leakFragment,
+    uniforms,
+    LAYERED,
+  );
+  return [spout, drips];
 }
 
 function instanced(

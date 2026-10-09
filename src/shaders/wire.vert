@@ -1,0 +1,52 @@
+precision highp float;
+
+#include "chunks/cables.glsl"
+
+uniform mat4 modelMatrix;
+uniform mat4 viewMatrix;
+uniform mat4 projectionMatrix;
+uniform vec3 cameraPosition;
+uniform vec2 uResolution;
+
+in vec3 position;
+in vec3 aOffset;
+in vec2 aTile;
+in float aStorey;
+in float aIndex;
+
+out vec3 vWorld;
+out vec3 vLocal;
+out vec3 vSide;
+out vec3 vTangent;
+out float vAcross;
+out float vAlpha;
+flat out vec2 vTile;
+flat out float vSeed;
+
+void main() {
+  gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+  vec2 room = roomOf(aTile, aStorey);
+  vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
+  if (!layCable(room, tile, aStorey, aIndex)) return;
+
+  float t = position.y + 0.5;
+  vec3 middle = cableAt(t);
+  vec3 tangent = normalize(cableAt(min(t + 0.01, 1.0)) - cableAt(max(t - 0.01, 0.0)));
+  vec4 world = modelMatrix * vec4(middle + aOffset, 1.0);
+  vec3 toCamera = cameraPosition - world.xyz;
+  float pixel = 2.0 * length(toCamera) / (projectionMatrix[1][1] * uResolution.y);
+  float radius = wireRadius(size) * thickness;
+  float halfWidth = max(radius, 0.6 * pixel * thickness);
+  vec3 side = normalize(cross(tangent, toCamera));
+  vec3 widened = side * position.x * 2.0 * halfWidth;
+  world.xyz += widened;
+  vWorld = world.xyz;
+  vLocal = middle + widened;
+  vSide = side;
+  vTangent = tangent;
+  vAcross = position.x * 2.0;
+  vAlpha = max(radius / halfWidth, 0.5);
+  vTile = tile;
+  vSeed = seed;
+  gl_Position = projectionMatrix * viewMatrix * world;
+}

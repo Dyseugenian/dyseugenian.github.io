@@ -5,9 +5,9 @@ import fragmentShader from '../shaders/veil.frag';
 export class Veil extends Mesh<PlaneGeometry, RawShaderMaterial> {
   readonly uniforms;
 
-  constructor(color: string) {
+  constructor(color: Color) {
     const uniforms = {
-      uColor: { value: new Color(color).convertLinearToSRGB() },
+      uColor: { value: color },
       uOpacity: { value: 1 },
     };
     super(

@@ -1,4 +1,3 @@
-import './ui/overlay.css';
 import { App, setPageState } from './core/App';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage');

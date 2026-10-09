@@ -9,6 +9,7 @@ precision highp sampler3D;
 #include "chunks/windows.glsl"
 #include "chunks/cracks.glsl"
 #include "chunks/sky.glsl"
+#include "chunks/clouds.glsl"
 
 uniform vec3 cameraPosition;
 uniform vec2 uResolution;
@@ -76,9 +77,6 @@ const vec2 GLASS_HALF = vec2(1.05, 1.025);
 const vec3 BEAMS[5] = vec3[5](
   vec3(0.9, 0.14, 0.3), vec3(0.8, 0.2, 0.35), vec3(0.8, 0.2, 0.35), vec3(1.6, 0.28, 0.5), vec3(1.8, 0.4, 0.55));
 const vec2 BEAM_AXES[5] = vec2[5](vec2(1.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0), vec2(0.0, 1.0));
-const float CLOUD_SPACING = 60.0;
-const float CLOUD_THICKNESS = 2.5;
-const float CLOUD_DENSITY = 0.35;
 const bool CONCRETE = SURFACE == 0;
 const bool GLASS = SURFACE == 1;
 const bool FITTINGS = SURFACE == 2;
@@ -482,20 +480,6 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   }
 
   return Concrete(albedo, height, detail, vec3(0.0));
-}
-
-float clouds(vec3 from, vec3 to) {
-  float rise = max(to.y - from.y, 1e-3);
-  float depth = 0.0;
-  for (int i = 0; i < 4; i++) {
-    float center = (floor(from.y / CLOUD_SPACING) + float(i)) * CLOUD_SPACING;
-    vec3 crossing = from + (to - from) * clamp((center - from.y) / rise, 0.0, 1.0);
-    float across = atan((to.y - center) / CLOUD_THICKNESS) - atan((from.y - center) / CLOUD_THICKNESS);
-    if (across < 0.02) continue;
-    float puffs = fbm(vec3(crossing.xz * vec2(0.06, 0.1) + vec2(uTime * 0.05, center), uTime * 0.03));
-    depth += smoothstep(0.35, 0.7, puffs) * CLOUD_THICKNESS * across;
-  }
-  return 1.0 - exp(-CLOUD_DENSITY * depth * length(to - from) / rise);
 }
 
 float groove(float toEdge, float blur, float width) {

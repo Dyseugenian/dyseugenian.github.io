@@ -23,6 +23,7 @@ import dustUrl from '../assets/dust.webp';
 import vertexShader from '../shaders/wordmark.vert';
 import fragmentShader from '../shaders/wordmark.frag';
 import { palette } from '../core/palette';
+import { beneathGrain } from '../post/Film';
 import { Dust, createDustMaterial } from './Dust';
 import { SwipeSpecks } from './SwipeSpecks';
 import { PenPaths } from './PenPaths';
@@ -36,7 +37,7 @@ export class Wordmark extends Group {
   readonly uniforms = {
     uPixelSize: { value: 1 },
     uTime: { value: 0 },
-    uBackground: { value: new Color(palette.bg).convertLinearToSRGB() },
+    uBackground: { value: beneathGrain(palette.bg) },
     uTetris: { value: 0 },
     uTetrisTime: { value: 0 },
     uTetrisEnd: { value: 0 },

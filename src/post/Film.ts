@@ -1,5 +1,6 @@
 import {
   BufferGeometry,
+  Color,
   GLSL3,
   Mesh,
   NoBlending,
@@ -13,7 +14,15 @@ import vertexShader from '../shaders/film.vert';
 import fragmentShader from '../shaders/film.frag';
 
 const FILM_FPS = 24;
+const GRAIN = 0.08;
 const WARP_GRID = { columns: 160, rows: 90 };
+
+export function beneathGrain(color: string): Color {
+  return new Color(color)
+    .convertLinearToSRGB()
+    .addScalar(-GRAIN / 4)
+    .multiplyScalar(1 / (1 - GRAIN / 2));
+}
 
 export class Film extends Mesh<BufferGeometry, RawShaderMaterial> {
   private uniforms;
@@ -26,7 +35,7 @@ export class Film extends Mesh<BufferGeometry, RawShaderMaterial> {
       uFps: { value: FILM_FPS },
       uResolution: { value: new Vector2(1, 1) },
       uPixelRatio: { value: 1 },
-      uGrain: { value: 0.08 },
+      uGrain: { value: GRAIN },
       uWarp: { value: 3 },
       uAberration: { value: 6 },
     };
