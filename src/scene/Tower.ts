@@ -1,4 +1,5 @@
 import {
+  BufferAttribute,
   Color,
   Data3DTexture,
   DataTexture,
@@ -23,7 +24,7 @@ import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 import { Cables } from './Cables';
 import { Rebar } from './Rebar';
-import { traces } from './traces';
+import { pigeons, traces } from './traces';
 import { Backdrop } from './Backdrop';
 import { Beacons, beaconSpot } from './Beacons';
 import { Drift, STILL } from './Drift';
@@ -92,6 +93,7 @@ export class Tower extends Scene {
   };
   private building = new Group();
   private rebar: Rebar;
+  private pigeons: Mesh;
   private occlusion = { value: new Data3DTexture() };
   private leftOcclusion = { value: new Data3DTexture() };
   private rightOcclusion = { value: new Data3DTexture() };
@@ -146,6 +148,9 @@ export class Tower extends Scene {
       uLinen: { value: new Color(palette.linen).convertLinearToSRGB() },
       uDenim: { value: new Color(palette.denim).convertLinearToSRGB() },
       uMadder: { value: new Color(palette.madder).convertLinearToSRGB() },
+      uSheenGreen: { value: new Color(palette.sheenGreen).convertLinearToSRGB() },
+      uSheenPurple: { value: new Color(palette.sheenPurple).convertLinearToSRGB() },
+      uCoral: { value: new Color(palette.coral).convertLinearToSRGB() },
       uBay: { value: BAY },
       uTileHeight: { value: TILE_HEIGHT },
       uPlantEvery: { value: PLANT_EVERY },
@@ -226,6 +231,9 @@ export class Tower extends Scene {
       rows.filter((row) => row >= -REBAR_ROWS.below && row < REBAR_ROWS.above),
       uniforms,
     );
+    const traceColumns = [COLUMNS.left, ...columns];
+    const traceRows = rows.filter((row) => row >= -TRACE_ROWS.below && row < TRACE_ROWS.above);
+    this.pigeons = pigeons(traceColumns, traceRows, uniforms);
     const depthMaterial = new RawShaderMaterial({
       glslVersion: GLSL3,
       vertexShader,
@@ -242,11 +250,8 @@ export class Tower extends Scene {
       new Beacons(spot, rows, uniforms),
       new Cables(rows, uniforms),
       this.rebar,
-      ...traces(
-        [COLUMNS.left, ...columns],
-        rows.filter((row) => row >= -TRACE_ROWS.below && row < TRACE_ROWS.above),
-        uniforms,
-      ),
+      ...traces(traceColumns, traceRows, uniforms),
+      this.pigeons,
     );
     this.camera.position.z = VIEW.distance;
     this.add(new Backdrop(this.uniforms), this.building, this.veil);
@@ -263,6 +268,10 @@ export class Tower extends Scene {
     this.occlusion.value = occlusionTexture(maps.occlusion);
     this.leftOcclusion.value = occlusionTexture(maps.leftOcclusion);
     this.rightOcclusion.value = occlusionTexture(maps.rightOcclusion);
+    this.pigeons.geometry.setIndex(new BufferAttribute(maps.pigeon.index, 1));
+    for (const { name, array, itemSize } of maps.pigeon.attributes) {
+      this.pigeons.geometry.setAttribute(name, new BufferAttribute(array, itemSize));
+    }
     for (const texture of [
       this.uniforms.uFbm,
       this.occlusion,
