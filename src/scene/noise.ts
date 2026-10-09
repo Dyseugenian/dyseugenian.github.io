@@ -50,7 +50,7 @@ export function noiseTexture(): DataTexture {
   return repeating(texels, SIZE, RGFormat);
 }
 
-export function bakeFbm(): Float32Array<ArrayBuffer> {
+export function bakeFbm(): Uint16Array<ArrayBuffer> {
   const { size, cells, octaves } = FBM;
   const lattice = randomBytes(0x85ebca6b, SIZE * SIZE);
   const sums = new Float32Array(size * size);
@@ -83,10 +83,9 @@ export function bakeFbm(): Float32Array<ArrayBuffer> {
       }
     }
   }
-  return sums;
+  return Uint16Array.from(sums, (sum) => DataUtils.toHalfFloat(sum));
 }
 
-export function fbmTexture(sums: Float32Array): DataTexture {
-  const texels = Uint16Array.from(sums, (sum) => DataUtils.toHalfFloat(sum));
+export function fbmTexture(texels: Uint16Array): DataTexture {
   return repeating(texels, FBM.size, RedFormat);
 }

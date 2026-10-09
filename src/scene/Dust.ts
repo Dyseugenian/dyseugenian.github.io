@@ -41,7 +41,7 @@ export class Dust extends Points<BufferGeometry, RawShaderMaterial> {
   private totals: number[] = [];
 
   constructor(
-    private sites: number[],
+    private sites: Float32Array,
     material: RawShaderMaterial,
   ) {
     const count = Math.ceil((sites.length / 6) * DUST.share);

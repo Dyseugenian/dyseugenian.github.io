@@ -61,7 +61,7 @@ export class SwipeSpecks extends Points<BufferGeometry, RawShaderMaterial> {
   private next = 0;
 
   constructor(
-    private sources: number[],
+    private sources: Float32Array,
     uniforms: Record<string, IUniform>,
   ) {
     const geometry = new BufferGeometry()
