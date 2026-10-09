@@ -2,6 +2,7 @@ precision highp float;
 
 #include "chunks/noise.glsl"
 #include "chunks/inset.glsl"
+#include "chunks/rooms.glsl"
 
 invariant gl_Position;
 
@@ -9,9 +10,7 @@ uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
 uniform float uTime;
-uniform float uTilesClimbed;
 uniform float uTileHeight;
-uniform float uPlantEvery;
 
 in vec3 position;
 in vec3 normal;
@@ -30,6 +29,9 @@ out float vKind;
 flat out vec2 vTile;
 flat out vec3 vMin;
 flat out vec3 vMax;
+flat out float vProtrudes;
+out vec3 vUnit;
+flat out float vTurn;
 out vec2 vCloth;
 out float vFold;
 
@@ -56,7 +58,8 @@ void main() {
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
-  vec3 shift = vec3(occasional * mix(-0.2, 0.2, fract(pick * 7.13)) + rag * mix(-0.65, 0.65, hash12(room + 247.0)), 0.0, 0.0);
+  vec4 mount = occasional > 0.5 ? airConditionerMount(room) : vec4(0.0);
+  vec3 shift = vec3(rag * mix(-0.65, 0.65, hash12(room + 247.0)), 0.0, 0.0);
   float spin = step(abs(aKind - 4.0), 0.5) * uTime * mix(2.0, 5.0, fract(pick * 13.7)) * step(0.15, fract(pick * 3.1));
   mat2 turn = mat2(cos(spin), sin(spin), -sin(spin), cos(spin));
   vec2 hub = 0.5 * (aMin.xy + aMax.xy);
@@ -94,6 +97,11 @@ void main() {
     bent.xy += 2.0 * billow * at / reach * edges.yx * normal.z;
   }
 
+  vUnit = local;
+  vTurn = mount.w;
+  local = mounted(local, mount);
+  bent = turnUnit(bent, mount.w);
+
   vec4 world = modelMatrix * vec4(local + aOffset, 1.0);
   vWorld = world.xyz;
   vLocal = local;
@@ -103,5 +111,6 @@ void main() {
   vCloth = vec2(across, hang);
   vMin = aMin + shift;
   vMax = aMax + shift - vec3(0.0, 0.0, inset);
+  vProtrudes = aProtrudes;
   gl_Position = projectionMatrix * viewMatrix * world;
 }

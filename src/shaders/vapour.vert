@@ -29,8 +29,9 @@ void main() {
   vec2 room = roomOf(aTile, aStorey);
   float vent = step(PUFFS, aIndex);
   float puff = aIndex - vent * PUFFS;
-  vec3 origin = vec3(0.175 + airConditionerShift(room), 1.48, -1.3);
-  vec3 blow = vec3(0.0, 0.0, 0.7);
+  vec4 mount = airConditionerMount(room);
+  vec3 origin = mounted(vec3(0.175, 1.48, -1.3), mount);
+  vec3 blow = turnUnit(vec3(0.0, 0.0, 0.7), mount.w);
   if (vent > 0.5) {
     if (plantFloor(room) || hash12(room + 229.0) <= 0.55 || hash12(room + 263.0) > 0.5) return;
     origin = vec3(mix(-0.8, 0.8, hash12(room + 227.0)), 0.275, -1.78);

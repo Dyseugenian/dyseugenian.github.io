@@ -42,6 +42,9 @@ in float vKind;
 flat in vec2 vTile;
 flat in vec3 vMin;
 flat in vec3 vMax;
+flat in float vProtrudes;
+in vec3 vUnit;
+flat in float vTurn;
 in vec2 vCloth;
 in float vFold;
 
@@ -62,6 +65,8 @@ const float SPECK_SPACING = 0.35;
 const float RIM_STRENGTH = 0.9;
 const float GLASS_Z = -3.05;
 const float SPANDREL_Z = -1.8;
+const vec2 PIER_SPAN = vec2(-2.8, -1.4);
+const vec2 BLOCK_RISE = vec2(0.9, 2.7);
 const vec2 VENT = vec2(0.26, 0.13);
 const float FAN_RADIUS = 0.2;
 const vec3 GLASS_NORMAL = vec3(0.0, 0.0, 1.0);
@@ -304,6 +309,21 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
     cover = cover.yzx;
   }
   albedo *= 1.0 - 0.3 * upright * streaks(wall, footprint);
+  if (vProtrudes > 0.5) {
+    float hooded = upright * (exp(-toHigh.y / 1.2) * mix(0.35, 1.0, valueNoise(vec2(p.x * 8.0, toHigh.y * 1.5)))
+      + exp(-toHigh.y / 0.12)) + (level ? smoothstep(0.3, 0.7, fbm(q * 5.0 + 41.0)) : 0.0);
+    float joint = (1.0 - smoothstep(0.0, 0.05, vLocal.z)) * (1.0 - abs(normal.z));
+    albedo = mix(albedo, uGrime, mix(0.5, 1.2, hash12(seed + 5.0)) * min(0.6 * hooded + 0.6 * joint, 0.85));
+  } else if (normal.z > 0.5 && all(lessThan(abs(vec2(vMin.x, vMax.x) - PIER_SPAN), vec2(0.01)))) {
+    float above = vLocal.y - BLOCK_RISE.y;
+    float below = mod(BLOCK_RISE.x - vLocal.y, uTileHeight);
+    float owner = step(BLOCK_RISE.y, vLocal.y);
+    float runs = valueNoise(vec2(vLocal.x * 9.0, 3.0));
+    float wash = (plantFloor(roomOf(vTile, 2.0 * owner)) ? 0.0 : 1.0)
+      * exp(-below / mix(0.3, 1.6, runs)) * mix(0.4, 1.0, valueNoise(vec2(vLocal.x * 30.0, below * 2.0)))
+      + (plantFloor(roomOf(vTile, 0.0)) ? 0.0 : 0.6) * step(0.0, above) * exp(-above / 0.15);
+    albedo = mix(albedo, uGrime, min(0.5 * wash, 0.7));
+  }
   if (footprint < 0.02) {
     float pale;
     float flecked = speck(wall, footprint, pale);
@@ -656,7 +676,7 @@ Concrete ventGrille(Concrete surface, vec2 at, vec2 seed) {
 }
 
 Concrete airConditioner(Concrete surface, vec3 normal) {
-  vec3 inUnit = vLocal - 0.5 * (vMin + vMax);
+  vec3 inUnit = vUnit - 0.5 * (vMin + vMax);
   vec3 halfSize = 0.5 * (vMax - vMin);
   float storey = floor(vMin.y / (0.5 * uTileHeight));
   float seed = hash12(vec2(vTile.x, mod(vTile.y + uTilesClimbed, 4096.0)) + storey * 3.7);
@@ -674,12 +694,12 @@ Concrete airConditioner(Concrete surface, vec3 normal) {
   vec3 facing = abs(normal);
   vec2 onFace = facing.z > 0.5 ? inUnit.xy : facing.x > 0.5 ? inUnit.zy : inUnit.xz;
   vec2 faceHalf = facing.z > 0.5 ? halfSize.xy : facing.x > 0.5 ? halfSize.zy : halfSize.xz;
-  float rise = vLocal.y - storey * 0.5 * uTileHeight - 1.15;
+  float rise = vUnit.y - storey * 0.5 * uTileHeight - 1.15;
 
   vec3 paint = mix(uAppliance, uNewsprintAged * 0.85, 0.35 * seed) * mix(0.6, 0.9, valueNoise(onFace * 6.0 + seed * 9.0));
   paint *= mix(0.55, 1.0, smoothstep(0.0, 0.45, rise));
   paint = mix(paint, uGrime * 1.5, step(0.5, normal.y) * 0.6 * smoothstep(0.3, 0.7, valueNoise(onFace * 12.0 + seed)));
-  float runs = smoothstep(0.55, 0.85, valueNoise(vec2(vLocal.x * 30.0, rise * 1.5 + seed * 20.0)))
+  float runs = smoothstep(0.55, 0.85, valueNoise(vec2(vUnit.x * 30.0, rise * 1.5 + seed * 20.0)))
     * smoothstep(0.65, 0.15, rise) * (1.0 - step(0.5, normal.y));
   paint *= 1.0 - 0.35 * runs;
   vec2 fromEdge = faceHalf - abs(onFace);
@@ -905,7 +925,7 @@ void main() {
   if (FITTINGS && abs(vKind - 3.0) < 0.5) surface = laundry(surface);
   else if (FITTINGS && abs(vKind - 6.0) < 0.5) surface = rag(surface);
   else if (FITTINGS && abs(vKind - 7.0) < 0.5) surface = sheet(surface, tile);
-  else if (FITTINGS) surface = airConditioner(surface, normal);
+  else if (FITTINGS) surface = airConditioner(surface, unturnUnit(normal, vTurn));
   if (CONCRETE && normal.z > 0.5 && abs(vMax.z - SPANDREL_Z) < 0.01) {
     vec2 bay;
     vec3 q = fromWindow(vLocal, tile, 0.0, bay);

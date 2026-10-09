@@ -16,3 +16,24 @@ bool airConditioned(vec2 room) {
 float airConditionerShift(vec2 room) {
   return mix(-0.2, 0.2, fract(hash12(room + 223.0) * 7.13));
 }
+
+const vec3 UNIT_BASE = vec3(0.0, 1.15, -1.48);
+
+vec4 airConditionerMount(vec2 room) {
+  float pick = hash12(room + 307.0);
+  if (pick < 0.45) return vec4(airConditionerShift(room), 0.0, 0.0, 0.0);
+  float side = pick < 0.725 ? -1.0 : 1.0;
+  return vec4(1.235 * side, mix(0.85, 1.6, hash12(room + 311.0)), mix(-0.5, 0.8, hash12(room + 313.0)), side);
+}
+
+vec3 turnUnit(vec3 direction, float side) {
+  return side == 0.0 ? direction : vec3(-side * direction.z, direction.y, side * direction.x);
+}
+
+vec3 unturnUnit(vec3 direction, float side) {
+  return side == 0.0 ? direction : vec3(side * direction.z, direction.y, -side * direction.x);
+}
+
+vec3 mounted(vec3 point, vec4 mount) {
+  return UNIT_BASE + mount.xyz + turnUnit(point - UNIT_BASE, mount.w);
+}

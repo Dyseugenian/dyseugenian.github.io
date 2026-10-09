@@ -150,8 +150,9 @@ Perch ledgeIn(vec2 room, float pick, float place) {
   float along = fract(place * 2.0);
   if (kind == 0) return Perch(vec3(mix(-1.1, 1.1, along), LEDGE_Y, LEDGE_Z), vec2(-1.1, 1.1));
   if (kind == 1) {
-    float shift = airConditionerShift(room);
-    return Perch(vec3(shift + mix(-0.3, 0.3, along), AC_TOP, AC_Z), vec2(shift - 0.3, shift + 0.3));
+    vec4 mount = airConditionerMount(room);
+    if (mount.w != 0.0) return Perch(vec3(mount.x, AC_TOP + mount.y, AC_Z + mount.z), vec2(mount.x));
+    return Perch(vec3(mount.x + mix(-0.3, 0.3, along), AC_TOP, AC_Z), vec2(mount.x - 0.3, mount.x + 0.3));
   }
   if (kind == 2) return Perch(vec3(side * 1.3, SILL_Y, -2.05), vec2(side * 1.3));
   if (kind == 3) {

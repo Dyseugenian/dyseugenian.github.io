@@ -150,8 +150,10 @@ function airConditioner(y: number, detail: Detail): Part[] {
   ];
   if (detail !== 'distant') {
     parts.push(
-      part(TRIM, [-0.36, -0.3], [y, bottom], [back + 0.02, front - 0.02]),
-      part(TRIM, [0.3, 0.36], [y, bottom], [back + 0.02, front - 0.02]),
+      part(TRIM, [-0.36, -0.3], [y, bottom], [back, front - 0.02]),
+      part(TRIM, [0.3, 0.36], [y, bottom], [back, front - 0.02]),
+      part(TRIM, [-0.36, -0.3], [y - 0.3, y], [back, back + 0.03]),
+      part(TRIM, [0.3, 0.36], [y - 0.3, y], [back, back + 0.03]),
     );
   }
   if (detail === 'full') {

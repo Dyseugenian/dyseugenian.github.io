@@ -32,9 +32,14 @@ void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
   if (!airConditioned(room) || hash12(room + 271.0) > 0.4) return;
-  float x = 0.4 + airConditionerShift(room);
+  vec4 mount = airConditionerMount(room);
+  bool onWall = mount.w != 0.0;
+  vec3 outlet = onWall ? mounted(vec3(0.4, 1.2, -1.45), mount) : vec3(0.4 + mount.x, 0.55, -1.29);
+  float reach = onWall && outlet.z < -1.3 ? outlet.y - 1.15 : FALL;
   vec3 storey = vec3(0.0, aStorey * 0.5 * uTileHeight, 0.0);
-  vec3 local = vec3(x - 0.02, 0.85, -1.295) + storey + vec3(position.xy * vec2(0.2, 0.62), 0.0);
+  vec3 local = onWall
+    ? vec3(mount.w * 1.396, outlet.y - 0.31 + position.y * 0.62, outlet.z + position.x * 0.2 * mount.w) + storey
+    : vec3(outlet.x - 0.02, 0.85, -1.295) + vec3(position.xy * vec2(0.2, 0.62), 0.0) + storey;
   vAlpha = 1.0;
   vStreak = 1.0;
   if (aIndex > 0.5) {
@@ -43,8 +48,8 @@ void main() {
     float phase = fract(uTime / period + drop / DROPS + hash12(room + drop));
     float falling = max(phase - HANG, 0.0) * period;
     float fall = 0.5 * GRAVITY * falling * falling;
-    if (fall > FALL) return;
-    vec3 center = vec3(x + 0.03 * (hash12(room + drop * 3.0) - 0.5), 0.55 - fall, -1.29) + storey;
+    if (fall > reach) return;
+    vec3 center = outlet + vec3(0.03 * (hash12(room + drop * 3.0) - 0.5), -fall, 0.0) + storey;
     vec4 middle = modelMatrix * vec4(center + aOffset, 1.0);
     float pixel = 2.0 * length(cameraPosition - middle.xyz) / (projectionMatrix[1][1] * uResolution.y);
     float swell = mix(smoothstep(0.0, HANG, phase), 1.0, step(HANG, phase));
