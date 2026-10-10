@@ -31,6 +31,11 @@ import fastenerFragment from '../shaders/fastener.frag';
 import spoutVertex from '../shaders/spout.vert';
 import spoutFragment from '../shaders/spout.frag';
 import spoutDripVertex from '../shaders/spout-drip.vert';
+import ductVertex from '../shaders/duct.vert';
+import ductFittingVertex from '../shaders/duct-fitting.vert';
+import ductFragment from '../shaders/duct.frag';
+import ropeLadderVertex from '../shaders/rope-ladder.vert';
+import ropeLadderFragment from '../shaders/rope-ladder.frag';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { storeyGeometry } from './facade';
 
@@ -43,6 +48,9 @@ const WIRE_SEGMENTS = 128;
 const FASTENERS = 8;
 const SPOUT_DROPS = 8;
 const SPOUT_RINGS = 96;
+const DUCT_RINGS = 36;
+const LADDER_ROPE_RINGS = 300;
+const LADDER_RUNGS = 30;
 
 const LAYERED: ShaderMaterialParameters = {
   blending: CustomBlending,
@@ -88,8 +96,32 @@ export function traces(
       uniforms,
       {},
     ),
+    instanced(
+      storeyGeometry(ropeLadder(), columns, rows, 1),
+      ropeLadderVertex,
+      ropeLadderFragment,
+      uniforms,
+      { side: DoubleSide },
+    ),
   );
   return meshes;
+}
+
+function ropeLadder(): BufferGeometry {
+  const pieces = [
+    new CylinderGeometry(1, 1, 1, 8, LADDER_ROPE_RINGS, true),
+    new CylinderGeometry(1, 1, 1, 8, LADDER_ROPE_RINGS, true),
+    ...Array.from({ length: LADDER_RUNGS }, () => new BoxGeometry(1, 1, 1, 8, 2, 2)),
+  ].map((piece, part) => {
+    const plain = piece.toNonIndexed();
+    plain.deleteAttribute('uv');
+    const count = plain.getAttribute('position').count;
+    plain.setAttribute('aPart', new Float32BufferAttribute(new Float32Array(count).fill(part), 1));
+    return plain;
+  });
+  const shape = mergeGeometries(pieces)!;
+  for (const piece of pieces) piece.dispose();
+  return shape;
 }
 
 export function pigeons(
@@ -137,6 +169,42 @@ export function spouts(
     LAYERED,
   );
   return [spout, drips];
+}
+
+export function ducts(
+  columns: number[],
+  rows: number[],
+  uniforms: Record<string, IUniform>,
+): Mesh[] {
+  const duct = instanced(
+    storeyGeometry(new CylinderGeometry(1, 1, 1, 24, DUCT_RINGS, true), columns, rows, 2),
+    ductVertex,
+    ductFragment,
+    uniforms,
+    {},
+  );
+  const pieces = [
+    new CylinderGeometry(1, 1, 1, 24, 1, true),
+    new BoxGeometry(1, 1, 1),
+    new BoxGeometry(1, 1, 1),
+    new RingGeometry(1, 1.35, 24),
+  ].map((piece, part) => {
+    const plain = piece.toNonIndexed();
+    plain.deleteAttribute('uv');
+    const count = plain.getAttribute('position').count;
+    plain.setAttribute('aPart', new Float32BufferAttribute(new Float32Array(count).fill(part), 1));
+    return plain;
+  });
+  const shape = mergeGeometries(pieces)!;
+  for (const piece of pieces) piece.dispose();
+  const fittings = instanced(
+    storeyGeometry(shape, columns, rows, 3),
+    ductFittingVertex,
+    ductFragment,
+    uniforms,
+    {},
+  );
+  return [duct, fittings];
 }
 
 function instanced(

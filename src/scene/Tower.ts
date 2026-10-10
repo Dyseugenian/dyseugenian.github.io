@@ -24,7 +24,7 @@ import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 import { beneathGrain } from '../post/Film';
 import { Rebar } from './Rebar';
-import { pigeons, spouts, traces } from './traces';
+import { ducts, pigeons, spouts, traces } from './traces';
 import { Backdrop } from './Backdrop';
 import { Beacons, beaconSpot } from './Beacons';
 import { Drift, STILL } from './Drift';
@@ -253,6 +253,7 @@ export class Tower extends Scene {
       new Beacons(spot, rows, uniforms),
       this.rebar,
       ...spouts(traceColumns, traceRows, uniforms),
+      ...ducts(traceColumns, rows, uniforms),
       ...traces(traceColumns, traceRows, uniforms),
       this.pigeons,
     );
