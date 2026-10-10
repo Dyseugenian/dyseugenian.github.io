@@ -52,6 +52,8 @@ float height(vec2 p) {
   float h = 0.3 * tiledFbm(p, 4.0) + 0.25 * tiledFbm(p, 24.0);
   h += 0.14 * tiledNoise(p, 140.0) + 0.08 * tiledNoise(p, 320.0);
   h += 0.18 * smoothstep(0.6, 0.9, tiledNoise(p, 70.0));
+  float pebble = pits(p, 30.0, 0.32, 0.025);
+  h += 0.7 * smoothstep(0.0, 1.0, pebble * pebble);
   h -= 0.8 * pits(p, 44.0, 0.3, 0.1);
   h -= 0.7 * pits(p, 16.0, 0.22, 0.05);
   return h;

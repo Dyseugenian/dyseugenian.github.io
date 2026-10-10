@@ -6,8 +6,10 @@ const context = canvas?.getContext('webgl2', {
   powerPreference: 'high-performance',
 });
 
+const onlyBuilding = new URLSearchParams(location.search).has('building');
+
 if (canvas && context) {
-  const app = new App(canvas, context);
+  const app = new App(canvas, context, onlyBuilding);
   app.start();
   const towerLoaded = app.loadTower();
 
@@ -16,7 +18,7 @@ if (canvas && context) {
     mountDebugPanel(app);
   }
 
-  await app.logo.ready;
+  if (!onlyBuilding) await app.logo.ready;
   await app.compile();
   app.setStageLive(true);
   await towerLoaded;

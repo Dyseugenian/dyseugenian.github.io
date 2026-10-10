@@ -55,6 +55,10 @@ body {
   display: none;
 }
 
+.building .overlay {
+  display: none;
+}
+
 .logo-area {
   position: absolute;
   inset: 0 0 auto;

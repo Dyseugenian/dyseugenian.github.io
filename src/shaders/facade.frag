@@ -610,15 +610,15 @@ vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room) {
 
   vec3 lamp = vec3(
     window.x + mix(-1.4, 1.4, hash12(room + 3.0)),
-    floorY + 1.3,
+    floorY + mix(1.3, 0.6, step(0.88, hash12(room + 19.0))),
     GLASS_Z - mix(1.0, 3.2, lampDepth(room)));
   vec3 toLamp = lamp - hit;
   float reach = length(toLamp);
-  float spread = mix(0.08, 0.6, hash12(room + 9.0));
-  float illumination = (0.25 + 0.75 * max(dot(wall, toLamp / reach), 0.0)) / (0.8 + spread * reach * reach);
-  float recess = mix(1.0, 0.45, smoothstep(0.0, ROOM.z, GLASS_Z - hit.z));
+  float spread = mix(0.25, 0.9, hash12(room + 9.0));
+  float illumination = (0.2 + 0.8 * max(dot(wall, toLamp / reach), 0.0)) / (0.6 + spread * reach * reach);
+  float recess = mix(1.0, 0.35, smoothstep(0.0, ROOM.z, GLASS_Z - hit.z));
 
-  return albedo * occlusion * recess * (uHaze * 0.35 + light * illumination * ROOM_LIGHT);
+  return albedo * occlusion * recess * (uHaze * 0.2 + light * illumination * ROOM_LIGHT);
 }
 
 vec3 bumped(vec3 normal, float height) {
@@ -897,6 +897,9 @@ void main() {
 
   float openness = texture(uOcclusion, (vLocal + normal * 0.1 - uOcclusionMin) / uOcclusionSize).r;
   float occlusion = smoothstep(0.08, 0.55, openness);
+  vec2 fromSides = min(vLocal.xy - vMin.xy, vMax.xy - vLocal.xy);
+  float sunk = vProtrudes * step(0.01, min(fromSides.x, fromSides.y)) * max(vMax.z - vLocal.z, 0.0);
+  occlusion *= exp(-sunk / 0.3);
 
   vec3 origin = vWorld - vLocal;
   vec3 hit;
@@ -927,7 +930,7 @@ void main() {
     float bar = broken == 1 ? 1.0 - smoothstep(1.0, 1.5, toBar) : 0.0;
     surface.albedo = mix(surface.albedo, uRust * mix(0.45, 1.0, aggregate) * mix(0.45, 1.1, sqrt(max(1.0 - toBar * toBar, 0.0))), bar);
   }
-  surface.albedo *= 1.0 + 0.3 * (1.0 - smoothstep(0.0, 0.015, margin)) * step(0.0, margin);
+  surface.albedo *= (1.0 + 0.3 * (1.0 - smoothstep(0.0, 0.015, margin)) * step(0.0, margin)) * exp(-sunk / 0.6);
   vec3 light = nightLight(shading, vWorld, occlusion, 0.0);
 
   float distance = length(vWorld - cameraPosition);

@@ -1,13 +1,16 @@
 import {
   BoxGeometry,
   BufferGeometry,
+  CircleGeometry,
   ClampToEdgeWrapping,
   CylinderGeometry,
   Data3DTexture,
   Float32BufferAttribute,
   InstancedBufferAttribute,
   InstancedBufferGeometry,
+  LatheGeometry,
   LinearFilter,
+  Path,
   PlaneGeometry,
   RedFormat,
   RepeatWrapping,
@@ -39,11 +42,15 @@ const OCCASIONAL = 3;
 const LAUNDRY = 4;
 const RAGGED = 5;
 const SHEETED = 6;
+const HOLED = 7;
+const SOLID = 8;
 export const PLANT_EVERY = 16;
 const PLANT_FLOOR = { front: 0.6, louvre: 0.06, louvreSpacing: 0.24 };
 const RAG_SIZE = { width: 0.42, drop: 0.5, z: -1.27 };
 const SHEET_Z = -2.75;
 const CLOTHES_LINE = { height: 1.05, z: -0.8, span: 1.12, slots: 4, drop: 0.95, thickness: 0.012 };
+
+const HOLE = { cover: 0.4, back: -2, rim: 0.35, segments: 64, rings: 12 };
 
 const ROTOR = { radius: 0.2, hub: 0.045, blades: 4, pitch: 0.45, rim: 0.025, depth: 0.05 };
 
@@ -104,6 +111,53 @@ function shroud(center: Vector3, segments: number): BufferGeometry {
     center.y,
     center.z,
   );
+}
+
+function boreOf(min: Vector3, max: Vector3) {
+  const { cover, rim } = HOLE;
+  const opening = Math.sqrt((cover * (max.x - min.x) * (max.y - min.y)) / Math.PI);
+  const round = rim * opening;
+  return {
+    center: new Vector2((min.x + max.x) / 2, (min.y + max.y) / 2),
+    opening,
+    round,
+    radius: opening - round,
+  };
+}
+
+function opened(min: Vector3, max: Vector3, hole: Vector2, radius: number): BufferGeometry {
+  const size = max.clone().sub(min);
+  const center = max.clone().add(min).multiplyScalar(0.5);
+  const box = new BoxGeometry(size.x, size.y, size.z).translate(center.x, center.y, center.z);
+  box.setIndex(Array.from(box.index!.array).filter((_, index) => index < 24 || index >= 30));
+  const outline = new Shape([
+    new Vector2(min.x, min.y),
+    new Vector2(max.x, min.y),
+    new Vector2(max.x, max.y),
+    new Vector2(min.x, max.y),
+  ]);
+  outline.holes.push(new Path().absarc(hole.x, hole.y, radius, 0, 2 * Math.PI, true));
+  const front = new ShapeGeometry(outline, HOLE.segments / 2).translate(0, 0, max.z);
+  return mergeGeometries([box, front])!;
+}
+
+function holedBlock(min: Vector3, max: Vector3): BufferGeometry {
+  const { back, segments, rings } = HOLE;
+  const { center, opening, round, radius } = boreOf(min, max);
+  const depth = max.z - back;
+  const profile = Array.from({ length: rings + 1 }, (_, ring) => {
+    const angle = (ring / rings) * (Math.PI / 2);
+    return new Vector2(opening - round * Math.sin(angle), round * (Math.cos(angle) - 1));
+  });
+  const fillet = new LatheGeometry(profile, segments).rotateX(Math.PI / 2);
+  const tube = flipped(
+    new CylinderGeometry(radius, radius, depth - round, segments, 1, true)
+      .rotateX(Math.PI / 2)
+      .translate(0, 0, -(depth + round) / 2),
+  );
+  const end = new CircleGeometry(radius, segments).translate(0, 0, -depth);
+  const hole = mergeGeometries([fillet, tube, end])!.translate(center.x, center.y, max.z);
+  return mergeGeometries([opened(min, max, center, opening), hole])!;
 }
 
 function blade(steps: number): BufferGeometry {
@@ -178,12 +232,29 @@ const LAUNDRY_SEGMENTS: Record<Detail, { line: number; across: number; down: num
   distant: { line: 4, across: 2, down: 1 },
 };
 
-export const PIER = part(CONCRETE, [-2.8, -1.4], [0, TILE_HEIGHT], [-3.2, 0]);
+const BLOCK_MIN = new Vector3(-3.05, 0.9, -1);
+const BLOCK_MAX = new Vector3(-1.15, 2.7, 0.9);
+const BLOCK_BORE = boreOf(BLOCK_MIN, BLOCK_MAX);
+export const PIER = shaped(
+  CONCRETE,
+  opened(
+    new Vector3(-2.8, 0, -3.2),
+    new Vector3(-1.4, TILE_HEIGHT, 0),
+    BLOCK_BORE.center,
+    BLOCK_BORE.radius,
+  ),
+);
 const BLOCK = {
-  ...part(CONCRETE, [-3.05, -1.15], [0.9, 2.7], [-1, 0.9]),
+  ...part(
+    CONCRETE,
+    [BLOCK_MIN.x, BLOCK_MAX.x],
+    [BLOCK_MIN.y, BLOCK_MAX.y],
+    [BLOCK_MIN.z, BLOCK_MAX.z],
+  ),
   protrudes: true,
-  role: REGULAR,
+  role: SOLID,
 };
+const HOLED_BLOCK = { ...BLOCK, shape: holedBlock(BLOCK_MIN, BLOCK_MAX), role: HOLED };
 
 export const SURFACES = { concrete: 0, glass: 1, fittings: 2 };
 
@@ -222,7 +293,7 @@ function sheeted(part: Part): Part {
 }
 
 export function tileParts(detail: Detail): Part[] {
-  const parts = [PIER, BLOCK];
+  const parts = [PIER, BLOCK, HOLED_BLOCK];
   for (const y of [0, STOREY]) {
     const top = y + STOREY;
     const sill = y + 0.55;
@@ -413,7 +484,7 @@ export function edge(outward: number, windows: Part[]) {
 }
 
 export function occluders(around: Part[]): Part[] {
-  return around.filter(({ role }) => role === undefined || role === REGULAR);
+  return around.filter(({ role }) => role === undefined || role === REGULAR || role === SOLID);
 }
 
 export function occlusionTexture(openness: Uint8Array): Data3DTexture {

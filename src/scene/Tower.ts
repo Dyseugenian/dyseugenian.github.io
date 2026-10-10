@@ -19,6 +19,7 @@ import {
 import vertexShader from '../shaders/facade.vert';
 import fragmentShader from '../shaders/facade.frag';
 import depthShader from '../shaders/facade-depth.frag';
+import type { FreeFly } from '../core/FreeFly';
 import type { Input } from '../core/Input';
 import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
@@ -108,6 +109,7 @@ export class Tower extends Scene {
   private spot = new Spring(4, 4);
   private fov = VIEW.fov;
   private projected = new Vector3();
+  private flight: FreeFly | null = null;
 
   constructor(private input: Input) {
     super();
@@ -302,7 +304,50 @@ export class Tower extends Scene {
     this.pitch = Math.atan(1 / (VIEW.vanish * halfFov));
   }
 
+  fly(flight: FreeFly): void {
+    this.flight = flight;
+    flight.pitch = this.pitch;
+  }
+
   update(dt: number): void {
+    const { reducedMotion } = this.input;
+    const step = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
+    this.uniforms.uTime.value += step;
+    const climb = this.flight ? this.flyCamera(dt, this.flight) : this.followPointer(dt) * step;
+    this.facadeUniforms.uClimb.value += climb;
+    this.lift += climb;
+    const { uTilesClimbed } = this.facadeUniforms;
+    while (this.lift >= TILE_HEIGHT || this.lift < 0) {
+      const up = this.lift >= TILE_HEIGHT ? 1 : -1;
+      this.lift -= up * TILE_HEIGHT;
+      uTilesClimbed.value = (uTilesClimbed.value + up + TILE_SEEDS) % TILE_SEEDS;
+      this.rebar.climb(uTilesClimbed.value);
+    }
+    this.building.position.y = -this.lift;
+
+    const phase = (this.uniforms.uTime.value / BEACON_PERIOD) % 1;
+    this.facadeUniforms.uBeacon.value =
+      MathUtils.smoothstep(phase, 0, 0.08) * (1 - MathUtils.smoothstep(phase, 0.3, 0.55));
+
+    this.uniforms.uVanish.value.set(...this.onScreen(UP));
+    this.uniforms.uBacklights.value.set(
+      ...this.onScreen(BACKLIGHTS[0]),
+      ...this.onScreen(BACKLIGHTS[1]),
+    );
+  }
+
+  private flyCamera(dt: number, flight: FreeFly): number {
+    const moved = flight.update(dt);
+    this.camera.position.x += moved.x;
+    this.camera.position.z += moved.z;
+    this.camera.rotation.set(flight.pitch, flight.yaw, 0, 'YXZ');
+    this.camera.fov = this.fov;
+    this.camera.updateProjectionMatrix();
+    this.camera.updateMatrixWorld();
+    return moved.y;
+  }
+
+  private followPointer(dt: number): number {
     const { pointer, isPointerInside, reducedMotion } = this.input;
     const follow = isPointerInside && !reducedMotion;
     const drift = reducedMotion ? STILL : this.drift.update(dt);
@@ -322,29 +367,7 @@ export class Tower extends Scene {
     this.camera.fov = this.fov + drift.zoom;
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
-
-    const step = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
-    this.uniforms.uTime.value += step;
-    const climb = step * CLIMB_SPEED * drift.pace;
-    this.facadeUniforms.uClimb.value += climb;
-    this.lift += climb;
-    if (this.lift >= TILE_HEIGHT) {
-      this.lift -= TILE_HEIGHT;
-      this.facadeUniforms.uTilesClimbed.value =
-        (this.facadeUniforms.uTilesClimbed.value + 1) % TILE_SEEDS;
-      this.rebar.climb(this.facadeUniforms.uTilesClimbed.value);
-    }
-    this.building.position.y = -this.lift;
-
-    const phase = (this.uniforms.uTime.value / BEACON_PERIOD) % 1;
-    this.facadeUniforms.uBeacon.value =
-      MathUtils.smoothstep(phase, 0, 0.08) * (1 - MathUtils.smoothstep(phase, 0.3, 0.55));
-
-    this.uniforms.uVanish.value.set(...this.onScreen(UP));
-    this.uniforms.uBacklights.value.set(
-      ...this.onScreen(BACKLIGHTS[0]),
-      ...this.onScreen(BACKLIGHTS[1]),
-    );
+    return CLIMB_SPEED * drift.pace;
   }
 
   private onScreen(direction: Vector3): [number, number] {

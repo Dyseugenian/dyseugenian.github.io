@@ -6,6 +6,7 @@ import {
   WebGLRenderTarget,
   WebGLRenderer,
 } from 'three';
+import { FreeFly } from './FreeFly';
 import { Input } from './Input';
 import { Loop, type Frame } from './Loop';
 import { Quality } from './Quality';
@@ -35,7 +36,11 @@ export class App {
   private towerFade = 0;
   private background = beneathGrain(palette.bg);
 
-  constructor(canvas: HTMLCanvasElement, context: WebGL2RenderingContext) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    context: WebGL2RenderingContext,
+    private onlyBuilding = false,
+  ) {
     this.renderer = new WebGLRenderer({ canvas, context });
     this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
     this.renderer.autoClear = false;
@@ -44,12 +49,17 @@ export class App {
     this.logo.visible = false;
     this.tower.visible = false;
     this.scene.add(this.logo);
+    if (onlyBuilding) {
+      setPageState('building', true);
+      this.roleText.uniforms.uRolesOpacity.value = 0;
+    }
 
     canvas.addEventListener('webglcontextlost', () => setPageState('no-webgl', true));
     canvas.addEventListener('webglcontextrestored', () => setPageState('no-webgl', false));
 
     window.addEventListener('resize', () => this.resize());
     this.applyQuality();
+    if (onlyBuilding) this.tower.fly(new FreeFly(canvas));
   }
 
   start(): void {
@@ -73,7 +83,7 @@ export class App {
 
   setStageLive(live: boolean): void {
     setPageState('stage-live', live);
-    this.logo.visible = live;
+    this.logo.visible = live && !this.onlyBuilding;
     this.tower.visible = live;
   }
 
@@ -87,7 +97,7 @@ export class App {
       this.tower.update(dt);
     }
     this.logo.update(dt);
-    this.roleText.update(dt);
+    if (!this.onlyBuilding) this.roleText.update(dt);
     this.film.update(time);
     this.renderer.setRenderTarget(this.target);
     this.renderer.setClearColor(this.background);
@@ -135,6 +145,6 @@ export class App {
   }
 }
 
-export function setPageState(name: 'no-webgl' | 'stage-live', on: boolean): void {
+export function setPageState(name: 'no-webgl' | 'stage-live' | 'building', on: boolean): void {
   document.documentElement.classList.toggle(name, on);
 }

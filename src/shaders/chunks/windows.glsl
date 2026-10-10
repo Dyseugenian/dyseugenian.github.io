@@ -27,6 +27,11 @@ vec3 windowLight(vec2 room, float x) {
   vec3 tint = pick < 0.5 ? uLamp : pick < 0.75 ? uLampSoft : pick < 0.88 ? uLampCool : uLampCold;
   float faulty = step(0.75, pick) * step(pick, 0.88) * step(0.5, hash12(room + 47.0));
   float dim = 1.0;
+  if (pick >= 0.88) {
+    float shot = floor(uTime * mix(0.3, 0.9, hash12(room + 49.0)) + 9.0 * hash12(room + 51.0));
+    tint = mix(uLampCold, uLampCool, hash12(room + shot * 0.73));
+    dim = mix(0.3, 1.0, hash12(room + shot * 1.91)) * mix(0.85, 1.0, valueNoise(vec2(uTime * 9.0, room.x + room.y)));
+  }
   if (faulty > 0.5) {
     float bursts = step(0.6, valueNoise(vec2(uTime * 0.7, room.x * 3.1 + room.y)));
     float flicker = step(0.7, valueNoise(vec2(uTime * 14.0, room.x * 13.0 + room.y * 7.0)));
