@@ -14,6 +14,10 @@ uniform vec3 uSky;
 uniform float uExposure;
 uniform float uFogDensity;
 uniform vec3 uGrime;
+uniform vec3 uCableGrey;
+uniform vec3 uCableWhite;
+uniform vec3 uCableBrown;
+uniform vec3 uDenim;
 
 in vec3 vWorld;
 in vec3 vLocal;
@@ -31,7 +35,12 @@ void main() {
   vec3 facing = normalize(toCamera - vTangent * dot(toCamera, vTangent));
   float across = clamp(vAcross, -1.0, 1.0);
   vec3 normal = normalize(vSide * across + facing * sqrt(1.0 - across * across));
-  vec3 sheath = uGrime * mix(0.5, 1.0, vSeed);
+  vec3 sheath = uGrime;
+  if (vSeed > 0.95) sheath = uDenim * 0.6;
+  else if (vSeed > 0.86) sheath = uCableBrown;
+  else if (vSeed > 0.74) sheath = uCableWhite;
+  else if (vSeed > 0.6) sheath = uCableGrey;
+  sheath *= mix(0.4, 1.0, fract(vSeed * 7.31));
   float far = length(vWorld - cameraPosition);
   float washed = 1.0 - smoothstep(14.0, 40.0, far);
   vec3 light = nightLight(normal, vWorld, 1.0, 0.6)

@@ -39,9 +39,10 @@ const LEAK_PIECES = 4;
 const MOTES = 12;
 const PIGEONS = 3;
 const WIRES = 13;
-const WIRE_SEGMENTS = 64;
+const WIRE_SEGMENTS = 128;
 const FASTENERS = 8;
-const SPOUT_DROPS = 3;
+const SPOUT_DROPS = 8;
+const SPOUT_RINGS = 96;
 
 const LAYERED: ShaderMaterialParameters = {
   blending: CustomBlending,
@@ -106,10 +107,10 @@ export function spouts(
   uniforms: Record<string, IUniform>,
 ): Mesh[] {
   const pieces = [
-    new CylinderGeometry(1, 1, 1, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5),
+    new CylinderGeometry(1, 1, 1, 16, SPOUT_RINGS, true).rotateX(Math.PI / 2).translate(0, 0, 0.5),
     new CylinderGeometry(1.35, 1.35, 0.03, 16).rotateX(Math.PI / 2).translate(0, 0, 0.015),
-    new CylinderGeometry(1.1, 1.1, 0.06, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.94),
-    new RingGeometry(1, 1.1, 16).translate(0, 0, 0.97),
+    new CylinderGeometry(1.1, 1.1, 0.06, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, -0.03),
+    new RingGeometry(1, 1.1, 16),
   ].map((piece, index) => {
     const part = Math.min(index, 2);
     const plain = piece.toNonIndexed();

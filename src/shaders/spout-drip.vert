@@ -25,9 +25,8 @@ out float vAlpha;
 out float vStreak;
 out float vSeed;
 
-const float DROPS = 3.0;
+const float DROPS = 8.0;
 const float GRAVITY = 9.8;
-const float HANG = 0.5;
 
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
@@ -36,18 +35,26 @@ void main() {
   if (!spoutOf(room, aTile, aStorey)) return;
   Spout spout = spoutAt(room, aTile);
   if (spout.drips > 0.5) return;
-  vec3 lip = spoutPoint(spout, vec3(0.0, -0.9, 1.0));
-  float reach = lip.z < spout.landing ? lip.y - BLOCK_TOP : 3.0;
+  vec3 lip = spoutLip(spout);
+  bool overBlock = lip.z < spout.landing && lip.x > BLOCK_SPAN.x && lip.x < BLOCK_SPAN.y;
+  float reach = overBlock ? lip.y - BLOCK_TOP : 3.0;
   vec2 seed = room;
-  float period = mix(0.7, 3.5, fract(spout.drips * 13.7));
-  float phase = fract(uTime / period + drop / DROPS + hash12(seed + drop + 521.0));
-  float falling = max(phase - HANG, 0.0) * period;
+  float flow = spout.drips * 2.0;
+  float count = ceil(mix(1.0, DROPS, flow * flow * flow));
+  if (drop >= count) return;
+  float gather = mix(5.0, 0.25, flow) * mix(0.8, 1.25, hash12(seed + 523.0));
+  float period = gather + sqrt(2.0 * reach / GRAVITY);
+  float hang = gather / period;
+  float clock = uTime / period + drop / count + hash12(seed + drop + 521.0);
+  if (hash12(vec2(floor(clock), drop) + seed * 1.7) < mix(0.55, 0.0, flow)) return;
+  float phase = fract(clock);
+  float falling = max(phase - hang, 0.0) * period;
   float fall = 0.5 * GRAVITY * falling * falling;
   if (fall > reach) return;
-  vec3 center = lip + vec3(0.6 * spout.radius * (hash12(seed + drop * 3.0) - 0.5), -fall, 0.0);
+  vec3 center = lip + vec3(0.25 * spout.radius * (hash12(seed + drop * 3.0) - 0.5), -fall, 0.0);
   vec4 middle = modelMatrix * vec4(center + aOffset, 1.0);
   float pixel = 2.0 * length(cameraPosition - middle.xyz) / (projectionMatrix[1][1] * uResolution.y);
-  float swell = mix(smoothstep(0.0, HANG, phase), 1.0, step(HANG, phase));
+  float swell = mix(smoothstep(0.0, hang, phase), 1.0, step(hang, phase));
   float width = 0.006 * swell;
   float trail = max(GRAVITY * falling * 0.016, 0.008);
   vec3 side = normalize(cross(vec3(0.0, 1.0, 0.0), cameraPosition - middle.xyz));

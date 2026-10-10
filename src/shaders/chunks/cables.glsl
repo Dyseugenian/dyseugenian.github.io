@@ -86,8 +86,13 @@ vec3 cableAt(float t) {
     hash12(crookKey + key + 41.0));
   float arch = sin(3.1416 * f);
   float bend = (crook.y - 0.5) * arch + (crook.z - 0.5) * sin(6.2832 * f) + 0.5 * (crook.w - 0.5) * sin(9.4248 * f);
-  return point + fall * span * mix(0.02, 0.07, crook.x) * arch + across * span * 0.05 * bend
-    + face * min(0.015, span * 0.012) * crook.w * arch;
+  float run = f * span;
+  float pinned = clamp(min(run, span - run) / 0.12, 0.0, 1.0);
+  vec2 kink = vec2(valueNoise(vec2(run * 2.6, crook.x * 37.0 + key)), valueNoise(vec2(run * 3.4, crook.y * 41.0 + key)))
+    - 0.5;
+  return point + fall * span * mix(0.04, 0.12, crook.x) * arch + across * span * 0.08 * bend
+    + face * min(0.03, span * 0.02) * crook.w * arch
+    + (across * 0.07 * kink.x + fall * 0.05 * kink.y + face * 0.025 * abs(kink.y)) * pinned;
 }
 
 float wireRadius(float size) {
