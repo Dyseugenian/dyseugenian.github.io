@@ -25,7 +25,7 @@ import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 import { beneathGrain } from '../post/Film';
 import { Rebar } from './Rebar';
-import { ducts, pigeons, spouts, traces } from './traces';
+import { ducts, grilles, pigeons, spouts, traces } from './traces';
 import { Backdrop } from './Backdrop';
 import { Beacons, beaconSpot } from './Beacons';
 import { Drift, STILL } from './Drift';
@@ -55,8 +55,10 @@ import {
   type Part,
 } from './facade';
 
-const VIEW = { fov: 64, narrowestFov: 45, distance: 6.5, vanish: 0.82 };
+const VIEW = { fov: 64, distance: 6.5, vanish: 0.82 };
+const PITCH = Math.atan(1 / (VIEW.vanish * Math.tan(MathUtils.degToRad(VIEW.fov / 2))));
 const COLUMNS = { left: -3, right: 3 };
+const BLOCKLESS_COLUMNS = [0, 1];
 const ROWS = { below: 2, above: 32 };
 const DETAIL_ROWS = { full: 5, reduced: 11 };
 const REBAR_ROWS = { below: 1, above: 4 };
@@ -96,18 +98,17 @@ export class Tower extends Scene {
   private rebar: Rebar;
   private pigeons: Mesh;
   private occlusion = { value: new Data3DTexture() };
+  private blocklessOcclusion = { value: new Data3DTexture() };
   private leftOcclusion = { value: new Data3DTexture() };
   private rightOcclusion = { value: new Data3DTexture() };
   private maps: Promise<TowerMaps>;
   private veil = new Veil(beneathGrain(palette.bg));
   private lift = 0;
-  private pitch = 0;
   private swayPitch = new Spring(4, 5);
   private aim = new Spring(9, 6);
   private shift = new Spring(9, 6);
   private drift = new Drift();
   private spot = new Spring(4, 4);
-  private fov = VIEW.fov;
   private projected = new Vector3();
   private flight: FreeFly | null = null;
 
@@ -115,6 +116,7 @@ export class Tower extends Scene {
     super();
     const parts = tileParts('full');
     const windows = parts.filter(inWindowBay);
+    const blockless = parts.filter((part) => !part.protrudes);
     const leftEdge = edge(-1, windows);
     const rightEdge = edge(1, windows);
     const occlusionBake = (around: Part[], min: Vector3, size: Vector3) => ({
@@ -124,6 +126,7 @@ export class Tower extends Scene {
     });
     this.maps = bakeMaps({
       occlusion: occlusionBake(surroundings(parts), OCCLUSION_MIN, OCCLUSION_SIZE),
+      blocklessOcclusion: occlusionBake(surroundings(blockless), OCCLUSION_MIN, OCCLUSION_SIZE),
       leftOcclusion: occlusionBake(leftEdge.around, leftEdge.min, leftEdge.size),
       rightOcclusion: occlusionBake(rightEdge.around, rightEdge.min, rightEdge.size),
     });
@@ -141,8 +144,6 @@ export class Tower extends Scene {
       uSalt: { value: new Color(palette.salt).convertLinearToSRGB() },
       uGrime: { value: new Color(palette.grime).convertLinearToSRGB() },
       uCableGrey: { value: new Color(palette.cableGrey).convertLinearToSRGB() },
-      uCableWhite: { value: new Color(palette.cableWhite).convertLinearToSRGB() },
-      uCableBrown: { value: new Color(palette.cableBrown).convertLinearToSRGB() },
       uRust: { value: new Color(palette.rust).convertLinearToSRGB() },
       uMoss: { value: new Color(palette.moss).convertLinearToSRGB() },
       uBeaconColor: { value: new Color(palette.beacon).convertLinearToSRGB() },
@@ -187,11 +188,15 @@ export class Tower extends Scene {
     const materials = surfaces.map((surface) =>
       facadeMaterial(surface, this.occlusion, OCCLUSION_MIN, OCCLUSION_SIZE),
     );
+    const blocklessMaterials = surfaces.map((surface) =>
+      facadeMaterial(surface, this.blocklessOcclusion, OCCLUSION_MIN, OCCLUSION_SIZE),
+    );
     const rows = Array.from({ length: ROWS.below + ROWS.above }, (_, index) => index - ROWS.below);
     const columns = Array.from(
       { length: COLUMNS.right - COLUMNS.left },
       (_, index) => COLUMNS.left + 1 + index,
     );
+    const blocked = columns.filter((column) => !BLOCKLESS_COLUMNS.includes(column));
     const bands: [Detail, number[]][] = [
       ['full', rows.filter((row) => row < DETAIL_ROWS.full)],
       ['reduced', rows.filter((row) => row >= DETAIL_ROWS.full && row < DETAIL_ROWS.reduced)],
@@ -203,7 +208,8 @@ export class Tower extends Scene {
         const material = materials[surface]!;
         const parts = banded.filter((part) => surfaceOf(part) === surface);
         return [
-          new Mesh(facadeGeometry(parts, columns, band), material),
+          new Mesh(facadeGeometry(parts, blocked, band), material),
+          new Mesh(facadeGeometry(parts, BLOCKLESS_COLUMNS, band), blocklessMaterials[surface]!),
           new Mesh(facadeGeometry(parts.filter(inWindowBay), [COLUMNS.left], band), material),
         ];
       });
@@ -224,7 +230,12 @@ export class Tower extends Scene {
     const around = occluders(surroundings(parts));
     this.rebar = new Rebar(
       [
-        { parts: concrete(parts), around, columns },
+        { parts: concrete(parts), around, columns: blocked },
+        {
+          parts: concrete(blockless),
+          around: occluders(surroundings(blockless)),
+          columns: BLOCKLESS_COLUMNS,
+        },
         { parts: concrete(windows), around, columns: [COLUMNS.left] },
         { parts: leftEdge.parts, around: occluders(leftEdge.around), columns: [COLUMNS.left] },
         {
@@ -255,6 +266,7 @@ export class Tower extends Scene {
       new Beacons(spot, rows, uniforms),
       this.rebar,
       ...spouts(traceColumns, traceRows, uniforms),
+      grilles(traceColumns, traceRows, uniforms),
       ...ducts(traceColumns, rows, uniforms),
       ...traces(traceColumns, traceRows, uniforms),
       this.pigeons,
@@ -272,6 +284,7 @@ export class Tower extends Scene {
     this.uniforms.uFbm.value = fbmTexture(maps.fbm);
     this.uniforms.uSurface.value = surface;
     this.occlusion.value = occlusionTexture(maps.occlusion);
+    this.blocklessOcclusion.value = occlusionTexture(maps.blocklessOcclusion);
     this.leftOcclusion.value = occlusionTexture(maps.leftOcclusion);
     this.rightOcclusion.value = occlusionTexture(maps.rightOcclusion);
     this.pigeons.geometry.setIndex(new BufferAttribute(maps.pigeon.index, 1));
@@ -281,6 +294,7 @@ export class Tower extends Scene {
     for (const texture of [
       this.uniforms.uFbm,
       this.occlusion,
+      this.blocklessOcclusion,
       this.leftOcclusion,
       this.rightOcclusion,
     ]) {
@@ -295,18 +309,13 @@ export class Tower extends Scene {
 
   fit(aspect: number, width: number, height: number): void {
     this.uniforms.uResolution.value.set(width, height);
-    const narrowest = Math.tan(MathUtils.degToRad(VIEW.narrowestFov / 2)) / aspect;
-    const halfFov = Math.max(Math.tan(MathUtils.degToRad(VIEW.fov / 2)), narrowest);
-    this.fov = MathUtils.radToDeg(2 * Math.atan(halfFov));
-    this.camera.fov = this.fov;
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
-    this.pitch = Math.atan(1 / (VIEW.vanish * halfFov));
   }
 
   fly(flight: FreeFly): void {
     this.flight = flight;
-    flight.pitch = this.pitch;
+    flight.pitch = PITCH;
   }
 
   update(dt: number): void {
@@ -341,7 +350,7 @@ export class Tower extends Scene {
     this.camera.position.x += moved.x;
     this.camera.position.z += moved.z;
     this.camera.rotation.set(flight.pitch, flight.yaw, 0, 'YXZ');
-    this.camera.fov = this.fov;
+    this.camera.fov = VIEW.fov;
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
     return moved.y;
@@ -357,14 +366,14 @@ export class Tower extends Scene {
     this.shift.target = this.aim.update(dt);
     this.camera.position.set(this.shift.update(dt) + drift.x, drift.y, VIEW.distance);
     this.camera.rotation.set(
-      this.pitch + this.swayPitch.update(dt) + drift.pitch,
+      PITCH + this.swayPitch.update(dt) + drift.pitch,
       drift.yaw,
       drift.roll,
       'YXZ',
     );
     this.spot.target = follow ? pointer.x * SPOT.reach : 0;
     this.facadeUniforms.uSpot.value.x = this.spot.update(dt);
-    this.camera.fov = this.fov + drift.zoom;
+    this.camera.fov = VIEW.fov + drift.zoom;
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
     return CLIMB_SPEED * drift.pace;

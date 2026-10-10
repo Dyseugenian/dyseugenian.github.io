@@ -7,8 +7,6 @@ export const palette = {
   salt: '#aab0b2',
   grime: '#181d1b',
   cableGrey: '#4f5354',
-  cableWhite: '#9c9685',
-  cableBrown: '#3b2a20',
   rust: '#7d4527',
   moss: '#2f3529',
   rim: '#7a90ad',

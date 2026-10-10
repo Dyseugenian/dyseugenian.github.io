@@ -38,6 +38,7 @@ out float vFold;
 const float LINE_SAG = 0.06;
 const float LINE_HALF = 1.4;
 const float INSET_REACH = 0.3;
+const float STUD_DROP = 0.2;
 
 void main() {
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
@@ -53,10 +54,13 @@ void main() {
   vec2 room = vec2(tile.x, mod(storey, 8192.0));
   float pick = hash12(room + 223.0);
   float hung = hash12(room + 233.0);
-  float chosen = block > 0.5 ? abs(step(7.5, aRole) - step(inset, 0.0))
+  float holed = step(blockInset(tile), 0.0);
+  float chosen = block > 0.5 ? abs(step(7.5, aRole) - holed) * (1.0 - blockless(tile) * step(aRole, 8.5))
     : rare > 0.5 ? step(aRole > 5.5 ? 0.93 : 0.9, hash12(room + 193.0 + 10.0 * aRole))
     : laundry > 0.5 ? step(0.8, hung) : step(0.82, pick);
-  float shown = aRole < 0.5 ? 1.0 : aRole < 1.5 ? 1.0 - plant : aRole < 2.5 ? plant : (1.0 - plant) * chosen;
+  float shown = aRole < 0.5 ? 1.0 : aRole < 1.5 ? 1.0 - plant : aRole < 2.5 ? plant
+    : aRole > 9.5 ? blockless(tile)
+    : aRole > 8.5 ? (1.0 - blockless(tile)) * (1.0 - (1.0 - plant) * holed) : (1.0 - plant) * chosen;
   if (shown < 0.5) {
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
@@ -68,6 +72,8 @@ void main() {
   vec2 hub = 0.5 * (aMin.xy + aMax.xy);
   vec3 local = vec3(hub + turn * (position.xy - hub), position.z) + shift;
   local.z -= inset * step(aMax.z - INSET_REACH, position.z);
+  float studStorey = 2.0 * tile.y + mod(abs(tile.x), 2.0) + floor(position.y / (0.5 * uTileHeight));
+  local.z -= STUD_DROP * step(9.5, aRole) * step(normal.z, 0.99) * step(mod(studStorey, uPlantEvery), 0.5);
   float hang = aMax.y - position.y;
   float across = position.x - 0.5 * (aMin.x + aMax.x);
   vec3 bent = vec3(turn * normal.xy, normal.z);

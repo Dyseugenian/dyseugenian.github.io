@@ -134,7 +134,7 @@ Perch ledgeIn(vec2 room, float pick, float place) {
   float pier = step(-uOuterX + EDGE_WIDTH + 0.01, x - 2.8);
   float block = pier * (plantFloor(vec2(room.x, room.y - storey)) ? 0.0 : 1.0);
   float edgeSide = x - 1.4 - EDGE_WIDTH < -uOuterX + 0.01 ? -1.0 : x + 1.4 + EDGE_WIDTH > uOuterX - 0.01 ? 1.0 : 0.0;
-  float weights[7] = float[7](1.0 - plant, 1.2 * cooled, 0.3 * (1.0 - plant), 0.6 * block, 0.8 * abs(edgeSide), plant, 0.6 * plant);
+  float weights[7] = float[7](1.0 - plant, 1.2 * cooled, 0.3 * (1.0 - plant), 0.6 * block * (1.0 - blockless(tile)), 0.8 * abs(edgeSide), plant, 0.6 * plant);
   float total = 0.0;
   for (int i = 0; i < 7; i++) total += weights[i];
   float chosen = pick * total;

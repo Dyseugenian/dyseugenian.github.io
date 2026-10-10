@@ -73,6 +73,8 @@ const float FAN_RADIUS = 0.2;
 const vec3 GLASS_NORMAL = vec3(0.0, 0.0, 1.0);
 const vec3 ROOM = vec3(2.0, 3.2, 4.0);
 const float ROOM_LIGHT = 10.0;
+const float HIDDEN_ROOM = 0.6;
+const float HIDDEN_BAYS = 1.5;
 const vec2 GLASS_HALF = vec2(1.05, 1.025);
 const vec3 BEAMS[5] = vec3[5](
   vec3(0.9, 0.14, 0.3), vec3(0.8, 0.2, 0.35), vec3(0.8, 0.2, 0.35), vec3(1.6, 0.28, 0.5), vec3(1.8, 0.4, 0.55));
@@ -486,22 +488,6 @@ float groove(float toEdge, float blur, float width) {
   return 1.0 - smoothstep(width - blur, width + blur, toEdge);
 }
 
-float slabs(vec2 point, vec2 room, float salt) {
-  float width = mix(0.9, 1.5, hash12(room + salt));
-  vec2 size = vec2(width, width * (hash12(room + salt + 1.0) < 0.5 ? 0.5 : 1.0));
-  vec2 cells = point / size;
-  cells.x += 0.5 * step(0.5, hash12(room + salt + 2.0)) * mod(floor(cells.y), 2.0);
-  vec2 index = floor(cells);
-  vec2 toEdge = (0.5 - abs(fract(cells) - 0.5)) * size;
-  float edge = min(toEdge.x, toEdge.y);
-  float blur = max(fwidth(point.x), fwidth(point.y));
-  float joint = groove(edge, blur, 0.016);
-  float bevel = smoothstep(0.0, 0.1, edge);
-  float tone = mix(0.8, 1.1, hash12(index + room * 7.0 + salt))
-    * mix(0.9, 1.05, valueNoise(point * 2.5 + index * 13.0));
-  return tone * mix(0.7, 1.0, bevel) * (1.0 - 0.7 * joint);
-}
-
 float beamHit(vec3 pane, vec3 ray, vec3 window, vec2 room, float ceilingY, float limit,
     inout vec3 normal, out float crease) {
   crease = 1.0;
@@ -570,9 +556,6 @@ vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room) {
   float occlusion = mix(0.35, 1.0, smoothstep(0.0, 0.8, min(min(corner.x, corner.y), corner.z)));
 
   vec2 plan = vec2(hit.x - window.x, hit.z - GLASS_Z);
-  float along = wall.z > 0.5 ? hit.x - window.x : hit.z;
-  float wallSlabs = slabs(vec2(along, hit.y - floorY), room, 53.0);
-  float floorSlabs = slabs(plan, room, 67.0);
   vec2 face = abs(wall.y) > 0.5 ? plan : abs(wall.x) > 0.5 ? hit.zy : hit.xy;
   vec4 grain = texture(uSurface, face / uSurfaceMeters + room * 0.37);
   float mottle = fbm(face * 1.7 + room * 3.1);
@@ -584,15 +567,9 @@ vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room) {
     albedo = uSalt * mix(0.75, 1.0, hash12(room + 59.0)) * plaster * crease;
   } else if (wall.y > 0.5) {
     albedo = mix(uGrime, finish < 0.4 ? uConcrete : uLampSoft, mix(0.25, 0.5, hash12(room + 61.0)));
-    albedo *= floorSlabs;
   } else {
-    albedo *= wallSlabs;
+    albedo *= plaster;
   }
-
-  float doorX = mix(-1.4, 0.6, hash12(room + 31.0));
-  float door = step(0.5, wall.z) * step(doorX, hit.x - window.x) * step(hit.x - window.x, doorX + 0.9)
-    * step(fromLow.y, 2.1);
-  albedo *= 1.0 - 0.85 * door;
 
   float deskZ = GLASS_Z - mix(0.9, 2.6, hash12(room + 15.0));
   float deskLeft = window.x + mix(-1.9, 0.1, hash12(room + 17.0));
@@ -953,22 +930,17 @@ void main() {
 
     vec3 view = normalize(vLocal - (cameraPosition - origin));
 
-    vec3 inside = interior(vLocal, view, window, glow, room);
-    float stride = uTime * mix(0.12, 0.25, hash12(room + 67.0)) + 6.28 * hash12(room + 71.0);
-    vec2 figure = pane + view.xy * (0.8 / max(-view.z, 0.2)) - vec2(1.8 * sin(stride), 0.0);
-    vec2 shoulders = abs(figure - vec2(0.0, -1.3)) - vec2(0.18, 0.56);
-    float outline = min(length(figure - vec2(0.0, -0.55)) - 0.11,
-      length(max(shoulders, 0.0)) + min(max(shoulders.x, shoulders.y), 0.0) - 0.06);
-    float person = (1.0 - smoothstep(0.0, 0.01 + fwidth(outline), outline)) * step(0.75, hash12(room + 61.0));
-    inside *= 1.0 - 0.85 * person;
-
-    vec2 pot = pane - vec2(mix(-0.75, 0.75, hash12(room + 103.0)), -GLASS_HALF.y);
-    float potShape = max(abs(pot.x) - mix(0.06, 0.085, pot.y / 0.15), abs(pot.y - 0.075) - 0.075);
-    float leaves = length((pot - vec2(0.0, 0.3)) * vec2(1.0, 1.3)) - 0.17
-      - 0.07 * (valueNoise(pot * 28.0 + room) - 0.5);
-    float plantOutline = min(potShape, leaves);
-    float plant = step(0.8, hash12(room + 107.0)) * (1.0 - smoothstep(0.0, 0.005 + fwidth(plantOutline), plantOutline));
-    inside *= 1.0 - 0.9 * plant;
+    vec3 inside = glow * HIDDEN_ROOM;
+    if (abs(tile.x) < HIDDEN_BAYS) {
+      inside = interior(vLocal, view, window, glow, room);
+      float stride = uTime * mix(0.12, 0.25, hash12(room + 67.0)) + 6.28 * hash12(room + 71.0);
+      vec2 figure = pane + view.xy * (0.8 / max(-view.z, 0.2)) - vec2(1.8 * sin(stride), 0.0);
+      vec2 shoulders = abs(figure - vec2(0.0, -1.3)) - vec2(0.18, 0.56);
+      float outline = min(length(figure - vec2(0.0, -0.55)) - 0.11,
+        length(max(shoulders, 0.0)) + min(max(shoulders.x, shoulders.y), 0.0) - 0.06);
+      float person = (1.0 - smoothstep(0.0, 0.01 + fwidth(outline), outline)) * step(0.75, hash12(room + 61.0));
+      inside *= 1.0 - 0.85 * person;
+    }
 
     vec3 mirrored = reflect(view, GLASS_NORMAL);
     float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(-view, GLASS_NORMAL), 0.0), 5.0);

@@ -34,6 +34,8 @@ import spoutDripVertex from '../shaders/spout-drip.vert';
 import ductVertex from '../shaders/duct.vert';
 import ductFittingVertex from '../shaders/duct-fitting.vert';
 import ductFragment from '../shaders/duct.frag';
+import grilleVertex from '../shaders/grille.vert';
+import grilleFragment from '../shaders/grille.frag';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { storeyGeometry } from './facade';
 
@@ -47,6 +49,8 @@ const FASTENERS = 8;
 const SPOUT_DROPS = 8;
 const SPOUT_RINGS = 96;
 const DUCT_RINGS = 36;
+const GRILLE_BARS = 23;
+const GRILLE_SEGMENTS = 8;
 
 const LAYERED: ShaderMaterialParameters = {
   blending: CustomBlending,
@@ -177,6 +181,20 @@ export function ducts(
     {},
   );
   return [duct, fittings];
+}
+
+export function grilles(
+  columns: number[],
+  rows: number[],
+  uniforms: Record<string, IUniform>,
+): Mesh {
+  return instanced(
+    storeyGeometry(new BoxGeometry(1, 1, 1, 1, GRILLE_SEGMENTS, 1), columns, rows, GRILLE_BARS),
+    grilleVertex,
+    grilleFragment,
+    uniforms,
+    {},
+  );
 }
 
 function instanced(

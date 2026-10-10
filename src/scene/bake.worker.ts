@@ -2,13 +2,17 @@ import { bakeFbm } from './noise';
 import { bakeOcclusion, type OcclusionBake } from './occlusion';
 import { pigeonGeometry } from './pigeon';
 
-export type MapsRequest = Record<'occlusion' | 'leftOcclusion' | 'rightOcclusion', OcclusionBake>;
+export type MapsRequest = Record<
+  'occlusion' | 'blocklessOcclusion' | 'leftOcclusion' | 'rightOcclusion',
+  OcclusionBake
+>;
 export type TowerMaps = ReturnType<typeof bake>;
 
 function bake(request: MapsRequest) {
   return {
     fbm: bakeFbm(),
     occlusion: bakeOcclusion(request.occlusion),
+    blocklessOcclusion: bakeOcclusion(request.blocklessOcclusion),
     leftOcclusion: bakeOcclusion(request.leftOcclusion),
     rightOcclusion: bakeOcclusion(request.rightOcclusion),
     pigeon: pigeon(),

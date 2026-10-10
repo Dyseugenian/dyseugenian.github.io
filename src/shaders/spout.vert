@@ -10,6 +10,7 @@ uniform float uOuterX;
 #include "chunks/hash.glsl"
 #include "chunks/rooms.glsl"
 #include "chunks/inset.glsl"
+#include "chunks/ducts.glsl"
 #include "chunks/spouts.glsl"
 
 in vec3 position;

@@ -4,6 +4,7 @@ precision highp float;
 #include "chunks/light.glsl"
 #include "chunks/windows.glsl"
 #include "chunks/inset.glsl"
+#include "chunks/ducts.glsl"
 #include "chunks/spouts.glsl"
 
 uniform mat4 modelMatrix;

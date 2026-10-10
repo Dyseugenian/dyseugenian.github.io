@@ -21,10 +21,16 @@ struct Spout {
   bool closed;
 };
 
+bool ducted(vec2 room, float storey) {
+  Duct duct;
+  DuctPiece piece;
+  return ductPiece(room, storey, 0.0, duct, piece) || ductPiece(room, storey, 1.0, duct, piece);
+}
+
 bool spoutOf(vec2 room, vec2 tile, float storey) {
   vec2 climbed = vec2(tile.x, mod(tile.y + uTilesClimbed, 4096.0));
-  return storey > 0.5 && !plantFloor(room) && mod(climbed.x + climbed.y, 2.0) < 0.5
-    && hash12(room + 507.0) < SPOUT_CHANCE && tile.x * uBay - 3.15 > -uOuterX + 0.01;
+  return storey > 0.5 && blockless(tile) < 0.5 && !plantFloor(room) && mod(climbed.x + climbed.y, 2.0) < 0.5
+    && hash12(room + 507.0) < SPOUT_CHANCE && tile.x * uBay - 3.15 > -uOuterX + 0.01 && !ducted(room, storey);
 }
 
 bool wallFree(vec2 room, float side) {
@@ -43,7 +49,6 @@ Spout spoutAt(vec2 room, vec2 tile) {
   bool grille = hash12(room + 229.0) > 0.55;
   float base = 0.5 * uTileHeight;
   float y = base + GAP_MIDDLE;
-  float x = PIER_MIDDLE + mix(-0.2, 0.2, pick.z);
   float face = PIER_MIDDLE + side * PIER_HALF;
   Spout spout;
   spout.drips = hash12(room + 504.0);
@@ -121,8 +126,8 @@ Spout spoutAt(vec2 room, vec2 tile) {
   } else {
     float reach = mix(0.5, 0.7, pick.x);
     spout.radius = mix(0.19, 0.22, pick.x);
-    spout.points[0] = vec3(x, y, -WALL_DEPTH);
-    spout.points[1] = vec3(x, y, reach);
+    spout.points[0] = vec3(PIER_MIDDLE, y, -WALL_DEPTH);
+    spout.points[1] = vec3(PIER_MIDDLE, y, reach);
     spout.count = 2;
   }
   if (spout.closed) spout.drips = 1.0;

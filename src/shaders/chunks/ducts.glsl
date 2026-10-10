@@ -1,7 +1,7 @@
-const float DUCT_CHANCE = 0.675;
+const float DUCT_CHANCE = 0.776;
 const float DUCT_COLUMN = 2.5;
 const float DUCT_X = -2.1;
-const float DUCT_CLEARANCE = 1.04;
+const float DUCT_CLEARANCE = 0.59;
 const float DUCT_WALL = 0.1;
 const float DUCT_TURN = 1.2;
 const float DUCT_BRACKET = 1.8;

@@ -44,6 +44,8 @@ const RAGGED = 5;
 const SHEETED = 6;
 const HOLED = 7;
 const SOLID = 8;
+const UNBORED = 9;
+const STUDDED = 10;
 export const PLANT_EVERY = 16;
 const PLANT_FLOOR = { front: 0.6, louvre: 0.06, louvreSpacing: 0.24 };
 const RAG_SIZE = { width: 0.42, drop: 0.5, z: -1.27 };
@@ -125,20 +127,23 @@ function boreOf(min: Vector3, max: Vector3) {
   };
 }
 
-function opened(min: Vector3, max: Vector3, hole: Vector2, radius: number): BufferGeometry {
+function frontless(min: Vector3, max: Vector3): BufferGeometry {
   const size = max.clone().sub(min);
   const center = max.clone().add(min).multiplyScalar(0.5);
   const box = new BoxGeometry(size.x, size.y, size.z).translate(center.x, center.y, center.z);
   box.setIndex(Array.from(box.index!.array).filter((_, index) => index < 24 || index >= 30));
+  return box;
+}
+
+function front(min: Vector3, max: Vector3, hole?: Vector2, radius = 0): BufferGeometry {
   const outline = new Shape([
     new Vector2(min.x, min.y),
     new Vector2(max.x, min.y),
     new Vector2(max.x, max.y),
     new Vector2(min.x, max.y),
   ]);
-  outline.holes.push(new Path().absarc(hole.x, hole.y, radius, 0, 2 * Math.PI, true));
-  const front = new ShapeGeometry(outline, HOLE.segments / 2).translate(0, 0, max.z);
-  return mergeGeometries([box, front])!;
+  if (hole) outline.holes.push(new Path().absarc(hole.x, hole.y, radius, 0, 2 * Math.PI, true));
+  return new ShapeGeometry(outline, HOLE.segments / 2).translate(0, 0, max.z);
 }
 
 function holedBlock(min: Vector3, max: Vector3): BufferGeometry {
@@ -157,7 +162,7 @@ function holedBlock(min: Vector3, max: Vector3): BufferGeometry {
   );
   const end = new CircleGeometry(radius, segments).translate(0, 0, -depth);
   const hole = mergeGeometries([fillet, tube, end])!.translate(center.x, center.y, max.z);
-  return mergeGeometries([opened(min, max, center, opening), hole])!;
+  return mergeGeometries([frontless(min, max), front(min, max, center, opening), hole])!;
 }
 
 function blade(steps: number): BufferGeometry {
@@ -235,15 +240,20 @@ const LAUNDRY_SEGMENTS: Record<Detail, { line: number; across: number; down: num
 const BLOCK_MIN = new Vector3(-3.05, 0.9, -1);
 const BLOCK_MAX = new Vector3(-1.15, 2.7, 0.9);
 const BLOCK_BORE = boreOf(BLOCK_MIN, BLOCK_MAX);
-export const PIER = shaped(
-  CONCRETE,
-  opened(
-    new Vector3(-2.8, 0, -3.2),
-    new Vector3(-1.4, TILE_HEIGHT, 0),
-    BLOCK_BORE.center,
-    BLOCK_BORE.radius,
-  ),
-);
+const PIER_MIN = new Vector3(-2.8, 0, -3.2);
+const PIER_MAX = new Vector3(-1.4, TILE_HEIGHT, 0);
+export const PIER: Part = {
+  kind: CONCRETE,
+  min: PIER_MIN,
+  max: PIER_MAX,
+  shape: frontless(PIER_MIN, PIER_MAX),
+};
+const PIER_FRONT = { ...PIER, shape: front(PIER_MIN, PIER_MAX), role: UNBORED };
+const BORED_PIER_FRONT = {
+  ...PIER,
+  shape: front(PIER_MIN, PIER_MAX, BLOCK_BORE.center, BLOCK_BORE.radius),
+  role: HOLED,
+};
 const BLOCK = {
   ...part(
     CONCRETE,
@@ -255,6 +265,63 @@ const BLOCK = {
   role: SOLID,
 };
 const HOLED_BLOCK = { ...BLOCK, shape: holedBlock(BLOCK_MIN, BLOCK_MAX), role: HOLED };
+const STUDS = { band: 1.2, margin: 0.04, height: 0.1725, across: 1 };
+
+function stud(low: Vector2, high: Vector2, face: number): BufferGeometry {
+  const corners = [
+    new Vector3(low.x, low.y, face),
+    new Vector3(high.x, low.y, face),
+    new Vector3(high.x, high.y, face),
+    new Vector3(low.x, high.y, face),
+  ];
+  const apex = new Vector3((low.x + high.x) / 2, (low.y + high.y) / 2, face + STUDS.height);
+  const positions: number[] = [];
+  const normals: number[] = [];
+  for (let side = 0; side < 4; side++) {
+    const a = corners[side]!;
+    const b = corners[(side + 1) % 4]!;
+    const normal = b.clone().sub(a).cross(apex.clone().sub(a)).normalize();
+    for (const point of [a, b, apex]) {
+      positions.push(point.x, point.y, point.z);
+      normals.push(normal.x, normal.y, normal.z);
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new Float32BufferAttribute(normals, 3));
+  geometry.setAttribute(
+    'uv',
+    new Float32BufferAttribute(new Array<number>((positions.length / 3) * 2).fill(0), 2),
+  );
+  geometry.setIndex(Array.from({ length: positions.length / 3 }, (_, index) => index));
+  return geometry;
+}
+
+function studdedFront(): BufferGeometry {
+  const { band, margin, across } = STUDS;
+  const width = (PIER_MAX.x - PIER_MIN.x - 2 * margin) / across;
+  const height = (band - 2 * margin) / across;
+  const pieces = [front(PIER_MIN, PIER_MAX)];
+  for (let bottom = PIER_MIN.y; bottom < PIER_MAX.y - band / 2; bottom += band) {
+    for (let column = 0; column < across; column++) {
+      for (let row = 0; row < across; row++) {
+        const low = new Vector2(
+          PIER_MIN.x + margin + column * width,
+          bottom + margin + row * height,
+        );
+        pieces.push(stud(low, low.clone().add(new Vector2(width, height)), PIER_MAX.z));
+      }
+    }
+  }
+  return mergeGeometries(pieces)!;
+}
+
+const STUDDED_FRONT = {
+  ...PIER,
+  max: new Vector3(PIER_MAX.x, PIER_MAX.y, PIER_MAX.z + STUDS.height),
+  shape: studdedFront(),
+  role: STUDDED,
+};
 
 export const SURFACES = { concrete: 0, glass: 1, fittings: 2 };
 
@@ -293,7 +360,7 @@ function sheeted(part: Part): Part {
 }
 
 export function tileParts(detail: Detail): Part[] {
-  const parts = [PIER, BLOCK, HOLED_BLOCK];
+  const parts: Part[] = [PIER, PIER_FRONT, BORED_PIER_FRONT, BLOCK, HOLED_BLOCK, STUDDED_FRONT];
   for (const y of [0, STOREY]) {
     const top = y + STOREY;
     const sill = y + 0.55;
