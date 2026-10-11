@@ -3,7 +3,7 @@ const float DUCT_COLUMN = 2.5;
 const float DUCT_X = -2.1;
 const float DUCT_CLEARANCE = 0.59;
 const float DUCT_WALL = 0.1;
-const float DUCT_TURN = 1.2;
+const float DUCT_BLOCK_FACE = 0.45;
 const float DUCT_BRACKET = 1.8;
 const vec3 DUCT_HINT = vec3(0.31, 0.83, 0.47);
 
@@ -13,7 +13,6 @@ struct Duct {
   float z;
   float rise;
   float reach;
-  float outlet;
   float seed;
 };
 
@@ -33,12 +32,13 @@ bool ductOf(float column, float section, out Duct duct) {
   duct.radius = mix(0.25, 0.355, hash12(key + 1.0));
   duct.rise = hash12(key + 2.0) < 0.5 ? 1.0 : -1.0;
   duct.reach = 3.0 + floor(hash12(key + 3.0) * 7.0);
-  float plant = (section + (duct.rise > 0.0 ? 0.0 : 1.0)) * uPlantEvery;
-  if (mod(plant + duct.rise * duct.reach - mod(abs(column), 2.0), 2.0) < 0.5) duct.reach += duct.reach > 3.5 ? -1.0 : 1.0;
-  duct.x = DUCT_X + mix(-0.15, 0.15, hash12(key + 4.0));
+  duct.x = DUCT_X;
   duct.z = DUCT_CLEARANCE + duct.radius;
-  duct.outlet = mix(1.0, 2.6, hash12(key + 5.0));
   return true;
+}
+
+float ductWall(float storey) {
+  return (storey < 0.5 ? DUCT_BLOCK_FACE : 0.0) - DUCT_WALL;
 }
 
 bool ductPiece(vec2 room, float storey, float index, out Duct duct, out DuctPiece piece) {
@@ -52,26 +52,26 @@ bool ductPiece(vec2 room, float storey, float index, out Duct duct, out DuctPiec
   float base = storey * height;
   float near = duct.rise > 0.0 ? base : base + height;
   float far = duct.rise > 0.0 ? base + height : base;
-  float turn = far - duct.rise * DUCT_TURN;
-  float wall = -DUCT_WALL;
+  float middle = base + 0.5 * height;
+  float wall = ductWall(storey);
   piece.offset = offset;
   if (offset < 0.5) {
-    piece.a = vec3(duct.x, turn, wall);
-    piece.b = vec3(duct.x, turn, duct.z);
+    piece.a = vec3(duct.x, middle, wall);
+    piece.b = vec3(duct.x, middle, duct.z);
     piece.c = vec3(duct.x, far, duct.z);
   } else if (offset > duct.reach - 0.5) {
     piece.a = vec3(duct.x, near, duct.z);
-    piece.b = vec3(duct.x, base + duct.outlet, duct.z);
-    piece.c = vec3(duct.x, base + duct.outlet, wall);
+    piece.b = vec3(duct.x, middle, duct.z);
+    piece.c = vec3(duct.x, middle, wall);
   } else {
     piece.a = vec3(duct.x, near, duct.z);
-    piece.b = vec3(duct.x, base + 0.5 * height, duct.z);
+    piece.b = vec3(duct.x, middle, duct.z);
     piece.c = vec3(duct.x, far, duct.z);
   }
   float first = distance(piece.a, piece.b);
   float second = distance(piece.b, piece.c);
   piece.bend = min(1.6 * duct.radius, 0.45 * min(first, second));
-  piece.start = offset < 0.5 ? 0.0 : duct.z + DUCT_WALL + DUCT_TURN + (offset - 1.0) * height;
+  piece.start = offset < 0.5 ? 0.0 : duct.z - ductWall(mod(storey + offset, 2.0)) + (offset - 0.5) * height;
   return true;
 }
 

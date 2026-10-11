@@ -58,8 +58,9 @@ const HOLE = { cover: 0.4, back: -2, rim: 0.35, segments: 64, rings: 12 };
 
 const ROTOR = { radius: 0.2, hub: 0.045, blades: 4, pitch: 0.45, rim: 0.025, depth: 0.05 };
 
-const EDGE = { pitch: 3.6, rib: 0.45, depth: 0.7, margin: 0.85 };
 export const EDGE_WIDTH = 1.75;
+export const EDGE_REACH = 2.4;
+const EDGE = { pitch: 3.6, rib: 0.45, depth: 0.7, reach: EDGE_REACH, behind: -8, margin: 2.55 };
 
 export const OCCLUSION_MIN = new Vector3(-BAY / 2, 0, OCCLUSION.back);
 export const OCCLUSION_SIZE = new Vector3(BAY, TILE_HEIGHT, OCCLUSION.front - OCCLUSION.back);
@@ -575,11 +576,16 @@ export function edge(outward: number, windows: Part[]) {
   const out = (distance: number) => outer + outward * distance;
   const across = (from: number, to: number): Span => (from < to ? [from, to] : [to, from]);
   const parts = [part(CONCRETE, [left, right], [0, TILE_HEIGHT], [PIER.min.z, PIER.max.z])];
+  const into = (distance: number) => inner - outward * distance;
+  const corners = [
+    across(out(EDGE.reach - EDGE.depth), out(EDGE.reach)),
+    across(inner, into(EDGE.depth)),
+  ];
   for (let y = EDGE.pitch / 2; y < TILE_HEIGHT; y += EDGE.pitch) {
     const rib: Span = [y - EDGE.rib / 2, y + EDGE.rib / 2];
     parts.push(
-      part(CONCRETE, across(inner, out(EDGE.depth)), rib, [0, EDGE.depth]),
-      part(CONCRETE, across(outer, out(EDGE.depth)), rib, [PIER.min.z, 0]),
+      part(CONCRETE, across(into(EDGE.depth), out(EDGE.reach)), rib, [0, EDGE.depth]),
+      ...corners.map((corner) => part(CONCRETE, corner, rib, [EDGE.behind, 0])),
     );
   }
   const min = new Vector3(left - EDGE.margin, 0, OCCLUSION.back);

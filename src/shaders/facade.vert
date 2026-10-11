@@ -54,7 +54,7 @@ void main() {
   vec2 room = vec2(tile.x, mod(storey, 8192.0));
   float pick = hash12(room + 223.0);
   float hung = hash12(room + 233.0);
-  float holed = step(blockInset(tile), 0.0);
+  float holed = step(blockInset(tile), 0.0) * step(mod(floor(abs(tile.x - 0.5)) + tile.y, 2.0), 0.5);
   float chosen = block > 0.5 ? abs(step(7.5, aRole) - holed) * (1.0 - blockless(tile) * step(aRole, 8.5))
     : rare > 0.5 ? step(aRole > 5.5 ? 0.93 : 0.9, hash12(room + 193.0 + 10.0 * aRole))
     : laundry > 0.5 ? step(0.8, hung) : step(0.82, pick);

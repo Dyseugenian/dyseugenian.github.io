@@ -51,15 +51,12 @@ void main() {
     vec3 entry = piece.offset < 0.5 ? piece.a : piece.c;
     float size = 1.04 * duct.radius;
     local = aPart < 0.5
-      ? vec3(entry.x + position.x * size, entry.y - position.z * size, (position.y + 0.5) * 0.08)
-      : vec3(entry.xy + position.xy * size, 0.01);
+      ? vec3(entry.x + position.x * size, entry.y - position.z * size, entry.z + DUCT_WALL + (position.y + 0.5) * 0.08)
+      : vec3(entry.xy + position.xy * size, entry.z + DUCT_WALL + 0.01);
     bent = aPart < 0.5 ? vec3(normal.x, -normal.z, 0.0) : normal;
   } else {
     float bracket = base + DUCT_BRACKET;
-    float outlet = base + duct.outlet;
-    bool covered = piece.offset > 0.5 && (!ending
-      || (duct.rise > 0.0 ? outlet - piece.bend > bracket + 0.15 : outlet + piece.bend < bracket - 0.15));
-    if (!covered || aStorey > 0.5 || aPart > 2.5) return;
+    if (piece.offset < 0.5 || ending || aStorey > 0.5 || aPart > 2.5) return;
     float size = duct.radius + 0.008;
     float wall = BLOCK_FRONT - blockInset(tile);
     if (aPart < 0.5) {

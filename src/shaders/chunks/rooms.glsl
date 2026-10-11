@@ -13,6 +13,14 @@ bool glassBlocks(vec2 room) {
   return !plantFloor(room) && hash12(room + 811.0) < 0.06;
 }
 
+bool sheeted(vec2 room) {
+  return !plantFloor(room) && hash12(room + 253.0) >= 0.93;
+}
+
+bool papered(vec2 room) {
+  return hash12(room + 149.0) > 0.94;
+}
+
 bool airConditioned(vec2 room) {
   return !plantFloor(room) && hash12(room + 223.0) >= 0.82;
 }

@@ -48,8 +48,7 @@ const FASTENERS = 8;
 const SPOUT_DROPS = 8;
 const SPOUT_RINGS = 96;
 const DUCT_RINGS = 36;
-const GRILLE_BARS = 23;
-const GRILLE_SEGMENTS = 8;
+const GRILLE_BARS = 63;
 
 const LAYERED: ShaderMaterialParameters = {
   blending: CustomBlending,
@@ -204,7 +203,7 @@ export function grilles(
   uniforms: Record<string, IUniform>,
 ): Mesh {
   return instanced(
-    storeyGeometry(new BoxGeometry(1, 1, 1, 1, GRILLE_SEGMENTS, 1), columns, rows, GRILLE_BARS),
+    storeyGeometry(new BoxGeometry(1, 1, 1), columns, rows, GRILLE_BARS),
     grilleVertex,
     grilleFragment,
     uniforms,

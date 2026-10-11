@@ -9,6 +9,5 @@ float blockless(vec2 tile) {
 
 float blockInset(vec2 tile) {
   float outer = step(abs(abs(tile.x - 0.5) - OUTER_COLUMN), 0.1);
-  float blocked = HALF_PROTRUSION * max(mod(floor(abs(tile.x - 0.5)) + tile.y, 2.0), outer);
-  return mix(blocked, STUDDED_INSET, blockless(tile));
+  return mix(HALF_PROTRUSION * outer, STUDDED_INSET, blockless(tile));
 }

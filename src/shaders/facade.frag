@@ -31,6 +31,7 @@ uniform vec3 uDenim;
 uniform vec3 uMadder;
 uniform vec3 uGlassGreen;
 uniform float uFogDensity;
+uniform float uSideX;
 uniform sampler3D uOcclusion;
 uniform vec3 uOcclusionMin;
 uniform vec3 uOcclusionSize;
@@ -64,7 +65,8 @@ const vec3 STAIN_SIZES = vec3(10.0, 3.5, 1.2);
 const vec3 STAIN_COVER = vec3(0.4, 0.45, 0.2);
 const vec3 STAIN_SALTS = vec3(0.0, 31.0, 67.0);
 const float SPECK_SPACING = 0.35;
-const float RIM_STRENGTH = 0.9;
+const float SIDE_LIGHT = 1.5;
+const float SIDE_FALLOFF = 3.5;
 const float GLASS_Z = -3.05;
 const float SPANDREL_Z = -1.8;
 const vec2 PIER_SPAN = vec2(-2.8, -1.4);
@@ -544,7 +546,7 @@ vec3 lampIn(vec3 window, vec2 room) {
     GLASS_Z - mix(1.0, 3.2, lampDepth(room)));
 }
 
-vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room) {
+vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room, bool bare, bool beamed) {
   float floorY = window.y - WINDOW.y + 0.25;
   vec3 low = vec3(window.x - ROOM.x, floorY, GLASS_Z - ROOM.z);
   vec3 high = vec3(window.x + ROOM.x, floorY + ROOM.y, GLASS_Z);
@@ -554,19 +556,21 @@ vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room) {
   vec3 hit = pane + ray * nearest;
   vec3 wall = nearest == travel.x ? vec3(-sign(ray.x), 0.0, 0.0)
     : nearest == travel.y ? vec3(0.0, -sign(ray.y), 0.0) : vec3(0.0, 0.0, 1.0);
-  float crease;
+  float crease = 1.0;
   float overhead = step(wall.y, -0.5);
-  float beam = beamHit(pane, ray, window, room, high.y, nearest, wall, crease);
-  if (beam < nearest) {
-    overhead = 1.0;
-    nearest = beam;
-    hit = pane + ray * nearest;
+  if (beamed) {
+    float beam = beamHit(pane, ray, window, room, high.y, nearest, wall, crease);
+    if (beam < nearest) {
+      overhead = 1.0;
+      nearest = beam;
+      hit = pane + ray * nearest;
+    }
   }
 
   float finish = hash12(room + 13.0);
   vec3 paint = finish < 0.4 ? uConcrete : finish < 0.75 ? uSalt : mix(uSalt, uLampSoft, 0.45);
   vec3 albedo = paint * mix(0.6, 0.95, hash12(room + 11.0));
-  float lowerBand = step(0.7, hash12(room + 43.0)) * step(hit.y - floorY, mix(0.8, 1.1, hash12(room + 47.0)));
+  float lowerBand = bare ? 0.0 : step(0.7, hash12(room + 43.0)) * step(hit.y - floorY, mix(0.8, 1.1, hash12(room + 47.0)));
   albedo *= 1.0 - 0.4 * lowerBand;
   vec3 fromLow = hit - low;
   vec3 toHigh = high - hit;
@@ -577,7 +581,7 @@ vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room) {
   vec2 face = abs(wall.y) > 0.5 ? plan : abs(wall.x) > 0.5 ? hit.zy : hit.xy;
   vec4 grain = texture(uSurface, face / uSurfaceMeters + room * 0.37);
   float mottle = fbm(face * 1.7 + room * 3.1);
-  float stain = smoothstep(0.55, 0.85, fbm(face * 0.6 + room * 5.0 + 9.0));
+  float stain = bare ? 0.0 : smoothstep(0.55, 0.85, fbm(face * 0.6 + room * 5.0 + 9.0));
   float plaster = mix(0.75, 1.12, grain.z) * mix(0.7, 1.0, smoothstep(0.1, 0.5, grain.w))
     * mix(0.82, 1.08, mottle) * (1.0 - 0.3 * stain);
 
@@ -596,7 +600,7 @@ vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room) {
   vec3 deskHit = pane + ray * toDesk;
   float desk = step(toDesk, nearest) * step(deskLeft, deskHit.x)
     * step(deskHit.x, deskLeft + mix(0.8, 1.8, hash12(room + 25.0))) * step(deskHit.y, deskTop);
-  if (desk > 0.5) {
+  if (!bare && desk > 0.5) {
     hit = deskHit;
     wall = vec3(0.0, 0.0, 1.0);
     albedo = uGrime * (1.0 + 2.0 * (1.0 - smoothstep(0.0, 0.03, deskTop - hit.y)));
@@ -998,7 +1002,7 @@ vec3 glassBlockWall(vec2 pane, vec3 view, vec3 window, vec3 glow, vec2 room, vec
   vec3 behind = glow * 0.15;
   if (seen && !trapped) {
     float clarity = 1.0 - smoothstep(0.0, 0.6, spread + length(front.xy) + length(back.xy));
-    behind = mix(0.15 * glow, 0.5 * interior(point, emerging, window, glow, room), clarity);
+    behind = mix(0.15 * glow, 0.5 * interior(point, emerging, window, glow, room, true, false), clarity);
   }
   vec3 scattered = BLOCK_SCATTER * light * mix(1.0, front.w, 0.5);
   vec3 through = scattered + (trapped ? diffuse * 1.5 : diffuse * front.w * back.w + behind + glow * LAMP_IMAGE * image);
@@ -1086,7 +1090,8 @@ void main() {
       color = glassBlockWall(pane, view, window, glow, room, light, occlusion, seen);
     } else {
       vec3 inside = glow * HIDDEN_ROOM;
-      if (seen) inside = interior(vLocal, view, window, glow, room);
+      bool bare = lit < 0.5 || papered(room) || sheeted(room);
+      if (seen) inside = interior(vLocal, view, window, glow, room, bare, !bare || papered(room));
 
       float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(-view, GLASS_NORMAL), 0.0), 5.0);
       vec3 reflection = skyMirror(reflect(view, GLASS_NORMAL), occlusion);
@@ -1110,7 +1115,7 @@ void main() {
         + (uRim * 0.15 + glow * 0.15) * rim + uRim * 0.1 * joint;
 
       float blur = fwidth(pane.x);
-      if (hash12(room + 149.0) > 0.94) {
+      if (papered(room)) {
         vec4 papers = newspaper(pane, room, blur);
         float layers = papers.a;
         vec3 paper = papers.rgb * (glow * 0.4 * pow(0.45, max(layers - 1.0, 0.0)) + 0.05 * mix(0.4, 1.0, occlusion));
@@ -1119,13 +1124,9 @@ void main() {
     }
   }
 
-  float silhouette = step(0.0, normal.x * sign(vWorld.x));
-  float fromEdge = max(uOuterX - abs(vWorld.x), 0.0);
-  float pixel = fwidth(vWorld.x);
-  float rim = 0.3 * exp(-fromEdge / max(pixel * 2.5, 0.06)) + 0.7 * exp(-fromEdge / max(pixel * 12.0, 0.45));
-  float roughness = mix(0.4, 1.0, smoothstep(0.8, 1.0, dot(shading, normal)));
-  color += uRim * RIM_STRENGTH * silhouette * rim * surface.albedo / uConcrete * roughness
-    * mix(0.5, 1.0, occlusion);
+  float facing = 0.5 + 0.5 * normal.x * sign(vWorld.x);
+  float side = exp(-max(uSideX - abs(vWorld.x), 0.0) / SIDE_FALLOFF);
+  color += uRim * SIDE_LIGHT * facing * side * surface.albedo / uConcrete * mix(0.5, 1.0, occlusion);
 
   float mist = fbm(vec3(vWorld.x * 0.05, building.y * 0.04, uTime * 0.04));
   float fog = 1.0 - exp(-distance * uFogDensity * mix(0.5, 1.7, mist));
