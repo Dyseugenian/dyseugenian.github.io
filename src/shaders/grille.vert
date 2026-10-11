@@ -37,7 +37,7 @@ const float SPREAD = 0.075;
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
-  if (plantFloor(room) || hash12(room + 601.0) > GRILLE_CHANCE) return;
+  if (plantFloor(room) || glassBlocks(room) || hash12(room + 601.0) > GRILLE_CHANCE) return;
   vec4 pick = vec4(hash12(room + 603.0), hash12(room + 605.0), hash12(room + 607.0), hash12(room + 609.0));
   float base = aStorey * 0.5 * uTileHeight + BOTTOM;
   float inner = HALF_WIDTH - FLAT.x;

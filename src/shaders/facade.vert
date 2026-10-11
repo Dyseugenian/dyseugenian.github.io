@@ -61,6 +61,7 @@ void main() {
   float shown = aRole < 0.5 ? 1.0 : aRole < 1.5 ? 1.0 - plant : aRole < 2.5 ? plant
     : aRole > 9.5 ? blockless(tile)
     : aRole > 8.5 ? (1.0 - blockless(tile)) * (1.0 - (1.0 - plant) * holed) : (1.0 - plant) * chosen;
+  if (abs(aRole - 6.0) < 0.5 && glassBlocks(room)) shown = 0.0;
   if (shown < 0.5) {
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;

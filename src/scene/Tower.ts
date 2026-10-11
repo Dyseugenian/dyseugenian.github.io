@@ -25,7 +25,7 @@ import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 import { beneathGrain } from '../post/Film';
 import { Rebar } from './Rebar';
-import { ducts, grilles, pigeons, spouts, traces } from './traces';
+import { cables, ducts, grilles, motes, pigeons, spouts, traces } from './traces';
 import { Backdrop } from './Backdrop';
 import { Beacons, beaconSpot } from './Beacons';
 import { Drift, STILL } from './Drift';
@@ -49,6 +49,7 @@ import {
   occluders,
   occlusionTexture,
   SURFACES,
+  seenIn,
   surroundings,
   surfaceOf,
   tileParts,
@@ -59,10 +60,15 @@ const VIEW = { fov: 64, distance: 6.5, vanish: 0.82 };
 const PITCH = Math.atan(1 / (VIEW.vanish * Math.tan(MathUtils.degToRad(VIEW.fov / 2))));
 const COLUMNS = { left: -3, right: 3 };
 const BLOCKLESS_COLUMNS = [0, 1];
-const ROWS = { below: 2, above: 32 };
+const DUCT_COLUMNS = [-2, 3];
+const GRILLE_COLUMNS = [-1, 0, 1];
+const ROWS = { below: 1, above: 32 };
 const DETAIL_ROWS = { full: 5, reduced: 11 };
 const REBAR_ROWS = { below: 1, above: 4 };
-const TRACE_ROWS = { below: 2, above: 8 };
+const TRACE_ROWS = { below: 1, above: 8 };
+const CABLE_ROWS = { below: 2, near: 8, above: 16 };
+const CABLE_SEGMENTS = { near: 128, far: 24 };
+const SEEN_ROWS = { pigeons: 4, grilles: 3, motes: 4, spouts: 7, ducts: 12 };
 const CLIMB_SPEED = 0.9;
 const SWAY = { pitch: 0.12, shift: 1 };
 const SPOT = { reach: 8, y: -4, z: 3 };
@@ -72,6 +78,18 @@ const EXPOSURE = 0.42;
 const UP = new Vector3(0, 1, 0);
 const BACKLIGHTS = [new Vector3(-1, 1.1, -0.15), new Vector3(1, 1.1, -0.15)] as const;
 const BEACON_PERIOD = 2.4;
+
+function runs(parts: Part[], rows: number[]): number[][] {
+  const runs: number[][] = [];
+  let shown = -1;
+  for (const row of rows) {
+    const count = seenIn(parts, row, false).length + seenIn(parts, row, true).length;
+    if (count !== shown) runs.push([]);
+    runs.at(-1)!.push(row);
+    shown = count;
+  }
+  return runs;
+}
 
 export class Tower extends Scene {
   readonly camera = new PerspectiveCamera(VIEW.fov, 1, 0.1, 400);
@@ -148,6 +166,7 @@ export class Tower extends Scene {
       uMoss: { value: new Color(palette.moss).convertLinearToSRGB() },
       uBeaconColor: { value: new Color(palette.beacon).convertLinearToSRGB() },
       uSpotColor: { value: new Color(palette.spot).convertLinearToSRGB() },
+      uGlassGreen: { value: new Color(palette.glassGreen).convertLinearToSRGB() },
       uNewsprint: { value: new Color(palette.newsprint).convertLinearToSRGB() },
       uNewsprintAged: { value: new Color(palette.newsprintAged).convertLinearToSRGB() },
       uAppliance: { value: new Color(palette.appliance).convertLinearToSRGB() },
@@ -196,7 +215,9 @@ export class Tower extends Scene {
       { length: COLUMNS.right - COLUMNS.left },
       (_, index) => COLUMNS.left + 1 + index,
     );
-    const blocked = columns.filter((column) => !BLOCKLESS_COLUMNS.includes(column));
+    const blocked = columns.filter(
+      (column) => !BLOCKLESS_COLUMNS.includes(column) && column !== COLUMNS.right,
+    );
     const bands: [Detail, number[]][] = [
       ['full', rows.filter((row) => row < DETAIL_ROWS.full)],
       ['reduced', rows.filter((row) => row >= DETAIL_ROWS.full && row < DETAIL_ROWS.reduced)],
@@ -204,14 +225,22 @@ export class Tower extends Scene {
     ];
     const meshes = bands.flatMap(([detail, band]) => {
       const banded = tileParts(detail);
-      return surfaces.flatMap((surface) => {
-        const material = materials[surface]!;
-        const parts = banded.filter((part) => surfaceOf(part) === surface);
-        return [
-          new Mesh(facadeGeometry(parts, blocked, band), material),
-          new Mesh(facadeGeometry(parts, BLOCKLESS_COLUMNS, band), blocklessMaterials[surface]!),
-          new Mesh(facadeGeometry(parts.filter(inWindowBay), [COLUMNS.left], band), material),
+      return runs(banded, band).flatMap((run) => {
+        const inner = seenIn(banded, run[0]!, false);
+        const outermost = seenIn(banded, run[0]!, true);
+        const groups: [Part[], number[], RawShaderMaterial[]][] = [
+          [inner, blocked, materials],
+          [outermost, [COLUMNS.right], materials],
+          [inner, BLOCKLESS_COLUMNS, blocklessMaterials],
+          [outermost.filter(inWindowBay), [COLUMNS.left], materials],
         ];
+        return groups.flatMap(([parts, columns, surfaceMaterials]) =>
+          surfaces.flatMap((surface) => {
+            const shown = parts.filter((part) => surfaceOf(part) === surface);
+            if (shown.length === 0) return [];
+            return [new Mesh(facadeGeometry(shown, columns, run), surfaceMaterials[surface]!)];
+          }),
+        );
       });
     });
     for (const [{ parts, min, size }, column, occlusion] of [
@@ -249,7 +278,15 @@ export class Tower extends Scene {
     );
     const traceColumns = [COLUMNS.left, ...columns];
     const traceRows = rows.filter((row) => row >= -TRACE_ROWS.below && row < TRACE_ROWS.above);
-    this.pigeons = pigeons(traceColumns, traceRows, uniforms);
+    const cableRows = Array.from(
+      { length: CABLE_ROWS.below + CABLE_ROWS.above },
+      (_, index) => index - CABLE_ROWS.below,
+    );
+    this.pigeons = pigeons(
+      traceColumns,
+      traceRows.filter((row) => row < SEEN_ROWS.pigeons),
+      uniforms,
+    );
     const depthMaterial = new RawShaderMaterial({
       glslVersion: GLSL3,
       vertexShader,
@@ -265,10 +302,39 @@ export class Tower extends Scene {
       ...meshes,
       new Beacons(spot, rows, uniforms),
       this.rebar,
-      ...spouts(traceColumns, traceRows, uniforms),
-      grilles(traceColumns, traceRows, uniforms),
-      ...ducts(traceColumns, rows, uniforms),
+      ...spouts(
+        traceColumns,
+        traceRows.filter((row) => row < SEEN_ROWS.spouts),
+        uniforms,
+      ),
+      grilles(
+        GRILLE_COLUMNS,
+        traceRows.filter((row) => row < SEEN_ROWS.grilles),
+        uniforms,
+      ),
+      ...ducts(
+        DUCT_COLUMNS,
+        rows.filter((row) => row < SEEN_ROWS.ducts),
+        uniforms,
+      ),
       ...traces(traceColumns, traceRows, uniforms),
+      motes(
+        traceColumns,
+        traceRows.filter((row) => row < SEEN_ROWS.motes),
+        uniforms,
+      ),
+      ...cables(
+        traceColumns,
+        cableRows.filter((row) => row < CABLE_ROWS.near),
+        CABLE_SEGMENTS.near,
+        uniforms,
+      ),
+      ...cables(
+        traceColumns,
+        cableRows.filter((row) => row >= CABLE_ROWS.near),
+        CABLE_SEGMENTS.far,
+        uniforms,
+      ),
       this.pigeons,
     );
     this.camera.position.z = VIEW.distance;

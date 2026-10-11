@@ -9,6 +9,10 @@ bool plantFloor(vec2 room) {
   return mod(room.y, uPlantEvery) < 0.5;
 }
 
+bool glassBlocks(vec2 room) {
+  return !plantFloor(room) && hash12(room + 811.0) < 0.06;
+}
+
 bool airConditioned(vec2 room) {
   return !plantFloor(room) && hash12(room + 223.0) >= 0.82;
 }

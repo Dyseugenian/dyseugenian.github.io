@@ -44,7 +44,6 @@ const LEAK_PIECES = 4;
 const MOTES = 12;
 const PIGEONS = 3;
 const WIRES = 13;
-const WIRE_SEGMENTS = 128;
 const FASTENERS = 8;
 const SPOUT_DROPS = 8;
 const SPOUT_RINGS = 96;
@@ -69,9 +68,8 @@ export function traces(
   const layers: [number, string, string, ShaderMaterialParameters][] = [
     [PUFFS, vapourVertex, vapourFragment, LAYERED],
     [LEAK_PIECES, leakVertex, leakFragment, LAYERED],
-    [MOTES, motesVertex, motesFragment, { ...LAYERED, blending: AdditiveBlending }],
   ];
-  const meshes = layers.map(([count, vertexShader, fragmentShader, options]) =>
+  return layers.map(([count, vertexShader, fragmentShader, options]) =>
     instanced(
       storeyGeometry(quad, columns, rows, count),
       vertexShader,
@@ -80,8 +78,26 @@ export function traces(
       options,
     ),
   );
-  const ribbon = new PlaneGeometry(1, 1, 1, WIRE_SEGMENTS);
-  meshes.push(
+}
+
+export function motes(columns: number[], rows: number[], uniforms: Record<string, IUniform>): Mesh {
+  return instanced(
+    storeyGeometry(new PlaneGeometry(1, 1), columns, rows, MOTES),
+    motesVertex,
+    motesFragment,
+    uniforms,
+    { ...LAYERED, blending: AdditiveBlending },
+  );
+}
+
+export function cables(
+  columns: number[],
+  rows: number[],
+  segments: number,
+  uniforms: Record<string, IUniform>,
+): Mesh[] {
+  const ribbon = new PlaneGeometry(1, 1, 1, segments);
+  return [
     instanced(
       storeyGeometry(ribbon, columns, rows, WIRES),
       wireVertex,
@@ -96,8 +112,7 @@ export function traces(
       uniforms,
       {},
     ),
-  );
-  return meshes;
+  ];
 }
 
 export function pigeons(

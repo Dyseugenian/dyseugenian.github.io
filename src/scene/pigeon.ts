@@ -31,7 +31,7 @@ const BLOBS: Blob[] = [
   { at: [0, 0.215, 0.084], radius: [0.018, 0.019, 0.02], tilt: 0 },
 ];
 const BLEND = 0.016;
-const CELL = 0.0042;
+const CELL = 0.0084;
 const BOUNDS = { min: new Vector3(-0.065, 0.01, -0.2), max: new Vector3(0.065, 0.255, 0.13) };
 const BEAK: Ring[] = [
   [0, 0.205, 0.094, 0.0062, 0.0058],

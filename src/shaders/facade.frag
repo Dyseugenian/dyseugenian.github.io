@@ -29,6 +29,7 @@ uniform vec3 uAppliance;
 uniform vec3 uLinen;
 uniform vec3 uDenim;
 uniform vec3 uMadder;
+uniform vec3 uGlassGreen;
 uniform float uFogDensity;
 uniform sampler3D uOcclusion;
 uniform vec3 uOcclusionMin;
@@ -76,6 +77,16 @@ const float ROOM_LIGHT = 10.0;
 const float HIDDEN_ROOM = 0.6;
 const float HIDDEN_BAYS = 1.5;
 const vec2 GLASS_HALF = vec2(1.05, 1.025);
+const vec2 GLASS_BLOCKS = vec2(5.0);
+const float BLOCK_JOINT = 0.016;
+const float BLOCK_DEPTH = 0.1;
+const float BLOCK_WALL = 0.01;
+const float BLOCK_BEVEL = 0.02;
+const float GLASS_INDEX = 1.5;
+const float LAMP_SIZE = 0.06;
+const float LAMP_IMAGE = 0.6;
+const float BLOCK_DIFFUSE = 4.0;
+const float BLOCK_SCATTER = 0.25;
 const vec3 BEAMS[5] = vec3[5](
   vec3(0.9, 0.14, 0.3), vec3(0.8, 0.2, 0.35), vec3(0.8, 0.2, 0.35), vec3(1.6, 0.28, 0.5), vec3(1.8, 0.4, 0.55));
 const vec2 BEAM_AXES[5] = vec2[5](vec2(1.0), vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(1.0), vec2(0.0, 1.0));
@@ -526,6 +537,13 @@ float beamHit(vec3 pane, vec3 ray, vec3 window, vec2 room, float ceilingY, float
   return enter + travel;
 }
 
+vec3 lampIn(vec3 window, vec2 room) {
+  return vec3(
+    window.x + mix(-1.4, 1.4, hash12(room + 3.0)),
+    window.y - WINDOW.y + 0.25 + mix(1.3, 0.6, step(0.88, hash12(room + 19.0))),
+    GLASS_Z - mix(1.0, 3.2, lampDepth(room)));
+}
+
 vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room) {
   float floorY = window.y - WINDOW.y + 0.25;
   vec3 low = vec3(window.x - ROOM.x, floorY, GLASS_Z - ROOM.z);
@@ -585,11 +603,7 @@ vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room) {
     occlusion = mix(0.5, 1.0, smoothstep(0.0, 0.6, hit.y - floorY));
   }
 
-  vec3 lamp = vec3(
-    window.x + mix(-1.4, 1.4, hash12(room + 3.0)),
-    floorY + mix(1.3, 0.6, step(0.88, hash12(room + 19.0))),
-    GLASS_Z - mix(1.0, 3.2, lampDepth(room)));
-  vec3 toLamp = lamp - hit;
+  vec3 toLamp = lampIn(window, room) - hit;
   float reach = length(toLamp);
   float spread = mix(0.25, 0.9, hash12(room + 9.0));
   float illumination = (0.2 + 0.8 * max(dot(wall, toLamp / reach), 0.0)) / (0.6 + spread * reach * reach);
@@ -864,6 +878,144 @@ vec4 newspaper(vec2 pane, vec2 room, float blur) {
   return vec4(top, layers);
 }
 
+vec3 skyMirror(vec3 mirrored, float occlusion) {
+  float moon = max(dot(mirrored, uLight), 0.0);
+  vec3 reflection = mix(uSky * 1.5, uHaze * 2.6, smoothstep(-0.3, 0.7, mirrored.y))
+    + uRim * MOONLIGHT * (3.0 * pow(moon, 300.0) + 1.2 * pow(moon, 18.0));
+  return reflection * mix(0.4, 1.0, occlusion);
+}
+
+float swirl(vec2 u) {
+  float reach = length(u);
+  float twist = sin(3.0 * atan(u.y, u.x) + 1.3 * reach);
+  return sin(2.4 * reach + 0.9 * twist) * exp(-0.15 * reach * reach) + 0.3 * sin(1.3 * u.x) * sin(1.1 * u.y);
+}
+
+vec4 moulding(vec2 at, int style, bool back, float footprint, vec2 shift) {
+  if (style == 1) {
+    vec2 u = (back ? 9.9 * vec2(at.y, -at.x) + vec2(0.4, -0.3) : 9.0 * at) + shift;
+    float height = swirl(u);
+    float clear = resolved(1.5, footprint);
+    vec2 slope = 3.2 * (vec2(swirl(u + vec2(0.1, 0.0)), swirl(u + vec2(0.0, 0.1))) - height);
+    float focus = 1.0 + clear * (1.1 * exp(-3.0 * (height - 0.5) * (height - 0.5)) - 0.3);
+    return vec4(slope * clear, 0.5 * (1.0 - clear), focus);
+  }
+  float period = style == 0 ? (back ? 0.072 : 0.032) : 0.048;
+  float amplitude = style == 0 && back ? 0.4 : 0.65;
+  float across = back ? at.y + (style == 0 ? 0.008 * sin(60.0 * at.x) : 0.0) : at.x;
+  float clear = resolved(1.0 / period, footprint);
+  float phase = 6.2832 * across / period;
+  float slope = amplitude * clear * sin(phase);
+  float focus = 1.0 + clear * (style == 0 && back ? 0.8 : 2.0) * (pow(0.5 + 0.5 * cos(phase), 4.0) - 0.273);
+  return vec4(back ? vec2(0.0, slope) : vec2(slope, 0.0), 0.7 * amplitude * (1.0 - clear), focus);
+}
+
+float crack(vec2 at, vec2 key, float footprint) {
+  vec2 offset = at - 0.24 * (vec2(hash12(key + 829.0), hash12(key + 831.0)) - 0.5);
+  float reach = length(offset);
+  float turn = atan(offset.y, offset.x) * 7.0 / 6.2832 + hash12(key + 833.0)
+    + 0.6 * (valueNoise(vec2(reach * 25.0, key.x)) - 0.5);
+  float spoke = abs(fract(turn) - 0.5) * 6.2832 / 7.0 * reach;
+  float extent = mix(0.12, 0.4, hash12(key + floor(turn) + 837.0));
+  float shown = step(0.3, hash12(key + floor(turn) + 835.0)) * (1.0 - smoothstep(0.5 * extent, extent, reach));
+  float ring = abs(reach - mix(0.024, 0.06, hash12(key + 839.0)));
+  float width = 0.0008 + footprint;
+  float lines = max(shown * (1.0 - smoothstep(0.0, width, spoke)),
+    (1.0 - smoothstep(0.0, width, ring)) * step(0.45, valueNoise(offset * 60.0 + key)));
+  return lines * clamp(0.003 / footprint, 0.2, 1.0);
+}
+
+vec3 extractFan(vec2 at, vec2 room, vec3 light, vec3 glow) {
+  float speed = step(0.3, hash12(room + 841.0)) * mix(4.0, 9.0, hash12(room + 843.0));
+  float reach = length(at);
+  float turn = atan(at.y, at.x) + uTime * speed + 3.0 * reach;
+  float vane = step(fract(turn * 5.0 / 6.2832), 0.45);
+  float hub = 1.0 - smoothstep(0.016, 0.019, reach);
+  float opening = 1.0 - smoothstep(0.072, 0.075, reach);
+  vec3 plastic = uAppliance * mix(0.35, 0.55, hash12(room + 845.0)) * mix(0.75, 1.0, valueNoise(at * 40.0 + room));
+  plastic = mix(plastic, uGrime, 0.6 * smoothstep(0.02, 0.09, -at.y) * smoothstep(0.072, 0.09, reach));
+  vec3 blades = plastic * 0.5 * (light + 0.3 * glow);
+  return mix(plastic * light, mix(glow * 0.5, blades, max(vane, hub)), opening);
+}
+
+vec3 glassBlockWall(vec2 pane, vec3 view, vec3 window, vec3 glow, vec2 room, vec3 light, float occlusion, bool seen) {
+  vec2 pitch = 2.0 * GLASS_HALF / GLASS_BLOCKS;
+  vec2 grid = (pane + GLASS_HALF) / pitch;
+  vec2 cell = clamp(floor(grid), vec2(0.0), GLASS_BLOCKS - 1.0);
+  vec2 at = (grid - cell - 0.5) * pitch;
+  vec2 key = room * 7.0 + cell * vec2(1.31, 2.17);
+  float footprint = length(fwidth(pane));
+  vec2 inner = 0.5 * (pitch - BLOCK_JOINT);
+  vec2 gap = inner - abs(at);
+  float edge = min(gap.x, gap.y);
+  float block = smoothstep(-footprint, footprint, edge);
+
+  vec3 mortar = mix(uConcrete, uSalt, 0.3 + 0.4 * valueNoise(pane * 35.0 + room))
+    * mix(0.3, 0.5, valueNoise(pane * 4.0 + room * 3.0));
+  vec3 joint = mortar * (light + 0.03 * glow);
+
+  vec2 fanAt = floor(vec2(hash12(room + 847.0), mix(0.5, 0.95, hash12(room + 849.0))) * GLASS_BLOCKS);
+  if (hash12(room + 851.0) < 0.35 && cell == fanAt) return mix(joint, extractFan(at, room, light, glow), block);
+
+  int style = int(hash12(room + 813.0) * 3.0);
+  float swapped = step(hash12(key + 815.0), 0.05);
+  if (swapped > 0.5) style = (style + 1) % 3;
+  vec3 tint = mix(uGlassGreen, uLampCold * 0.65, swapped);
+  vec2 flip = sign(vec2(hash12(key + 819.0), hash12(key + 821.0)) - 0.5);
+
+  vec2 shift = 0.5 * (vec2(hash12(key + 857.0), hash12(key + 859.0)) - 0.5);
+  vec4 front = moulding(at * flip, style, false, footprint, shift);
+  vec2 tilt = 0.03 * (vec2(hash12(key + 823.0), hash12(key + 825.0)) - 0.5);
+  float bevel = 1.0 - smoothstep(0.0, BLOCK_BEVEL, edge);
+  vec2 outward = gap.x < gap.y ? vec2(sign(at.x), 0.0) : vec2(0.0, sign(at.y));
+  vec2 wavy = style == 1 ? 0.3 * front.xy * flip : vec2(0.0);
+  vec3 outer = normalize(vec3(tilt + 2.0 * bevel * bevel * outward + wavy, 1.0));
+  float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(-view, outer), 0.0), 5.0);
+  vec3 reflection = skyMirror(reflect(view, outer), occlusion);
+
+  vec3 cavity = refract(refract(view, outer, 1.0 / GLASS_INDEX), normalize(vec3(-front.xy * flip, 1.0)), GLASS_INDEX);
+  vec2 far = at + cavity.xy * BLOCK_DEPTH / max(-cavity.z, 0.1);
+  vec2 hollow = inner - BLOCK_WALL - abs(far);
+  float wall = max(1.0 - smoothstep(-footprint, footprint, min(hollow.x, hollow.y)),
+    1.0 - smoothstep(BLOCK_WALL - footprint, BLOCK_WALL + footprint, edge));
+  vec4 back = moulding(far * flip, style, true, footprint, shift);
+  vec3 emerging = refract(refract(cavity, normalize(vec3(-back.xy * flip, 1.0)), 1.0 / GLASS_INDEX), GLASS_NORMAL, GLASS_INDEX);
+  bool trapped = dot(cavity, cavity) < 0.5 || dot(emerging, emerging) < 0.5;
+
+  float spread = front.z + back.z;
+  float cracked = hash12(key + 827.0) < 0.06 ? crack(at, key, footprint) : 0.0;
+  spread += 0.3 * cracked;
+  vec3 point = vec3(window.xy + pane + far - at, GLASS_Z - BLOCK_DEPTH);
+  vec3 toLamp = lampIn(window, room) - point;
+  float reach = length(toLamp);
+  toLamp /= reach;
+  float irradiance = (0.3 + max(-toLamp.z, 0.0)) / (0.6 + mix(0.25, 0.9, hash12(room + 9.0)) * reach * reach);
+  vec2 miss = emerging.xy / max(-emerging.z, 0.05) - toLamp.xy / max(-toLamp.z, 0.05);
+  float width = LAMP_SIZE + spread;
+  float image = exp(-dot(miss, miss) / (width * width)) * LAMP_SIZE * LAMP_SIZE / (width * width);
+
+  vec3 diffuse = glow * BLOCK_DIFFUSE * irradiance * mix(0.85, 1.15, hash12(key + 855.0));
+  vec3 behind = glow * 0.15;
+  if (seen && !trapped) {
+    float clarity = 1.0 - smoothstep(0.0, 0.6, spread + length(front.xy) + length(back.xy));
+    behind = mix(0.15 * glow, 0.5 * interior(point, emerging, window, glow, room), clarity);
+  }
+  vec3 scattered = BLOCK_SCATTER * light * mix(1.0, front.w, 0.5);
+  vec3 through = scattered + (trapped ? diffuse * 1.5 : diffuse * front.w * back.w + behind + glow * LAMP_IMAGE * image);
+  float sunk = clamp(-min(hollow.x, hollow.y) / 0.06, 0.0, 1.0);
+  vec3 sides = (diffuse * mix(1.0, front.w, 0.5) + 1.5 * scattered) * mix(mix(1.6, 0.7, sunk), 2.0, bevel) + uHaze * 0.2;
+  vec3 transmitted = mix(through * mix(vec3(1.0), tint, 0.45), sides * tint, wall) * mix(1.0, 0.6, swapped);
+
+  float dust = 0.2 + 0.35 * valueNoise(pane * 1.3 + room * 3.1) + 0.5 * exp(-(pane.y + GLASS_HALF.y) / 0.35);
+  float bloom = exp(-(inner.y - at.y) / 0.05) * smoothstep(0.45, 0.8, valueNoise(vec2(pane.x * 20.0, cell.y + room.y)));
+  float film = dust + 0.9 * bloom * step(0.4, hash12(room + 853.0));
+  vec3 face = transmitted * (1.0 - fresnel) * (1.0 - 0.35 * min(film, 1.0))
+    + reflection * fresnel * mix(1.0, 0.5, step(1e-3, glow.r + glow.g + glow.b))
+    + (uSalt * light * 0.12 + glow * 0.05) * film
+    + (diffuse * 2.0 + reflection * 0.3) * cracked;
+  return mix(joint, face, block);
+}
+
 void main() {
   vec3 normal = normalize(vNormal);
   vec3 toCamera = normalize(cameraPosition - vWorld);
@@ -929,51 +1081,41 @@ void main() {
     vec2 pane = vLocal.xy - window.xy;
 
     vec3 view = normalize(vLocal - (cameraPosition - origin));
+    bool seen = abs(tile.x) < HIDDEN_BAYS;
+    if (glassBlocks(room)) {
+      color = glassBlockWall(pane, view, window, glow, room, light, occlusion, seen);
+    } else {
+      vec3 inside = glow * HIDDEN_ROOM;
+      if (seen) inside = interior(vLocal, view, window, glow, room);
 
-    vec3 inside = glow * HIDDEN_ROOM;
-    if (abs(tile.x) < HIDDEN_BAYS) {
-      inside = interior(vLocal, view, window, glow, room);
-      float stride = uTime * mix(0.12, 0.25, hash12(room + 67.0)) + 6.28 * hash12(room + 71.0);
-      vec2 figure = pane + view.xy * (0.8 / max(-view.z, 0.2)) - vec2(1.8 * sin(stride), 0.0);
-      vec2 shoulders = abs(figure - vec2(0.0, -1.3)) - vec2(0.18, 0.56);
-      float outline = min(length(figure - vec2(0.0, -0.55)) - 0.11,
-        length(max(shoulders, 0.0)) + min(max(shoulders.x, shoulders.y), 0.0) - 0.06);
-      float person = (1.0 - smoothstep(0.0, 0.01 + fwidth(outline), outline)) * step(0.75, hash12(room + 61.0));
-      inside *= 1.0 - 0.85 * person;
-    }
+      float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(-view, GLASS_NORMAL), 0.0), 5.0);
+      vec3 reflection = skyMirror(reflect(view, GLASS_NORMAL), occlusion);
 
-    vec3 mirrored = reflect(view, GLASS_NORMAL);
-    float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(-view, GLASS_NORMAL), 0.0), 5.0);
-    float moon = max(dot(mirrored, uLight), 0.0);
-    vec3 reflection = mix(uSky * 1.5, uHaze * 2.6, smoothstep(-0.3, 0.7, mirrored.y))
-      + uRim * MOONLIGHT * (3.0 * pow(moon, 300.0) + 1.2 * pow(moon, 18.0));
-    reflection *= mix(0.4, 1.0, occlusion);
+      float edge = min(GLASS_HALF.x - abs(pane.x), GLASS_HALF.y - abs(pane.y));
+      float grimy = pow(hash12(room + 141.0), 2.5);
+      float film = mix(0.1, 0.55, smoothstep(0.8, -1.0, pane.y)) + 0.25 * exp(-edge / 0.1);
+      float runs = smoothstep(0.5, 0.85, valueNoise(vec2(pane.x * 16.0, pane.y * 0.9 + room.y)))
+        * smoothstep(1.1, 0.2, pane.y);
+      float wipe = abs(length(pane - vec2(mix(-0.5, 0.5, hash12(room + 143.0)), -0.2)) - 0.55);
+      float smear = smoothstep(0.4, 0.75, valueNoise(pane * 3.0 + room)) * exp(-wipe / 0.15);
+      float specks = step(0.82, valueNoise(pane * 45.0 + room * 7.0));
+      float dirt = film * mix(0.8, 1.2, valueNoise(pane * 1.2 + room * 3.1))
+        + grimy * (1.4 * film + 0.9 * runs + 0.7 * smear + 0.5 * specks);
+      float rim = 1.0 - smoothstep(0.0, 0.012 + 1.5 * fwidth(edge), edge);
+      float joint = 1.0 - smoothstep(0.0, 0.004 + fwidth(pane.x), abs(pane.x));
 
-    float edge = min(GLASS_HALF.x - abs(pane.x), GLASS_HALF.y - abs(pane.y));
-    float grimy = pow(hash12(room + 141.0), 2.5);
-    float film = mix(0.1, 0.55, smoothstep(0.8, -1.0, pane.y)) + 0.25 * exp(-edge / 0.1);
-    float runs = smoothstep(0.5, 0.85, valueNoise(vec2(pane.x * 16.0, pane.y * 0.9 + room.y)))
-      * smoothstep(1.1, 0.2, pane.y);
-    float wipe = abs(length(pane - vec2(mix(-0.5, 0.5, hash12(room + 143.0)), -0.2)) - 0.55);
-    float smear = smoothstep(0.4, 0.75, valueNoise(pane * 3.0 + room)) * exp(-wipe / 0.15);
-    float specks = step(0.82, valueNoise(pane * 45.0 + room * 7.0));
-    float dirt = film * mix(0.8, 1.2, valueNoise(pane * 1.2 + room * 3.1))
-      + grimy * (1.4 * film + 0.9 * runs + 0.7 * smear + 0.5 * specks);
-    float rim = 1.0 - smoothstep(0.0, 0.012 + 1.5 * fwidth(edge), edge);
-    float joint = 1.0 - smoothstep(0.0, 0.004 + fwidth(pane.x), abs(pane.x));
+      vec3 transmitted = inside * (1.0 - fresnel) * (1.0 - 0.55 * min(dirt, 1.2)) * (1.0 - 0.5 * joint);
+      color = transmitted + reflection * fresnel * mix(1.0, 0.4, lit)
+        + (uHaze * 0.12 + glow * 0.22) * dirt
+        + (uRim * 0.15 + glow * 0.15) * rim + uRim * 0.1 * joint;
 
-    vec3 transmitted = inside * (1.0 - fresnel) * (1.0 - 0.55 * min(dirt, 1.2)) * (1.0 - 0.5 * joint);
-    color = transmitted + reflection * fresnel * mix(1.0, 0.4, lit)
-      + (uHaze * 0.12 + glow * 0.22) * dirt
-      + (uRim * 0.15 + glow * 0.15) * rim + uRim * 0.1 * joint;
-
-
-    float blur = fwidth(pane.x);
-    if (hash12(room + 149.0) > 0.94) {
-      vec4 papers = newspaper(pane, room, blur);
-      float layers = papers.a;
-      vec3 paper = papers.rgb * (glow * 0.4 * pow(0.45, max(layers - 1.0, 0.0)) + 0.05 * mix(0.4, 1.0, occlusion));
-      color = mix(color, paper + reflection * fresnel * 0.3, min(layers, 1.0));
+      float blur = fwidth(pane.x);
+      if (hash12(room + 149.0) > 0.94) {
+        vec4 papers = newspaper(pane, room, blur);
+        float layers = papers.a;
+        vec3 paper = papers.rgb * (glow * 0.4 * pow(0.45, max(layers - 1.0, 0.0)) + 0.05 * mix(0.4, 1.0, occlusion));
+        color = mix(color, paper + reflection * fresnel * 0.3, min(layers, 1.0));
+      }
     }
   }
 

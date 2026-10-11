@@ -52,6 +52,8 @@ const RAG_SIZE = { width: 0.42, drop: 0.5, z: -1.27 };
 const SHEET_Z = -2.75;
 const CLOTHES_LINE = { height: 1.05, z: -0.8, span: 1.12, slots: 4, drop: 0.95, thickness: 0.012 };
 
+const REACH = { recess: 3, jambs: 7, ledge: 15, parapet: 23 };
+
 const HOLE = { cover: 0.4, back: -2, rim: 0.35, segments: 64, rings: 12 };
 
 const ROTOR = { radius: 0.2, hub: 0.045, blades: 4, pitch: 0.45, rim: 0.025, depth: 0.05 };
@@ -69,6 +71,8 @@ export type Part = {
   protrudes?: boolean;
   role?: number;
   shape?: BufferGeometry;
+  reach?: number;
+  recessed?: boolean;
 };
 
 type Span = [number, number];
@@ -204,7 +208,10 @@ function airConditioner(y: number, detail: Detail): Part[] {
   const intake = (bottom + top) / 2 + 0.02;
   const parts = [
     part(APPLIANCE, [-0.425, 0.425], [bottom, top], [back, front]),
-    part(APPLIANCE, [0.425, 0.465], [bottom + 0.1, bottom + 0.14], [-3.05, back + 0.08]),
+    hiddenAbove(
+      REACH.jambs,
+      part(APPLIANCE, [0.425, 0.465], [bottom + 0.1, bottom + 0.14], [-3.05, back + 0.08]),
+    ),
     part(TRIM, [-0.44, 0.44], [top, top + 0.02], [back - 0.015, front + 0.02]),
   ];
   if (detail !== 'distant') {
@@ -216,7 +223,10 @@ function airConditioner(y: number, detail: Detail): Part[] {
     );
   }
   if (detail === 'full') {
-    parts.push(shaped(TRIM, shroud(fan, 24)), shaped(FAN, rotor(fan, 12, 5)));
+    parts.push(
+      shaped(TRIM, shroud(fan, 24)),
+      hiddenAbove(REACH.jambs, shaped(FAN, rotor(fan, 12, 5))),
+    );
     for (let slat = intake - 0.2; slat < intake + 0.21; slat += 0.04) {
       parts.push(part(TRIM, [-0.375, -0.075], [slat - 0.007, slat + 0.007], [front, front + 0.02]));
     }
@@ -226,7 +236,10 @@ function airConditioner(y: number, detail: Detail): Part[] {
     );
   }
   if (detail === 'reduced') {
-    parts.push(shaped(TRIM, shroud(fan, 12)), shaped(FAN, rotor(fan, 6, 2)));
+    parts.push(
+      shaped(TRIM, shroud(fan, 12)),
+      hiddenAbove(REACH.jambs, shaped(FAN, rotor(fan, 6, 2))),
+    );
   }
   return parts.map(occasional);
 }
@@ -359,6 +372,20 @@ function sheeted(part: Part): Part {
   return { ...part, role: SHEETED };
 }
 
+function hiddenAbove(reach: number, part: Part): Part {
+  return { ...part, reach };
+}
+
+function recessed(reach: number, part: Part): Part {
+  return { ...part, reach, recessed: true };
+}
+
+export function seenIn(parts: Part[], row: number, outermost: boolean): Part[] {
+  return parts.filter(
+    ({ reach, recessed }) => (reach ?? Infinity) >= row && !(outermost && recessed),
+  );
+}
+
 export function tileParts(detail: Detail): Part[] {
   const parts: Part[] = [PIER, PIER_FRONT, BORED_PIER_FRONT, BLOCK, HOLED_BLOCK, STUDDED_FRONT];
   for (const y of [0, STOREY]) {
@@ -367,13 +394,19 @@ export function tileParts(detail: Detail): Part[] {
     const glassBottom = y + 1.15;
     const glassTop = y + 3.2;
     parts.push(
-      part(CONCRETE, [-1.4, 1.4], [y, top], [-3.5, -3.1]),
-      regular(part(GLASS, [-1.05, 1.05], [glassBottom, glassTop], [-3.1, -3.05])),
-      part(CONCRETE, [-1.4, -1.05], [sill, top], [-3.1, -2.5]),
-      part(CONCRETE, [1.05, 1.4], [sill, top], [-3.1, -2.5]),
-      part(CONCRETE, [-1.05, 1.05], [glassTop, top], [-3.1, -2.5]),
-      part(CONCRETE, [-1.4, 1.4], [y, sill], [-3.1, -1.8]),
-      regular(part(CONCRETE, [-1.2, 1.2], [sill, glassBottom], [-3.1, -1.3])),
+      recessed(REACH.recess, part(CONCRETE, [-1.4, 1.4], [y, top], [-3.5, -3.1])),
+      recessed(
+        REACH.recess,
+        regular(part(GLASS, [-1.05, 1.05], [glassBottom, glassTop], [-3.1, -3.05])),
+      ),
+      recessed(REACH.jambs, part(CONCRETE, [-1.4, -1.05], [sill, top], [-3.1, -2.5])),
+      recessed(REACH.jambs, part(CONCRETE, [1.05, 1.4], [sill, top], [-3.1, -2.5])),
+      recessed(REACH.recess, part(CONCRETE, [-1.05, 1.05], [glassTop, top], [-3.1, -2.5])),
+      hiddenAbove(REACH.ledge, part(CONCRETE, [-1.4, 1.4], [y, sill], [-3.1, -1.8])),
+      hiddenAbove(
+        REACH.parapet,
+        regular(part(CONCRETE, [-1.2, 1.2], [sill, glassBottom], [-3.1, -1.3])),
+      ),
     );
     const { front, louvre, louvreSpacing } = PLANT_FLOOR;
     for (const [bottom, height] of [
@@ -411,13 +444,22 @@ export function tileParts(detail: Detail): Part[] {
     );
     const sheet = new PlaneGeometry(2.1, glassTop - glassBottom, segments.across, segments.across);
     parts.push(
-      ragged(shaped(RAG, rag.translate(0, glassBottom - RAG_SIZE.drop / 2, RAG_SIZE.z))),
-      sheeted(shaped(SHEET, sheet.translate(0, (glassBottom + glassTop) / 2, SHEET_Z))),
+      hiddenAbove(
+        REACH.ledge,
+        ragged(shaped(RAG, rag.translate(0, glassBottom - RAG_SIZE.drop / 2, RAG_SIZE.z))),
+      ),
+      recessed(
+        REACH.recess,
+        sheeted(shaped(SHEET, sheet.translate(0, (glassBottom + glassTop) / 2, SHEET_Z))),
+      ),
     );
     for (let blade = sill + louvreSpacing / 2; blade < glassTop; blade += louvreSpacing) {
       parts.push(
-        plant(
-          part(CONCRETE, [-1.05, 1.05], [blade - louvre / 2, blade + louvre / 2], [-3.05, -2.55]),
+        recessed(
+          REACH.recess,
+          plant(
+            part(CONCRETE, [-1.05, 1.05], [blade - louvre / 2, blade + louvre / 2], [-3.05, -2.55]),
+          ),
         ),
       );
     }
