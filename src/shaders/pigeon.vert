@@ -246,7 +246,7 @@ float facingTarget(float n, float seed) {
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
-  float present = aIndex < 0.5 ? 0.18 : aIndex < 1.5 ? 0.08 : 0.05;
+  float present = aIndex < 0.5 ? 0.36 : aIndex < 1.5 ? 0.16 : 0.1;
   if (hash12(room + 291.0 + 7.0 * aIndex) > present) return;
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
   float seed = hash12(room + aIndex * 5.0);

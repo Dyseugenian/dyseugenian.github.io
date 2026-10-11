@@ -73,7 +73,7 @@ export class Drift {
     }
     let sway = 0;
     if (this.swayAge < this.swayLength) {
-      const envelope = Math.sin((Math.PI * this.swayAge) / this.swayLength) ** 2;
+      const envelope = Math.sin((Math.PI * this.swayAge) / this.swayLength) ** 4;
       sway = envelope * wave(this.swayAge, SWAY_FREQUENCY, 0);
       this.swayAge += dt;
     }

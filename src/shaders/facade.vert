@@ -38,7 +38,7 @@ out float vFold;
 const float LINE_SAG = 0.06;
 const float LINE_HALF = 1.4;
 const float INSET_REACH = 0.3;
-const float STUD_DROP = 0.2;
+const float STUD_DROP = 0.25;
 
 void main() {
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));

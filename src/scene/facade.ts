@@ -279,7 +279,7 @@ const BLOCK = {
   role: SOLID,
 };
 const HOLED_BLOCK = { ...BLOCK, shape: holedBlock(BLOCK_MIN, BLOCK_MAX), role: HOLED };
-const STUDS = { band: 1.2, margin: 0.04, height: 0.1725, across: 1 };
+const STUDS = { band: 1.2, margin: 0.04, height: 0.218, across: 1 };
 
 function stud(low: Vector2, high: Vector2, face: number): BufferGeometry {
   const corners = [

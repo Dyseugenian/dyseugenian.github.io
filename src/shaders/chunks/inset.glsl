@@ -1,6 +1,6 @@
 const float HALF_PROTRUSION = 0.45;
 const float BLOCKLESS_REACH = 1.0;
-const float STUDDED_INSET = 0.7275;
+const float STUDDED_INSET = 0.682;
 const float OUTER_COLUMN = 2.5;
 
 float blockless(vec2 tile) {
