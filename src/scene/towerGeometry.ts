@@ -15,15 +15,17 @@ import {
   OCCLUSION_MIN,
   OCCLUSION_SIZE,
   type Part,
+  STOREY,
   SURFACES,
   TILE_ROWS,
+  type Tile,
   edge,
   edgeVolume,
   facadeGeometry,
+  gated,
   inWindowBay,
   occluders,
   packGeometry,
-  seenIn,
   storeyGeometry,
   surfaceOf,
   surroundings,
@@ -38,7 +40,7 @@ const BLOCKLESS_COLUMNS = [0, 1];
 const DUCT_COLUMNS = [-2, 3];
 const GRILLE_COLUMNS = [-1, 0, 1];
 const DETAIL_ROWS = { full: 5, reduced: 11 };
-const REBAR_ROWS = { below: 1, above: 4 };
+const REBAR_ROWS = { below: 1, above: 3 };
 const TRACE_ROWS = { below: 1, above: 8 };
 const CABLE_ROWS = { below: 2, near: 8, above: 16 };
 const CABLE_SEGMENTS = { near: 128, far: 24 };
@@ -55,6 +57,7 @@ const PUFFS = 16;
 const LEAK_PIECES = 4;
 const MOTES = 12;
 const PIGEONS = 3;
+const PIGEON_ROWS = { near: 2 };
 const WIRES = 13;
 const FASTENERS = 8;
 const SPOUT_DROPS = 8;
@@ -73,7 +76,13 @@ const FACES = [
 ];
 
 export type Occlusion = 'tiles' | 'blockless' | 'left' | 'right';
-export type FacadeMesh = { geometry: BakedGeometry; surface: number; occlusion: Occlusion };
+export type Census = { role: number; min: [number, number, number] };
+export type FacadeMesh = {
+  geometry: BakedGeometry;
+  surface: number;
+  occlusion: Occlusion;
+  census: Census | null;
+};
 export type TraceGeometry = { kind: TraceKind; geometry: BakedGeometry };
 export type TowerGeometry = { facade: FacadeMesh[]; rebar: RebarBlocks; traces: TraceGeometry[] };
 
@@ -139,16 +148,45 @@ export function towerGeometry(): {
   };
 }
 
-function runs(parts: Part[], rows: number[]): number[][] {
-  const runs: number[][] = [];
-  let shown = -1;
-  for (const row of rows) {
-    const count = seenIn(parts, row, false).length + seenIn(parts, row, true).length;
-    if (count !== shown) runs.push([]);
-    runs.at(-1)!.push(row);
-    shown = count;
+function seen(part: Part, column: number, row: number): boolean {
+  if ((part.reach ?? Infinity) < row) return false;
+  if (column === COLUMNS.left) return inWindowBay(part) && !part.recessed;
+  if (column === COLUMNS.right) return !part.recessed;
+  return true;
+}
+
+function groupKey(part: Part): string {
+  const storey = gated(part) ? Math.floor(part.min.y / STOREY + 0.01) : 0;
+  return [
+    gated(part) ? part.role : 0,
+    storey,
+    part.reach ?? -1,
+    part.recessed ? 1 : 0,
+    inWindowBay(part) ? 1 : 0,
+    surfaceOf(part),
+  ].join(' ');
+}
+
+function groupMeshes(parts: Part[], rows: number[]): FacadeMesh[] {
+  const groups = new Map<string, Part[]>();
+  for (const part of parts) {
+    const key = groupKey(part);
+    groups.set(key, [...(groups.get(key) ?? []), part]);
   }
-  return runs;
+  return [...groups.values()].flatMap((group) => {
+    const first = group[0]!;
+    const census = gated(first) ? { role: first.role!, min: first.min.toArray() } : null;
+    return (['tiles', 'blockless'] as const).flatMap((occlusion) => {
+      const tiles = TRACE_COLUMNS.filter(
+        (column) => BLOCKLESS_COLUMNS.includes(column) === (occlusion === 'blockless'),
+      ).flatMap((column) =>
+        rows.filter((row) => seen(first, column, row)).map((row): Tile => [column, row]),
+      );
+      if (tiles.length === 0) return [];
+      const geometry = packGeometry(facadeGeometry(group, tiles));
+      return [{ geometry, surface: surfaceOf(first), occlusion, census }];
+    });
+  });
 }
 
 function tileMeshes(): FacadeMesh[] {
@@ -157,35 +195,21 @@ function tileMeshes(): FacadeMesh[] {
     ['reduced', TILE_ROWS.filter((row) => row >= DETAIL_ROWS.full && row < DETAIL_ROWS.reduced)],
     ['distant', TILE_ROWS.filter((row) => row >= DETAIL_ROWS.reduced)],
   ];
-  return bands.flatMap(([detail, band]) => {
-    const banded = tileParts(detail);
-    return runs(banded, band).flatMap((run) => {
-      const inner = seenIn(banded, run[0]!, false);
-      const outermost = seenIn(banded, run[0]!, true);
-      const groups: [Part[], number[], Occlusion][] = [
-        [inner, BLOCKED_COLUMNS, 'tiles'],
-        [outermost, [COLUMNS.right], 'tiles'],
-        [inner, BLOCKLESS_COLUMNS, 'blockless'],
-        [outermost.filter(inWindowBay), [COLUMNS.left], 'tiles'],
-      ];
-      return groups.flatMap(([parts, columns, occlusion]) =>
-        Object.values(SURFACES).flatMap((surface) => {
-          const shown = parts.filter((part) => surfaceOf(part) === surface);
-          if (shown.length === 0) return [];
-          return [
-            { geometry: packGeometry(facadeGeometry(shown, columns, run)), surface, occlusion },
-          ];
-        }),
-      );
-    });
-  });
+  const fittings = (parts: Part[]) => parts.filter((part) => surfaceOf(part) === SURFACES.fittings);
+  const fixed = tileParts('full').filter((part) => surfaceOf(part) !== SURFACES.fittings);
+  return [
+    ...groupMeshes(fixed, TILE_ROWS),
+    ...bands.flatMap(([detail, rows]) => groupMeshes(fittings(tileParts(detail)), rows)),
+  ];
 }
 
 function edgeMesh(parts: Part[], column: number, occlusion: Occlusion): FacadeMesh {
+  const tiles = TILE_ROWS.map((row): Tile => [column, row]);
   return {
-    geometry: packGeometry(facadeGeometry(parts, [column], TILE_ROWS)),
+    geometry: packGeometry(facadeGeometry(parts, tiles)),
     surface: SURFACES.concrete,
     occlusion,
+    census: null,
   };
 }
 
@@ -331,7 +355,21 @@ function traceGeometries(): TraceGeometry[] {
     ),
     [
       'pigeons',
-      storeyGeometry(pigeonGeometry(), TRACE_COLUMNS, below(traceRows, SEEN_ROWS.pigeons), PIGEONS),
+      storeyGeometry(
+        pigeonGeometry('full'),
+        TRACE_COLUMNS,
+        below(traceRows, PIGEON_ROWS.near),
+        PIGEONS,
+      ),
+    ],
+    [
+      'pigeons',
+      storeyGeometry(
+        pigeonGeometry('distant'),
+        TRACE_COLUMNS,
+        traceRows.filter((row) => row >= PIGEON_ROWS.near && row < SEEN_ROWS.pigeons),
+        PIGEONS,
+      ),
     ],
   ];
   return geometries.map(([kind, geometry]) => ({ kind, geometry: packGeometry(geometry) }));

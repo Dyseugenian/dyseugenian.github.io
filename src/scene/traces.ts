@@ -3,6 +3,7 @@ import {
   CustomBlending,
   DoubleSide,
   GLSL3,
+  type InstancedBufferGeometry,
   Mesh,
   OneFactor,
   OneMinusSrcAlphaFactor,
@@ -72,7 +73,10 @@ const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameters]> = {
   boards: [boardVertex, boardFragment, {}],
 };
 
-export function traceMeshes(traces: TraceGeometry[], uniforms: Record<string, IUniform>): Mesh[] {
+export function traceMeshes(
+  traces: TraceGeometry[],
+  uniforms: Record<string, IUniform>,
+): Mesh<InstancedBufferGeometry, RawShaderMaterial>[] {
   const materials = new Map<TraceKind, RawShaderMaterial>();
   return traces.map(({ kind, geometry }) => {
     let material = materials.get(kind);

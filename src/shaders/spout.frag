@@ -8,9 +8,6 @@ precision highp float;
 
 uniform vec3 cameraPosition;
 uniform vec2 uResolution;
-uniform vec2 uVanish;
-uniform vec4 uBacklights;
-uniform vec3 uSky;
 uniform float uExposure;
 uniform float uFogDensity;
 uniform vec3 uConcrete;
@@ -34,6 +31,8 @@ flat in float vLength;
 flat in float vClosed;
 flat in float vSeed;
 
+uniform float uPresence;
+
 out vec4 outColor;
 
 const float IRON = 0.4;
@@ -54,6 +53,10 @@ vec3 bumped(vec3 normal, float height) {
 }
 
 void main() {
+  if (uPresence > 0.5) {
+    outColor = vec4(1.0);
+    return;
+  }
   vec3 normal = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
   float inside = !gl_FrontFacing || (vPart == 1.0 && vRadial < 1.0) ? 1.0 : 0.0;
   vec3 toCamera = normalize(cameraPosition - vWorld);
@@ -139,7 +142,7 @@ void main() {
   float washed = 1.0 - smoothstep(14.0, 40.0, far);
   float bore = mix(1.0, 0.12 + 0.5 * vAlong * vAlong, inside);
   vec3 light = (nightLight(shading, vWorld, 1.0, 0.5)
-    + windowWash(vLocal, shading, shading, vTile, vWorld.x - vLocal.x, 0.3) * washed) * bore;
+    + windowWash(vLocal, shading, shading, vTile, 0.3) * washed) * bore;
   float along = vWorld.y + uClimb + vAlong;
   float glints = smoothstep(0.82, 0.97, valueNoise(vec2(ring.x * 25.0 + seed, vRun * 9.0 - uTime * 1.5)));
   vec3 color = albedo * light
@@ -148,7 +151,7 @@ void main() {
 
   float mist = fbm(vec3(vWorld.x * 0.05, along * 0.04, uTime * 0.04));
   float fog = 1.0 - exp(-far * uFogDensity * mix(0.5, 1.7, mist));
-  vec3 haze = skyColor(gl_FragCoord.xy, uResolution, uVanish, uBacklights, uTime, uSky, uHaze, uRim);
+  vec3 haze = skyColor(gl_FragCoord.xy, uResolution);
   vec3 origin = vWorld - vLocal;
   float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
   vec3 scatter = windowScatter(cameraPosition - origin, vLocal, vTile, origin, jitter) * washed

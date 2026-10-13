@@ -8,9 +8,6 @@ precision highp float;
 
 uniform vec3 cameraPosition;
 uniform vec2 uResolution;
-uniform vec2 uVanish;
-uniform vec4 uBacklights;
-uniform vec3 uSky;
 uniform float uExposure;
 uniform float uFogDensity;
 uniform vec3 uConcrete;
@@ -27,9 +24,15 @@ flat in float vLock;
 in vec3 vBox;
 flat in vec3 vSize;
 
+uniform float uPresence;
+
 out vec4 outColor;
 
 void main() {
+  if (uPresence > 0.5) {
+    outColor = vec4(1.0);
+    return;
+  }
   vec3 normal = normalize(vNormal);
   vec3 toCamera = normalize(cameraPosition - vWorld);
   float soot = fbm(vLocal * vec3(3.0, 1.2, 3.0) + vSeed * 13.0);
@@ -46,7 +49,7 @@ void main() {
   float far = length(vWorld - cameraPosition);
   float washed = 1.0 - smoothstep(14.0, 40.0, far);
   vec3 light = nightLight(normal, vWorld, 1.0, 0.6)
-    + windowWash(vLocal, normal, normal, vTile, vWorld.x - vLocal.x, 0.25) * washed;
+    + windowWash(vLocal, normal, normal, vTile, 0.25) * washed;
   float gloss = mix(0.06, 0.01, rusting);
   if (vLock > 1.5) {
     float pitting = smoothstep(0.5, 0.8, fbm(vLocal * 60.0 + vSeed * 17.0));
@@ -84,7 +87,7 @@ void main() {
 
   float mist = fbm(vec3(vWorld.x * 0.05, (vWorld.y + uClimb) * 0.04, uTime * 0.04));
   float fog = 1.0 - exp(-far * uFogDensity * mix(0.3, 1.0, mist));
-  vec3 haze = skyColor(gl_FragCoord.xy, uResolution, uVanish, uBacklights, uTime, uSky, uHaze, uRim);
+  vec3 haze = skyColor(gl_FragCoord.xy, uResolution);
   color = mix(color, haze, fog);
   vec3 climbed = vec3(0.0, uClimb, 0.0);
   color = mix(color, haze, 0.7 * clouds(cameraPosition + climbed, vWorld + climbed));

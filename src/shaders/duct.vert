@@ -8,6 +8,7 @@ uniform float uTileHeight;
 #include "chunks/hash.glsl"
 #include "chunks/rooms.glsl"
 #include "chunks/ducts.glsl"
+#include "chunks/presence.glsl"
 
 in vec3 position;
 in vec3 normal;
@@ -32,6 +33,10 @@ void main() {
   Duct duct;
   DuctPiece piece;
   if (!ductPiece(roomOf(aTile, aStorey), aStorey, aIndex, duct, piece)) return;
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
   float s = ductRun(piece, position.y + 0.5);
   vec3 tangent;
   vec3 centre = ductCentre(piece, s, tangent);

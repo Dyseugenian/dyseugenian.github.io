@@ -117,6 +117,7 @@ export class SprayCircle extends Points<BufferGeometry, RawShaderMaterial> {
       uniforms,
       defines: { RIPPLES, BENDS, SCATTER_SECONDS: BREAK.scatterSeconds },
       transparent: true,
+      depthTest: false,
       depthWrite: false,
     });
 

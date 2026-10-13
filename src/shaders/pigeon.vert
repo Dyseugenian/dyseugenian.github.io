@@ -3,6 +3,7 @@ precision highp float;
 #include "chunks/hash.glsl"
 #include "chunks/rooms.glsl"
 #include "chunks/inset.glsl"
+#include "chunks/presence.glsl"
 
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
@@ -254,6 +255,10 @@ void main() {
   float seed = hash12(room + aIndex * 5.0);
   Perch home = ledgeIn(room, hash12(room + 293.0 + 3.0 * aIndex), fract(hash12(room + 297.0) + 0.31 * aIndex));
   if (home.at.y > AWAY) return;
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
 
   float clock = uTime / STAY + seed * 10.0;
   float stay = floor(clock);

@@ -7,6 +7,7 @@ uniform float uTileHeight;
 
 #include "chunks/hash.glsl"
 #include "chunks/rooms.glsl"
+#include "chunks/presence.glsl"
 
 in vec3 position;
 in vec3 normal;
@@ -36,6 +37,10 @@ void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
   if (!boarded(room)) return;
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
   float base = aStorey * 0.5 * uTileHeight;
   float seed = hash12(room + aIndex * 13.7 + 719.0);
   vec2 centre;

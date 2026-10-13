@@ -3,6 +3,7 @@ precision highp float;
 #include "chunks/noise-texture.glsl"
 #include "chunks/light.glsl"
 #include "chunks/windows.glsl"
+#include "chunks/presence.glsl"
 
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
@@ -32,6 +33,10 @@ void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
   if (!airConditioned(room) || hash12(room + 271.0) > 0.4) return;
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
   vec4 mount = airConditionerMount(room);
   bool onWall = mount.w != 0.0;
   vec3 outlet = onWall ? mounted(vec3(0.4, 1.2, -1.45), mount) : vec3(0.4 + mount.x, 0.55, -1.29);
@@ -63,7 +68,7 @@ void main() {
   vec4 world = modelMatrix * vec4(local + aOffset, 1.0);
   vec3 toCamera = normalize(cameraPosition - world.xyz);
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
-  vLight = (nightLight(toCamera, world.xyz, 1.0, 1.0) + windowWash(local, toCamera, toCamera, tile, world.x - local.x, 1.0))
+  vLight = (nightLight(toCamera, world.xyz, 1.0, 1.0) + windowWash(local, toCamera, toCamera, tile, 1.0))
     * exp(-length(cameraPosition - world.xyz) * uFogDensity);
   vCorner = position.xy;
   vSeed = hash12(room + 277.0) * 40.0;

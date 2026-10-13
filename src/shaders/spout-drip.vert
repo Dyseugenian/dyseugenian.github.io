@@ -3,6 +3,7 @@ precision highp float;
 #include "chunks/noise-texture.glsl"
 #include "chunks/light.glsl"
 #include "chunks/windows.glsl"
+#include "chunks/presence.glsl"
 #include "chunks/inset.glsl"
 #include "chunks/ducts.glsl"
 #include "chunks/spouts.glsl"
@@ -36,6 +37,10 @@ void main() {
   if (!spoutOf(room, aTile, aStorey)) return;
   Spout spout = spoutAt(room, aTile);
   if (spout.drips > 0.5) return;
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
   vec3 lip = spoutLip(spout);
   bool overBlock = lip.z < spout.landing && lip.x > BLOCK_SPAN.x && lip.x < BLOCK_SPAN.y;
   float reach = overBlock ? lip.y - BLOCK_TOP : 3.0;
@@ -63,7 +68,7 @@ void main() {
   vec4 world = modelMatrix * vec4(local + aOffset, 1.0);
   vec3 toCamera = normalize(cameraPosition - world.xyz);
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
-  vLight = (nightLight(toCamera, world.xyz, 1.0, 1.0) + windowWash(local, toCamera, toCamera, tile, world.x - local.x, 1.0))
+  vLight = (nightLight(toCamera, world.xyz, 1.0, 1.0) + windowWash(local, toCamera, toCamera, tile, 1.0))
     * exp(-length(cameraPosition - world.xyz) * uFogDensity);
   vAlpha = min(width / pixel, 1.0) * min(trail / pixel, 1.0);
   vStreak = 0.0;

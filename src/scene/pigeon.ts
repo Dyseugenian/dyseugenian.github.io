@@ -31,7 +31,42 @@ const BLOBS: Blob[] = [
   { at: [0, 0.215, 0.084], radius: [0.018, 0.019, 0.02], tilt: 0 },
 ];
 const BLEND = 0.016;
-const CELL = 0.0084;
+export type PigeonDetail = 'full' | 'distant';
+type Density = {
+  cell: number;
+  wingSpan: number;
+  wingAcross: number;
+  tailAcross: number;
+  tailAlong: number;
+  beak: number;
+  leg: number;
+  toe: number;
+  eye: [number, number];
+};
+const DENSITIES: Record<PigeonDetail, Density> = {
+  full: {
+    cell: 0.0084,
+    wingSpan: 18,
+    wingAcross: 6,
+    tailAcross: 12,
+    tailAlong: 4,
+    beak: 8,
+    leg: 7,
+    toe: 6,
+    eye: [10, 8],
+  },
+  distant: {
+    cell: 0.017,
+    wingSpan: 8,
+    wingAcross: 3,
+    tailAcross: 6,
+    tailAlong: 2,
+    beak: 5,
+    leg: 4,
+    toe: 3,
+    eye: [5, 4],
+  },
+};
 const BOUNDS = { min: new Vector3(-0.065, 0.01, -0.2), max: new Vector3(0.065, 0.255, 0.13) };
 const BEAK: Ring[] = [
   [0, 0.205, 0.094, 0.0062, 0.0058],
@@ -47,14 +82,20 @@ const TOES = [
   { angle: 0.45, length: 0.025 },
   { angle: Math.PI, length: 0.018 },
 ];
-const WING = { arm: 0.14, hand: 0.22, chord: 0.115, thickness: 0.009, span: 18, across: 6 };
-const TAIL = { length: 0.12, base: 0.017, across: 12, along: 4 };
+const WING = { arm: 0.14, hand: 0.22, chord: 0.115, thickness: 0.009 };
+const TAIL = { length: 0.12, base: 0.017 };
 
-export function pigeonGeometry(): BufferGeometry {
+export function pigeonGeometry(detail: PigeonDetail): BufferGeometry {
+  const density = DENSITIES[detail];
   const pieces = [
-    body(),
-    tube(BEAK, 8, 2, new Vector3(0, 1, 0), PART.beak, () => 1),
-    sphere(new Vector3(0.0058, 0.0042, 0.0075), new Vector3(0, 0.2065, 0.0975), PART.cere),
+    body(density),
+    tube(BEAK, density.beak, 2, new Vector3(0, 1, 0), PART.beak, () => 1),
+    sphere(
+      new Vector3(0.0058, 0.0042, 0.0075),
+      new Vector3(0, 0.2065, 0.0975),
+      PART.cere,
+      density.eye,
+    ),
     ...[1, -1].flatMap((side) => [
       sphere(
         new Vector3(EYE.radius, EYE.radius, EYE.radius),
@@ -64,11 +105,12 @@ export function pigeonGeometry(): BufferGeometry {
           EYE.z,
         ),
         PART.eye,
+        density.eye,
       ),
-      wing(side),
-      ...leg(side),
+      wing(side, density),
+      ...leg(side, density),
     ]),
-    tail(),
+    tail(density),
   ];
   const merged = mergeGeometries(pieces)!;
   for (const piece of pieces) piece.dispose();
@@ -123,24 +165,24 @@ function surfaceAlong(origin: Vector3, direction: Vector3): number {
   return inside;
 }
 
-function body(): BufferGeometry {
+function body({ cell }: Density): BufferGeometry {
   const size = BOUNDS.max.clone().sub(BOUNDS.min);
-  const [nx, ny, nz] = [size.x, size.y, size.z].map((length) => Math.ceil(length / CELL) + 1) as [
+  const [nx, ny, nz] = [size.x, size.y, size.z].map((length) => Math.ceil(length / cell) + 1) as [
     number,
     number,
     number,
   ];
   const point = (i: number, j: number, k: number) =>
-    new Vector3(BOUNDS.min.x + i * CELL, BOUNDS.min.y + j * CELL, BOUNDS.min.z + k * CELL);
+    new Vector3(BOUNDS.min.x + i * cell, BOUNDS.min.y + j * cell, BOUNDS.min.z + k * cell);
   const at = (i: number, j: number, k: number) => (k * ny + j) * nx + i;
   const field = new Float32Array(nx * ny * nz);
   for (let k = 0; k < nz; k++) {
     for (let j = 0; j < ny; j++) {
       for (let i = 0; i < nx; i++) {
         field[at(i, j, k)] = distance(
-          BOUNDS.min.x + i * CELL,
-          BOUNDS.min.y + j * CELL,
-          BOUNDS.min.z + k * CELL,
+          BOUNDS.min.x + i * cell,
+          BOUNDS.min.y + j * cell,
+          BOUNDS.min.z + k * cell,
         );
       }
     }
@@ -343,8 +385,13 @@ function smoothRings(rings: Ring[], steps: number): Ring[] {
   return smooth;
 }
 
-function sphere(radius: Vector3, at: Vector3, part: number): BufferGeometry {
-  const shape = new SphereGeometry(1, 10, 8)
+function sphere(
+  radius: Vector3,
+  at: Vector3,
+  part: number,
+  [around, down]: [number, number],
+): BufferGeometry {
+  const shape = new SphereGeometry(1, around, down)
     .scale(radius.x, radius.y, radius.z)
     .translate(at.x, at.y, at.z);
   const count = shape.getAttribute('position').count;
@@ -389,7 +436,7 @@ function folded(u: number, v: number, face: number, side: number): [Vector3, Vec
   return [p.setX(side * p.x), n.setX(side * n.x).multiplyScalar(face)];
 }
 
-function wing(side: number): BufferGeometry {
+function wing(side: number, { wingSpan, wingAcross }: Density): BufferGeometry {
   const positions: number[] = [];
   const surface: number[] = [];
   const index: number[] = [];
@@ -400,14 +447,14 @@ function wing(side: number): BufferGeometry {
   const wrist = WING.arm / span;
   for (const face of [1, -1]) {
     const base = positions.length / 3;
-    for (let i = 0; i <= WING.span; i++) {
-      const u = 1 - (1 - i / WING.span) ** 1.3;
+    for (let i = 0; i <= wingSpan; i++) {
+      const u = 1 - (1 - i / wingSpan) ** 1.3;
       const hand = Math.max((u - wrist) / (1 - wrist), 0);
       const lead = u < wrist ? 0.012 * Math.sin((Math.PI * u) / wrist) : -0.03 * hand ** 2;
       const chord =
         u < wrist ? WING.chord + 0.03 * (u / wrist) ** 2 : 0.135 * Math.sqrt(1 - hand ** 3) + 0.01;
-      for (let j = 0; j <= WING.across; j++) {
-        const v = j / WING.across;
+      for (let j = 0; j <= wingAcross; j++) {
+        const v = j / wingAcross;
         const crest = Math.sqrt(v);
         const thickness = WING.thickness * (1 - 0.6 * u) * 4 * crest * (1 - crest);
         const camber = 0.004 * Math.sin(Math.PI * v) * (1 - u);
@@ -419,9 +466,9 @@ function wing(side: number): BufferGeometry {
         foldedNormals.push(n.x, n.y, n.z);
       }
     }
-    const row = WING.across + 1;
-    for (let i = 0; i < WING.span; i++) {
-      for (let j = 0; j < WING.across; j++) {
+    const row = wingAcross + 1;
+    for (let i = 0; i < wingSpan; i++) {
+      for (let j = 0; j < wingAcross; j++) {
         const a = base + i * row + j;
         const quad = [a, a + row, a + 1, a + row, a + row + 1, a + 1];
         index.push(...(face * side > 0 ? quad : quad.reverse()));
@@ -434,17 +481,17 @@ function wing(side: number): BufferGeometry {
   return geometry;
 }
 
-function tail(): BufferGeometry {
+function tail({ tailAcross, tailAlong }: Density): BufferGeometry {
   const positions: number[] = [];
   const surface: number[] = [];
   const index: number[] = [];
   const parts: number[] = [];
   for (const face of [1, -1]) {
     const base = positions.length / 3;
-    for (let i = 0; i <= TAIL.across; i++) {
-      const s = (i / TAIL.across) * 2 - 1;
-      for (let j = 0; j <= TAIL.along; j++) {
-        const l = j / TAIL.along;
+    for (let i = 0; i <= tailAcross; i++) {
+      const s = (i / tailAcross) * 2 - 1;
+      for (let j = 0; j <= tailAlong; j++) {
+        const l = j / tailAlong;
         positions.push(
           s * TAIL.base + s * 0.12 * l * TAIL.length,
           face * (0.012 + (0.006 - 0.012) * l) * (1 - s * s),
@@ -454,9 +501,9 @@ function tail(): BufferGeometry {
         parts.push(face > 0 ? PART.tail : PART.undertail);
       }
     }
-    const row = TAIL.along + 1;
-    for (let i = 0; i < TAIL.across; i++) {
-      for (let j = 0; j < TAIL.along; j++) {
+    const row = tailAlong + 1;
+    for (let i = 0; i < tailAcross; i++) {
+      for (let j = 0; j < tailAlong; j++) {
         const a = base + i * row + j;
         const quad = [a, a + row, a + 1, a + row, a + row + 1, a + 1];
         index.push(...(face > 0 ? quad : quad.reverse()));
@@ -466,7 +513,7 @@ function tail(): BufferGeometry {
   return unfolded(finish(positions, surface, new Array(parts.length).fill(0), index, parts));
 }
 
-function leg(side: number): BufferGeometry[] {
+function leg(side: number, { leg: legSegments, toe: toeSegments }: Density): BufferGeometry[] {
   const hip = HIP.clone().setX(side * HIP.x);
   const ankle = ANKLE.clone().setX(side * ANKLE.x);
   const toes = TOES.map(({ angle, length }) => {
@@ -480,7 +527,7 @@ function leg(side: number): BufferGeometry[] {
     ];
     return tube(
       [along(0, ankle.y), along(length * 0.6, 0.0032), along(length, 0.0014)],
-      6,
+      toeSegments,
       2,
       new Vector3(0, 1, 0),
       PART.leg,
@@ -494,7 +541,7 @@ function leg(side: number): BufferGeometry[] {
         [hip.x, hip.y, hip.z, 0.0068, 0.0068],
         [ankle.x, ankle.y, ankle.z, 0.0055, 0.0055],
       ],
-      7,
+      legSegments,
       3,
       new Vector3(0, 0, 1),
       PART.leg,

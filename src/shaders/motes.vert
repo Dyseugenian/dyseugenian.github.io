@@ -3,6 +3,7 @@ precision highp float;
 #include "chunks/noise-texture.glsl"
 #include "chunks/light.glsl"
 #include "chunks/windows.glsl"
+#include "chunks/presence.glsl"
 
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
@@ -25,11 +26,15 @@ const float MOTHS = 3.0;
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
-  vec3 lamp = windowLight(room, (modelMatrix * vec4(aOffset, 1.0)).x);
-  if (dot(lamp, lamp) < 1e-4) return;
-  vec3 seed = vec3(hash12(room + aIndex), hash12(room + aIndex + 0.37), hash12(room + aIndex + 0.71));
   bool moth = aIndex < MOTHS;
   if (moth && hash12(room + 281.0) > 0.5) return;
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
+  vec3 lamp = windowLight(room);
+  if (dot(lamp, lamp) < 1e-4) return;
+  vec3 seed = vec3(hash12(room + aIndex), hash12(room + aIndex + 0.37), hash12(room + aIndex + 0.71));
 
   vec3 local;
   float size;

@@ -11,9 +11,15 @@ in float vAlpha;
 in float vStreak;
 in float vSeed;
 
+uniform float uPresence;
+
 out vec4 outColor;
 
 void main() {
+  if (uPresence > 0.5) {
+    outColor = vec4(1.0);
+    return;
+  }
   if (vStreak < 0.5) {
     float core = (1.0 - smoothstep(0.1, 0.5, abs(vCorner.x))) * vAlpha;
     outColor = vec4(vLight * 1.6 * uExposure * core, core);

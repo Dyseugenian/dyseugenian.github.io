@@ -7,9 +7,6 @@ precision highp float;
 
 uniform vec3 cameraPosition;
 uniform vec2 uResolution;
-uniform vec2 uVanish;
-uniform vec4 uBacklights;
-uniform vec3 uSky;
 uniform float uExposure;
 uniform float uFogDensity;
 uniform vec3 uConcrete;
@@ -30,6 +27,8 @@ flat in float vPart;
 flat in vec2 vTile;
 flat in float vSeed;
 
+uniform float uPresence;
+
 out vec4 outColor;
 
 const float WRIST = 0.14;
@@ -41,6 +40,10 @@ float featherTips(float across, float count, float depth) {
 }
 
 void main() {
+  if (uPresence > 0.5) {
+    outColor = vec4(1.0);
+    return;
+  }
   vec3 normal = normalize(vNormal);
   vec3 toCamera = normalize(cameraPosition - vWorld);
   float breed = fract(vSeed * 17.3);
@@ -161,10 +164,10 @@ void main() {
 
   float distance = length(vWorld - cameraPosition);
   float washed = 1.0 - smoothstep(14.0, 40.0, distance);
-  vec3 light = nightLight(normal, vWorld, 1.0, 0.3) + windowWash(vLocal, normal, normal, vTile, vWorld.x - vLocal.x, 0.3) * washed;
+  vec3 light = nightLight(normal, vWorld, 1.0, 0.3) + windowWash(vLocal, normal, normal, vTile, 0.3) * washed;
   float glint = shine * pow(max(dot(reflect(-toCamera, normal), uLight), 0.0), 24.0);
   float fog = 1.0 - exp(-distance * uFogDensity);
-  vec3 haze = skyColor(gl_FragCoord.xy, uResolution, uVanish, uBacklights, uTime, uSky, uHaze, uRim);
+  vec3 haze = skyColor(gl_FragCoord.xy, uResolution);
   vec3 origin = vWorld - vLocal;
   float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
   vec3 scatter = windowScatter(cameraPosition - origin, vLocal, vTile, origin, jitter) * washed

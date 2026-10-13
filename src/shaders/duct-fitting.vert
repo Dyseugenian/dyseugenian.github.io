@@ -7,6 +7,7 @@ uniform float uTileHeight;
 
 #include "chunks/hash.glsl"
 #include "chunks/rooms.glsl"
+#include "chunks/presence.glsl"
 #include "chunks/inset.glsl"
 #include "chunks/ducts.glsl"
 
@@ -39,6 +40,10 @@ void main() {
   vec2 room = roomOf(aTile, aStorey);
   bool collar = aIndex > 0.5;
   if (!ductPiece(room, aStorey, aIndex > 1.5 ? 1.0 : 0.0, duct, piece)) return;
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
   float base = aStorey * 0.5 * uTileHeight;
   bool ending = piece.offset > duct.reach - 0.5;

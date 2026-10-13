@@ -12,6 +12,7 @@ uniform float uOuterX;
 #include "chunks/inset.glsl"
 #include "chunks/ducts.glsl"
 #include "chunks/spouts.glsl"
+#include "chunks/presence.glsl"
 
 in vec3 position;
 in vec3 normal;
@@ -39,6 +40,10 @@ void main() {
   vec2 room = roomOf(aTile, aStorey);
   if (!spoutOf(room, aTile, aStorey)) {
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+    return;
+  }
+  if (uPresence > 0.5) {
+    markPresent();
     return;
   }
   Spout spout = spoutAt(room, aTile);

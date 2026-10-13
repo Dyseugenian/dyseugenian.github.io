@@ -1,6 +1,7 @@
 precision highp float;
 
 #include "chunks/cables.glsl"
+#include "chunks/presence.glsl"
 
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
@@ -32,6 +33,10 @@ void main() {
   int slot = int(aIndex - cable * SLOTS);
   vec4 point = fastener[slot];
   if (point.w < 0.5) return;
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
 
   vec3 face = fastenerFace[slot].xyz;
   float depth = fastenerFace[slot].w;

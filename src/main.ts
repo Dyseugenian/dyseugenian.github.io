@@ -6,13 +6,16 @@ const context = canvas?.getContext('webgl2', {
   powerPreference: 'high-performance',
 });
 
-const onlyBuilding = new URLSearchParams(location.search).has('building');
+const query = new URLSearchParams(location.search);
+const onlyBuilding = query.has('building');
 
 if (canvas && context) {
   const app = new App(canvas, context, onlyBuilding);
+  const scale = Number(query.get('scale'));
+  if (scale > 0) app.pinScale(scale);
   await app.start();
 
-  if (new URLSearchParams(location.search).has('debug')) {
+  if (query.has('debug')) {
     const { mountDebugPanel } = await import('./debug/panel');
     mountDebugPanel(app);
   }

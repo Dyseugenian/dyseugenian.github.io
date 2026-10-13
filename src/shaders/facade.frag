@@ -2,6 +2,8 @@ precision highp float;
 precision highp sampler3D;
 
 #include "chunks/noise-texture.glsl"
+#include "chunks/frame.glsl"
+#include "chunks/patches.glsl"
 #include "chunks/chips.glsl"
 #include "chunks/spalls.glsl"
 #include "chunks/rebar.glsl"
@@ -10,12 +12,10 @@ precision highp sampler3D;
 #include "chunks/inset.glsl"
 #include "chunks/cracks.glsl"
 #include "chunks/sky.glsl"
-#include "chunks/clouds.glsl"
+#include "chunks/lowres.glsl"
 
 uniform vec3 cameraPosition;
 uniform vec2 uResolution;
-uniform vec2 uVanish;
-uniform vec4 uBacklights;
 uniform vec3 uSky;
 uniform float uExposure;
 uniform vec3 uConcrete;
@@ -65,15 +65,10 @@ const float POPCORN_DEPTH = 5.0;
 const float POPCORN_SCALE = 0.23;
 const float DRIP_SPACING = 0.9;
 const float PIT_SPACING = 0.12;
-const vec3 STAIN_SIZES = vec3(10.0, 3.5, 1.2);
-const vec3 STAIN_COVER = vec3(0.4, 0.45, 0.2);
-const vec3 STAIN_SALTS = vec3(0.0, 31.0, 67.0);
 const float SPECK_SPACING = 0.35;
-const float PATCH_SPACING = 1.5;
 const float STUD_HEIGHT = 0.218;
 const vec3 STUD_HALF = vec3(0.66, 0.56, 0.218);
 const float STUD_X = -2.1;
-const float SOOT_RISE = 7.5;
 const float SIDE_LIGHT = 1.5;
 const float SIDE_FALLOFF = 3.5;
 const float GLASS_Z = -3.05;
@@ -112,10 +107,6 @@ struct Concrete {
   vec3 emission;
 };
 
-float resolved(float frequency, float footprint) {
-  return 1.0 - smoothstep(0.2, 0.6, footprint * frequency);
-}
-
 float toJoint(float at, float first, float last, float size) {
   return last < first ? 1e3 : abs(at - clamp(round(at), first, last)) * size;
 }
@@ -124,13 +115,6 @@ float line(float coordinate, float period, float width) {
   float edge = abs(fract(coordinate / period + 0.5) - 0.5) * period;
   float blur = fwidth(coordinate);
   return 1.0 - smoothstep(width - blur, width + blur, edge);
-}
-
-mat3 faceFrame(vec3 normal) {
-  vec3 facing = abs(normal);
-  if (facing.y > 0.5) return mat3(vec3(1, 0, 0), vec3(0, 0, 1), normal);
-  if (facing.x > 0.5) return mat3(vec3(0, 0, 1), vec3(0, 1, 0), normal);
-  return mat3(vec3(1, 0, 0), vec3(0, 1, 0), normal);
 }
 
 float drips(vec2 p, float belowTop, float footprint) {
@@ -153,94 +137,6 @@ float grit(vec2 p, float footprint) {
   return mix(coarse, fine, 0.35);
 }
 
-vec3 stain(vec3 albedo, vec2 wall, vec2 warp, float size, float salt, float cover, float upright, float footprint) {
-  vec2 at = (wall + warp * size * 0.6) / size;
-  at.y *= mix(1.0, 0.7, upright);
-  vec2 shaped = at + 0.45 * (vec2(fbm(at * 1.1 + salt + 5.0), fbm(at * 1.1 + salt + 23.0)) - 0.5);
-  float coarse = fbm(at * 2.7 + salt);
-  float fine = valueNoise(at * 9.0 + salt + 3.0);
-  float grain = mix(0.5, valueNoise(at * 31.0 + salt), resolved(31.0 / size, footprint));
-  float ragged = (coarse - 0.5) + 0.45 * (fine - 0.5) + 0.2 * (grain - 0.5);
-  float droplets = mix(0.0, valueNoise(at * 17.0 + salt + 41.0), resolved(17.0 / size, footprint));
-  float flow = mix(1.0, mix(0.6, 1.1, valueNoise(vec2(at.x * 20.0, at.y * 1.5) + salt)), upright);
-  float clumps = mix(0.35, 1.0, smoothstep(0.3, 0.7, valueNoise(at * 14.0 + salt))) * mix(0.6, 1.0, grain);
-  vec2 base = floor(shaped - 0.5);
-  for (int n = 0; n < 4; n++) {
-    vec2 cell = base + vec2(n % 2, n / 2);
-    vec2 key = cell + salt;
-    if (hash12(key) > cover * smoothstep(0.2, 0.6, valueNoise(cell * 0.43 + salt))) continue;
-    float scale = mix(0.06, 0.22, hash12(key + 2.0));
-    vec2 center = cell + 0.5 + max(1.0 - 4.4 * scale, 0.0) * (vec2(hash12(key + 3.0), hash12(key + 5.0)) - 0.5);
-    float heading = 6.2832 * hash12(key + 11.0);
-    float lobes = 2.0 + floor(5.0 * hash12(key + 7.0));
-    vec2 local = (shaped - center) / scale;
-    vec2 swirl = 2.5 * (vec2(fbm(local * 0.6 + key * 1.3), fbm(local * 0.6 + key * 1.3 + 19.0)) - 0.47);
-    vec2 blob = shaped + scale * mix(0.2, 0.5, hash12(key + 73.0)) * swirl;
-    float runLength = min(mix(0.6, 2.5, hash12(key + 41.0)) * scale, 0.15) * step(0.4, hash12(key + 53.0));
-    float field = 0.0;
-    float runs = 0.0;
-    vec2 lobe = center;
-    for (int i = 0; i < 6; i++) {
-      if (float(i) >= lobes) break;
-      vec2 lobeKey = key + float(i) * 7.31;
-      heading += 2.6 * (hash12(lobeKey + 13.0) - 0.5);
-      vec2 from = i % 2 == 1 ? center : lobe;
-      if (i > 0) lobe = from + scale * mix(0.5, 1.0, hash12(lobeKey + 11.0)) * vec2(cos(heading), sin(heading) - 0.4 * upright);
-      float radius = scale * mix(0.4, 0.85, hash12(lobeKey + 17.0)) * (i == 0 ? 1.3 : 1.0);
-      vec2 offset = blob - lobe;
-      offset.y *= offset.y < 0.0 ? mix(1.0, 0.6, upright) : mix(1.0, 1.4, upright);
-      float tilt = 3.1416 * hash12(lobeKey + 19.0);
-      offset = mat2(cos(tilt), sin(tilt), -sin(tilt), cos(tilt)) * offset;
-      offset.x /= mix(1.0, 1.8, hash12(lobeKey + 23.0));
-      field += exp(-dot(offset, offset) / (radius * radius));
-      float column = (blob.x - lobe.x) / radius;
-      float below = lobe.y - blob.y - 0.5 * radius;
-      runs = max(runs, exp(-column * column) * smoothstep(-radius, 0.0, below) * exp(-max(below, 0.0) / max(runLength, 1e-3)));
-    }
-    if (field < 0.02 && runs * upright < 0.02) continue;
-    float outline = 2.5 * (fbm(local * 1.1 + key * 1.7) - 0.47) + 0.6 * (valueNoise(local * 3.0 + key) - 0.5)
-      + mix(0.0, 0.35 * (valueNoise(local * 8.0 + key) - 0.5), resolved(8.0 / (scale * size), footprint));
-    float threshold = mix(0.35, 0.6, hash12(key + 31.0));
-    float edged = field + mix(0.2, 0.5, hash12(key + 37.0)) * (outline + 0.5 * ragged) * smoothstep(0.0, threshold, field);
-    float soft = mix(0.04, 0.4, pow(hash12(key + 43.0), 1.5)) + footprint / (size * scale);
-    float holes = step(0.65, hash12(key + 71.0)) * smoothstep(0.62, 0.7, fbm(local * 1.3 + key * 2.3 + 13.0));
-    float fill = smoothstep(threshold, threshold + soft, edged) * (1.0 - 0.85 * holes);
-    float satellites = step(0.5, hash12(key + 47.0)) * smoothstep(0.76, 0.82, droplets)
-      * smoothstep(0.15, 0.6, edged / threshold) * (1.0 - fill);
-    float strands = smoothstep(0.5, 0.8, valueNoise(vec2((shaped.x - center.x) / scale * mix(2.0, 5.0, hash12(key + 59.0)), key.y + 5.0)));
-    float drips = upright * runs * strands * (1.0 - fill);
-    float core = mix(0.5, 1.0, smoothstep(threshold, threshold + 0.7, edged));
-    float pooled = mix(1.0, mix(1.25, 0.7, smoothstep(-1.5, 1.5, (shaped.y - center.y) / scale)), upright);
-    float amount = max(fill * core * flow * mix(0.6, 1.0, fine) * pooled, max(0.8 * drips, 0.7 * satellites));
-    float depth = mix(0.15, 0.5, hash12(key + 29.0)) * mix(0.5, 1.0, smoothstep(0.06, 0.15, scale * size))
-      * mix(1.0, 0.7, smoothstep(0.8, 2.0, scale * size));
-    float kind = hash12(key + 23.0);
-    vec4 over = step(vec4(0.4, 0.6, 0.72, 0.84), vec4(kind));
-    vec4 kinds = vec4(1.0 - over.x, over.xyz - over.yzw);
-    float lines = resolved(25.0 / size, footprint) * step(0.4, hash12(key + 61.0));
-    float inner = threshold + mix(0.15, 0.4, hash12(key + 67.0));
-    float tide = exp(-abs(edged - threshold) / 0.02) + 0.6 * exp(-abs(edged - inner) / 0.015);
-    float halo = smoothstep(threshold - 0.12, threshold, edged) * (1.0 - fill);
-    float crust = smoothstep(threshold, threshold + 0.1, edged) * mix(0.2, 1.0, grain) * mix(0.5, 1.0, fine);
-    albedo *= mix(1.0, (1.0 - depth * amount - 0.12 * tide * lines) * (1.0 + 0.06 * halo), kinds.x);
-    albedo = mix(albedo, uGrime, kinds.y * min(1.5 * depth * amount, 0.85));
-    albedo = mix(albedo, uSalt * 1.08, kinds.z * min(1.2 * depth, 0.45) * max(crust, max(0.6 * drips, 0.5 * satellites)));
-    albedo = mix(albedo, uRust * mix(0.6, 0.9, fine), kinds.w * depth * amount);
-    albedo = mix(albedo, uMoss * mix(0.7, 1.1, fine), over.w * min(1.6 * depth * fill * core * clumps, 0.7));
-  }
-  return albedo;
-}
-
-float streaks(vec2 wall, float footprint) {
-  float region = smoothstep(0.45, 0.75, valueNoise(wall * vec2(0.12, 0.03) + 61.0));
-  if (region == 0.0) return 0.0;
-  float column = valueNoise(vec2(wall.x * 1.6, wall.y * 0.05 + 11.0));
-  float reach = smoothstep(0.25, 0.65, valueNoise(vec2(wall.x * 0.9 + 3.0, wall.y * 0.4)));
-  float strand = mix(0.5, valueNoise(vec2(wall.x * 7.0, wall.y * 0.15 + 5.0)), resolved(7.0, footprint));
-  float fibre = mix(0.5, valueNoise(vec2(wall.x * 23.0, wall.y * 0.3 + 2.0)), resolved(23.0, footprint));
-  return region * smoothstep(0.5, 0.8, column) * reach * mix(0.3, 1.0, strand) * mix(0.6, 1.2, fibre);
-}
-
 float speck(vec2 wall, float footprint, out float pale) {
   vec2 cell = floor(wall / SPECK_SPACING);
   float density = smoothstep(0.4, 0.8, valueNoise(wall * 0.5 + 91.0));
@@ -253,53 +149,7 @@ float speck(vec2 wall, float footprint, out float pale) {
     * resolved(0.3 / radius, footprint);
 }
 
-float mended(vec2 p, float footprint, out vec2 sweep) {
-  vec2 cell = floor(p / PATCH_SPACING);
-  sweep = vec2(1.0, 0.0);
-  if (hash12(cell + 401.0) > 0.3) return 0.0;
-  float key = hash12(cell + 403.0) * 50.0;
-  vec2 centre = (cell + 0.5 + 0.2 * (vec2(hash12(cell + 405.0), hash12(cell + 407.0)) - 0.5)) * PATCH_SPACING;
-  float size = mix(0.08, 0.3, pow(hash12(cell + 409.0), 1.4));
-  float angle = 6.2832 * hash12(cell + 411.0);
-  sweep = vec2(cos(angle), sin(angle));
-  vec2 d = p - centre;
-  vec2 local = vec2(dot(d, sweep), dot(d, vec2(-sweep.y, sweep.x))) / size;
-  local.y *= mix(1.1, 2.4, hash12(cell + 413.0));
-  local += 0.7 * (vec2(valueNoise(local * 1.1 + key), valueNoise(local * 1.1 + key + 5.0)) - 0.5)
-    + 0.3 * (vec2(valueNoise(local * 3.3 + key + 9.0), valueNoise(local * 3.3 + key + 13.0)) - 0.5);
-  float strands = valueNoise(vec2(local.y * 7.0, key));
-  vec2 stretched = vec2(local.x / (local.x > 0.0 ? mix(1.0, 2.3, strands) : 1.0), local.y);
-  float reach = length(stretched);
-  float cover = 1.0 - smoothstep(0.9 - footprint / size, 1.0, reach);
-  return cover * mix(1.0, 0.55 * strands, smoothstep(0.35, 1.0, reach) * step(0.0, local.x));
-}
-
-float scorch(vec3 local, vec3 normal) {
-  vec2 tile = vec2(vTile.x, mod(vTile.y + uTilesClimbed, 4096.0));
-  vec2 room;
-  vec3 q;
-  bool found = false;
-  for (int below = 0; below < 3; below++) {
-    q = fromWindow(local, tile, float(below), room);
-    if (burnt(room)) {
-      found = true;
-      break;
-    }
-  }
-  float rise = q.y + 0.6;
-  if (!found || rise < 0.0) return 0.0;
-  float key = hash12(room + 713.0) * 50.0;
-  float tongues = fbm(vec2(q.x * 1.4 + key, rise * 0.35)) - 0.5;
-  float width = 0.9 + 0.28 * rise + 1.2 * tongues;
-  float spread = 1.0 - smoothstep(0.75 * width, width, abs(q.x));
-  float fingers = valueNoise(vec2(q.x * 3.0 + key, rise * 0.25));
-  float reach = SOOT_RISE * mix(0.3, 1.0, fingers) * mix(0.7, 1.15, hash12(room + 715.0));
-  float fade = 1.0 - smoothstep(0.45 * reach, reach, rise);
-  float ahead = 1.0 - smoothstep(3.0, 5.0, q.z);
-  return spread * fade * ahead * smoothstep(0.0, 0.9, rise) * mix(1.0, 1.4, max(-normal.y, 0.0)) * mix(1.0, 0.45, max(normal.y, 0.0));
-}
-
-Concrete concrete(mat3 frame, vec2 seed, float weathering) {
+Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
   vec3 normal = frame[2];
   bool level = abs(normal.y) > 0.5;
   float upright = level ? 0.0 : 1.0;
@@ -368,8 +218,8 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
     * (0.4 * drip + 0.6 * exp(-fromLow.y / 0.5)) * upright;
   albedo = mix(albedo, uSalt, 0.7 * salt);
 
-  vec2 sweep;
-  float parge = mended(p, footprint, sweep);
+  vec2 sweep = vec2(1.0, 0.0);
+  float parge = low.mask.z > 0.5 ? mended(p, footprint, sweep) : 0.0;
   if (parge > 0.0) {
     vec2 trowel = vec2(dot(p, sweep), dot(p, vec2(-sweep.y, sweep.x)));
     float marks = mix(0.9, 1.06, valueNoise(vec2(trowel.x * 2.0, trowel.y * 28.0)));
@@ -383,17 +233,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
 
   vec3 climbed = vWorld + vec3(0.0, uClimb, 0.0);
   vec2 wall = vec2(dot(climbed, frame[0]), dot(climbed, frame[1])) + dot(climbed, normal) * vec2(1.37, 0.71);
-  vec2 wallWarp = vec2(fbm(wall * 0.3 + 71.0), fbm(wall * 0.3 + 79.0)) - 0.5;
-  vec3 cover = STAIN_COVER * mix(0.6, 1.4, weathering);
-  vec3 sizes = STAIN_SIZES;
-  vec3 salts = STAIN_SALTS;
-  for (int layer = 0; layer < 3; layer++) {
-    albedo = stain(albedo, wall, wallWarp, sizes.x, salts.x, cover.x, upright, footprint);
-    sizes = sizes.yzx;
-    salts = salts.yzx;
-    cover = cover.yzx;
-  }
-  albedo *= 1.0 - 0.3 * upright * streaks(wall, footprint);
+  albedo = low.layer.a * albedo + low.layer.rgb;
   if (vProtrudes > 0.5) {
     float hooded = upright * (exp(-toHigh.y / 1.2) * mix(0.35, 1.0, valueNoise(vec2(p.x * 8.0, toHigh.y * 1.5)))
       + exp(-toHigh.y / 0.12)) + (level ? smoothstep(0.3, 0.7, fbm(q * 5.0 + 41.0)) : 0.0);
@@ -417,7 +257,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   }
 
   float cracked = 1.0 - smoothstep(0.025, 0.05, footprint);
-  if (cracked > 0.0) {
+  if (cracked > 0.0 && low.mask.y > 0.5) {
     Fracture fracture = fractures(p, fromLow, extent, upright, footprint);
     vec3 residue = fracture.residue < 0.5 ? uGrime : fracture.residue < 0.85 ? uSalt : uRust * 0.8;
     albedo = mix(albedo, residue, 0.5 * fracture.leach * cracked);
@@ -434,6 +274,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   }
 
   for (int layer = 0; layer < 2; layer++) {
+    if (low.mask.x < 0.5) break;
     float spacing = SPALL_SPACINGS[layer];
     vec2 cell = floor(p / spacing);
     Spall spot;
@@ -567,9 +408,8 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
     albedo *= 1.0 + (hash12(scuffCell + 8.0) > 0.3 ? 0.2 : -0.25) * scuff;
   }
 
-  float soot = scorch(vLocal, normal);
-  if (soot > 0.0) {
-    float dense = soot * mix(0.65, 1.2, fbm(q * 2.5 + 83.0));
+  if (low.dense > 0.0) {
+    float dense = low.dense;
     albedo = mix(albedo, mix(uConcreteWarm * 0.3, uGrime * 0.2, smoothstep(0.2, 0.6, dense)), min(1.3 * dense, 0.96));
   }
 
@@ -908,7 +748,7 @@ Concrete sheet(Concrete surface, vec2 tile) {
   surface.albedo = mix(uSalt * mix(0.5, 0.7, creases), uNewsprintAged * 0.6, 0.8 * taped);
   vec2 room;
   vec3 q = fromWindow(vLocal, tile, 0.0, room);
-  surface.emission = windowLight(room, vWorld.x - q.x) * 0.35 * (1.0 - taped) * mix(0.6, 1.0, creases);
+  surface.emission = windowLight(room) * 0.35 * (1.0 - taped) * mix(0.6, 1.0, creases);
   surface.detail = vec3(0.0, 0.0, 1.0);
   surface.height = 0.0;
   return surface;
@@ -1156,10 +996,12 @@ void main() {
   occlusion *= exp(-sunk / 0.3);
 
   vec3 origin = vWorld - vLocal;
+  Low low = sampleLow(normal);
   vec3 hit;
   vec3 hitNormal;
   float margin = 1e3;
-  int broken = CONCRETE ? carve(vLocal, normal, vMin, vMax, seed, cameraPosition - origin, hit, hitNormal, margin) : 0;
+  int broken = CONCRETE && low.mask.w > 0.5
+    ? carve(vLocal, normal, vMin, vMax, seed, cameraPosition - origin, hit, hitNormal, margin) : 0;
   bool studded = CONCRETE && abs(vMax.z - STUD_HEIGHT) < 0.005;
   float damage = studded ? studDamage(tile, vLocal.y) : 1.0;
   if (broken == 0 && studded && normal.z < 0.99 && damage < STUD_CHIPPED && damage >= STUD_MISSING) {
@@ -1167,7 +1009,7 @@ void main() {
   }
   mat3 frame = faceFrame(normal);
   Concrete surface = Concrete(uConcrete, 0.0, vec3(0.0, 0.0, 1.0), vec3(0.0));
-  if (CONCRETE) surface = concrete(frame, seed, weathering);
+  if (CONCRETE) surface = concrete(frame, seed, weathering, low);
   if (FITTINGS && abs(vKind - 3.0) < 0.5) surface = laundry(surface);
   else if (FITTINGS && abs(vKind - 6.0) < 0.5) surface = rag(surface);
   else if (FITTINGS && abs(vKind - 7.0) < 0.5) surface = sheet(surface, tile);
@@ -1202,17 +1044,17 @@ void main() {
   float distance = length(vWorld - cameraPosition);
   float depth = 1.0 - smoothstep(14.0, 40.0, distance);
   if (!GLASS && depth > 0.0) {
-    light += windowWash(vLocal, normal, shading, tile, origin.x, (step(abs(vKind - 3.0), 0.5) + step(5.5, vKind)) * 0.35)
+    light += windowWash(vLocal, normal, shading, tile, (step(abs(vKind - 3.0), 0.5) + step(5.5, vKind)) * 0.35)
       * depth * mix(0.4, 1.0, occlusion);
   }
 
-  vec3 haze = skyColor(gl_FragCoord.xy, uResolution, uVanish, uBacklights, uTime, uSky, uHaze, uRim);
+  vec3 haze = skyColor(gl_FragCoord.xy, uResolution);
   vec3 color = surface.albedo * light + surface.emission;
   float lit = 0.0;
   if (GLASS) {
     vec2 room;
     vec3 q = fromWindow(vLocal, tile, 0.0, room);
-    vec3 glow = windowLight(room, origin.x + vLocal.x - q.x);
+    vec3 glow = windowLight(room);
     lit = step(1e-3, glow.r + glow.g + glow.b);
     vec3 window = vLocal - q;
     vec2 pane = vLocal.xy - window.xy;
@@ -1268,18 +1110,8 @@ void main() {
   float side = exp(-max(uSideX - abs(vWorld.x), 0.0) / SIDE_FALLOFF);
   color += uRim * SIDE_LIGHT * facing * side * surface.albedo / uConcrete * mix(0.5, 1.0, occlusion);
 
-  float mist = fbm(vec3(vWorld.x * 0.05, building.y * 0.04, uTime * 0.04));
-  float fog = 1.0 - exp(-distance * uFogDensity * mix(0.5, 1.7, mist));
-  vec3 scatter = vec3(0.0);
-  if (depth > 0.0) {
-    float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
-    scatter = windowScatter(cameraPosition - origin, vLocal, tile, origin, jitter) * depth
-      * mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
-  }
-
-  color = mix(color, haze, fog * mix(1.0, 0.6, lit)) + SCATTER * scatter * (1.0 - 0.5 * fog);
-  vec3 climbed = vec3(0.0, uClimb, 0.0);
-  float cloud = clouds(cameraPosition + climbed, vWorld + climbed);
-  color = mix(color, haze, cloud);
+  float fog = 1.0 - exp(-distance * uFogDensity * mix(0.5, 1.7, low.mist));
+  color = mix(color, haze, fog * mix(1.0, 0.6, lit)) + SCATTER * low.scatter * (1.0 - 0.5 * fog);
+  color = mix(color, haze, low.cloud);
   outColor = vec4(color * uExposure, 1.0);
 }

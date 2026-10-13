@@ -3,6 +3,7 @@ precision highp float;
 #include "chunks/noise.glsl"
 #include "chunks/rooms.glsl"
 #include "chunks/inset.glsl"
+#include "chunks/presence.glsl"
 
 invariant gl_Position;
 
@@ -63,6 +64,11 @@ void main() {
     : aRole > 9.5 ? blockless(tile)
     : aRole > 8.5 ? (1.0 - blockless(tile)) * (1.0 - (1.0 - plant) * holed) : (1.0 - plant) * chosen;
   if (abs(aRole - 6.0) < 0.5 && glassBlocks(room)) shown = 0.0;
+  if (uPresence > 0.5) {
+    if (shown > 0.5) markPresent();
+    else gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+    return;
+  }
   if (shown < 0.5) {
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;

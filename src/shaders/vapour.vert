@@ -3,6 +3,7 @@ precision highp float;
 #include "chunks/noise-texture.glsl"
 #include "chunks/light.glsl"
 #include "chunks/windows.glsl"
+#include "chunks/presence.glsl"
 
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
@@ -39,6 +40,10 @@ void main() {
   } else if (!airConditioned(room) || hash12(room + 261.0) > 0.45) {
     return;
   }
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
 
   float seed = hash12(room + vec2(puff, vent) * 7.0);
   float age = fract(uTime / (LIFE * mix(0.8, 1.2, seed)) + puff / PUFFS + hash12(room + vent));
@@ -52,7 +57,7 @@ void main() {
   float distance = length(cameraPosition - world.xyz);
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
   vLight = nightLight(toCamera, world.xyz, 1.0, 1.0)
-    + windowWash(local, toCamera, toCamera, tile, world.x - local.x, 1.0);
+    + windowWash(local, toCamera, toCamera, tile, 1.0);
   vDensity = smoothstep(0.0, 0.12, age) * (1.0 - smoothstep(0.35, 1.0, age)) * exp(-distance * uFogDensity);
   vSeed = seed * 31.0;
   vCorner = position.xy;

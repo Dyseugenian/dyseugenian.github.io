@@ -1,6 +1,7 @@
 precision highp float;
 
 #include "chunks/cables.glsl"
+#include "chunks/presence.glsl"
 
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
@@ -28,6 +29,10 @@ void main() {
   vec2 room = roomOf(aTile, aStorey);
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
   if (!layCable(room, tile, aStorey, aIndex)) return;
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
 
   float t = position.y + 0.5;
   vec3 middle = cableAt(t);

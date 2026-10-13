@@ -9,6 +9,7 @@ uniform float uTileHeight;
 
 #include "chunks/hash.glsl"
 #include "chunks/rooms.glsl"
+#include "chunks/presence.glsl"
 
 in vec3 position;
 in vec3 normal;
@@ -51,6 +52,10 @@ void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
   if (plantFloor(room) || glassBlocks(room) || boarded(room) || hash12(room + 601.0) > GRILLE_CHANCE) return;
+  if (uPresence > 0.5) {
+    markPresent();
+    return;
+  }
   vec4 pick = vec4(hash12(room + 603.0), hash12(room + 605.0), hash12(room + 607.0), hash12(room + 609.0));
   float base = aStorey * 0.5 * uTileHeight + BOTTOM;
   float spacing = mix(0.32, 0.4, pick.y);

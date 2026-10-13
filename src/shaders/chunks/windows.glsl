@@ -7,37 +7,20 @@ uniform vec3 uLamp;
 uniform vec3 uLampSoft;
 uniform vec3 uLampCool;
 uniform vec3 uLampCold;
+uniform sampler2D uRoomLight;
+uniform vec2 uRoomAtlas;
+uniform float uRoomRow;
 
 const vec3 WINDOW = vec3(0.0, 2.175, -3.4);
 const float WINDOW_REACH = 4.5;
 const float WASH = 3.2;
-const float SWITCH_PERIOD = 30.0;
 const vec3 GLOW = vec3(1.2, 1.1, 1.8);
 const float SCATTER = 1.2;
 const int GLOW_STEPS = 8;
 
-vec3 windowLight(vec2 room, float x) {
-  if (abs(x) + 1.05 > uOuterX || plantFloor(room) || boarded(room) || burnt(room)) return vec3(0.0);
-  float cluster = valueNoise(room * vec2(0.9, 0.2) + 5.0);
-  float chance = mix(0.1, 0.6, smoothstep(0.3, 0.75, cluster));
-  float era = floor(uTime / SWITCH_PERIOD + hash12(room + 43.0));
-  float on = abs(step(hash12(room + 41.0), chance) - step(0.93, hash12(room + era * 1.37)));
-  if (on < 0.5) return vec3(0.0);
-  float pick = hash12(room + 19.0);
-  vec3 tint = pick < 0.5 ? uLamp : pick < 0.75 ? uLampSoft : pick < 0.88 ? uLampCool : uLampCold;
-  float faulty = step(0.75, pick) * step(pick, 0.88) * step(0.5, hash12(room + 47.0));
-  float dim = 1.0;
-  if (pick >= 0.88) {
-    float shot = floor(uTime * mix(0.3, 0.9, hash12(room + 49.0)) + 9.0 * hash12(room + 51.0));
-    tint = mix(uLampCold, uLampCool, hash12(room + shot * 0.73));
-    dim = mix(0.3, 1.0, hash12(room + shot * 1.91)) * mix(0.85, 1.0, valueNoise(vec2(uTime * 9.0, room.x + room.y)));
-  }
-  if (faulty > 0.5) {
-    float bursts = step(0.6, valueNoise(vec2(uTime * 0.7, room.x * 3.1 + room.y)));
-    float flicker = step(0.7, valueNoise(vec2(uTime * 14.0, room.x * 13.0 + room.y * 7.0)));
-    dim = 1.0 - 0.85 * bursts * flicker;
-  }
-  return tint * dim * mix(0.35, 1.0, hash12(room + 7.0));
+vec3 windowLight(vec2 room) {
+  vec2 texel = vec2(room.x + 0.5 * uRoomAtlas.x, mod(room.y - uRoomRow, 8192.0));
+  return textureLod(uRoomLight, (texel + 0.5) / uRoomAtlas, 0.0).rgb;
 }
 
 float lampDepth(vec2 room) {
@@ -56,7 +39,7 @@ vec3 fromWindow(vec3 point, vec2 tile, float below, out vec2 room) {
   return point - window;
 }
 
-vec3 windowWash(vec3 local, vec3 normal, vec3 shading, vec2 tile, float originX, float through) {
+vec3 windowWash(vec3 local, vec3 normal, vec3 shading, vec2 tile, float through) {
   vec3 light = vec3(0.0);
   for (int below = 0; below < 2; below++) {
     vec2 room;
@@ -67,7 +50,7 @@ vec3 windowWash(vec3 local, vec3 normal, vec3 shading, vec2 tile, float originX,
     float ahead = smoothstep(-0.1, 0.5, q.z / reach);
     float falloff = (1.0 - smoothstep(0.5 * WINDOW_REACH, WINDOW_REACH, reach)) / (0.5 + reach * reach);
     float wash = facing * ahead * falloff;
-    if (wash > 0.0) light += windowLight(room, originX + point.x - q.x) * mix(1.0, 0.35, lampDepth(room)) * WASH * wash;
+    if (wash > 0.0) light += windowLight(room) * mix(1.0, 0.35, lampDepth(room)) * WASH * wash;
   }
   return light;
 }
@@ -80,8 +63,6 @@ float recessGlow(vec3 q) {
 vec3 windowScatter(vec3 eye, vec3 local, vec2 tile, vec3 origin, float jitter) {
   vec3 ray = local - eye;
   float near = clamp((eye.z - 1.2) / (eye.z - local.z), 0.0, 1.0);
-  vec2 litRoom = vec2(-1.0);
-  vec3 glow = vec3(0.0);
   vec3 scatter = vec3(0.0);
   for (int i = 0; i < GLOW_STEPS; i++) {
     vec3 point = eye + ray * mix(near, 1.0, (float(i) + jitter) / float(GLOW_STEPS));
@@ -89,10 +70,7 @@ vec3 windowScatter(vec3 eye, vec3 local, vec2 tile, vec3 origin, float jitter) {
     vec3 q = fromWindow(point, tile, 0.0, room);
     float shape = recessGlow(q);
     if (shape < 1e-3) continue;
-    if (room != litRoom) {
-      glow = windowLight(room, origin.x + point.x - q.x);
-      litRoom = room;
-    }
+    vec3 glow = windowLight(room);
     if (glow.r + glow.g + glow.b < 1e-3) continue;
     vec3 drift = point + origin + vec3(0.0, uClimb - uTime * 0.2, 0.0);
     float dust = valueNoise(drift * vec3(2.5, 1.0, 2.5)) * mix(0.6, 1.4, valueNoise(drift * 9.0));

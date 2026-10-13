@@ -61,7 +61,7 @@ const CLOTHES_LINE = { height: 1.05, z: -0.8, span: 1.12, slots: 4, drop: 0.95, 
 
 const REACH = { recess: 3, jambs: 7, ledge: 15, parapet: 23 };
 
-const HOLE = { cover: 0.4, back: -2, rim: 0.35, segments: 64, rings: 12 };
+const HOLE = { cover: 0.4, back: -2, rim: 0.35, segments: 32, rings: 6 };
 
 const ROTOR = { radius: 0.2, hub: 0.045, blades: 4, pitch: 0.45, rim: 0.025, depth: 0.05 };
 
@@ -155,7 +155,7 @@ function front(min: Vector3, max: Vector3, hole?: Vector2, radius = 0): BufferGe
     new Vector2(min.x, max.y),
   ]);
   if (hole) outline.holes.push(new Path().absarc(hole.x, hole.y, radius, 0, 2 * Math.PI, true));
-  return new ShapeGeometry(outline, HOLE.segments / 2).translate(0, 0, max.z);
+  return new ShapeGeometry(outline, HOLE.segments).translate(0, 0, max.z);
 }
 
 function holedBlock(min: Vector3, max: Vector3): BufferGeometry {
@@ -364,6 +364,10 @@ export function inWindowBay(part: Part): boolean {
   return part.min.x >= PIER_MAX.x;
 }
 
+export function gated({ role }: Part): boolean {
+  return role !== undefined && [PLANT, OCCASIONAL, LAUNDRY, RAGGED, SHEETED, HOLED].includes(role);
+}
+
 function regular(part: Part): Part {
   return { ...part, role: REGULAR };
 }
@@ -394,12 +398,6 @@ function hiddenAbove(reach: number, part: Part): Part {
 
 function recessed(reach: number, part: Part): Part {
   return { ...part, reach, recessed: true };
-}
-
-export function seenIn(parts: Part[], row: number, outermost: boolean): Part[] {
-  return parts.filter(
-    ({ reach, recessed }) => (reach ?? Infinity) >= row && !(outermost && recessed),
-  );
 }
 
 export function tileParts(detail: Detail): Part[] {
@@ -513,7 +511,9 @@ function repeat({ x, y, z }: Vector3, count: number): number[] {
   return Array.from({ length: count }, () => [x, y, z]).flat();
 }
 
-export function facadeGeometry(parts: Part[], columns: number[], rows: number[]) {
+export type Tile = [column: number, row: number];
+
+export function facadeGeometry(parts: Part[], tiles: Tile[]) {
   const merged = partsGeometry(parts);
   const geometry = new InstancedBufferGeometry();
   geometry.setIndex(merged.index);
@@ -521,16 +521,14 @@ export function facadeGeometry(parts: Part[], columns: number[], rows: number[])
     geometry.setAttribute(name, attribute);
   }
   const offsets: number[] = [];
-  const tiles: number[] = [];
-  for (const column of columns) {
-    for (const row of rows) {
-      offsets.push(column * BAY, row * TILE_HEIGHT + (Math.abs(column) % 2) * STOREY, 0);
-      tiles.push(column, row);
-    }
+  const columns: number[] = [];
+  for (const [column, row] of tiles) {
+    offsets.push(column * BAY, row * TILE_HEIGHT + (Math.abs(column) % 2) * STOREY, 0);
+    columns.push(column, row);
   }
   geometry.setAttribute('aOffset', new InstancedBufferAttribute(new Float32Array(offsets), 3));
-  geometry.setAttribute('aTile', new InstancedBufferAttribute(new Float32Array(tiles), 2));
-  geometry.instanceCount = tiles.length / 2;
+  geometry.setAttribute('aTile', new InstancedBufferAttribute(new Float32Array(columns), 2));
+  geometry.instanceCount = tiles.length;
   return geometry;
 }
 

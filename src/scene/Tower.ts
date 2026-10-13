@@ -3,8 +3,10 @@ import {
   Color,
   Data3DTexture,
   DataTexture,
+  DepthTexture,
   GLSL3,
   Group,
+  type InstancedBufferGeometry,
   type IUniform,
   MathUtils,
   Mesh,
@@ -18,18 +20,25 @@ import {
   Vector3,
   Vector4,
   type WebGLRenderer,
+  WebGLRenderTarget,
 } from 'three';
 import vertexShader from '../shaders/facade.vert';
 import fragmentShader from '../shaders/facade.frag';
 import depthShader from '../shaders/facade-depth.frag';
+import censusShader from '../shaders/facade-census.frag';
+import lowShader from '../shaders/facade-low.frag';
 import type { FreeFly } from '../core/FreeFly';
 import type { Input } from '../core/Input';
 import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 import { beneathGrain } from '../post/Film';
+import { Presence, type Roll } from './Presence';
 import { Rebar } from './Rebar';
+import { RoomLight } from './RoomLight';
 import { traceMeshes } from './traces';
 import { Backdrop } from './Backdrop';
+import { Sky } from './Sky';
+import { LOW_LAYER, ROOM_LAYER, SKY_LAYER } from './layers';
 import { Beacons, beaconSpot } from './Beacons';
 import { Drift, STILL } from './Drift';
 import { MAP_METERS, bakeConcreteMaps } from './concreteMaps';
@@ -73,6 +82,8 @@ const VOLUMES: Record<Occlusion, { min: Vector3; size: Vector3 }> = {
 
 export class Tower extends Scene {
   readonly camera = new PerspectiveCamera(VIEW.fov, 1, 0.1, 400);
+  readonly low = new WebGLRenderTarget(1, 1, { count: 4, depthTexture: new DepthTexture(1, 1) });
+  private lowCamera = new PerspectiveCamera();
   private uniforms = {
     uTime: { value: 0 },
     uResolution: { value: new Vector2(1, 1) },
@@ -92,9 +103,29 @@ export class Tower extends Scene {
     uBeacon: { value: 0 },
     uSpot: { value: new Vector3(0, SPOT.y, SPOT.z) },
   };
+  private roomUniforms = {
+    uLamp: { value: new Color(palette.lamp).convertLinearToSRGB() },
+    uLampSoft: { value: new Color(palette.lampSoft).convertLinearToSRGB() },
+    uLampCool: { value: new Color(palette.lampCool).convertLinearToSRGB() },
+    uLampCold: { value: new Color(palette.lampCold).convertLinearToSRGB() },
+    uBay: { value: BAY },
+    uTileHeight: { value: TILE_HEIGHT },
+    uPlantEvery: { value: PLANT_EVERY },
+    uOuterX: { value: OUTER_X },
+  };
   private building = new Group();
+  private sky = new Sky(this.uniforms);
+  private roomLight = new RoomLight({
+    ...this.uniforms,
+    ...this.facadeUniforms,
+    ...this.roomUniforms,
+  });
   private materialUniforms: Record<string, IUniform>;
   private rebar: Rebar;
+  private presence = new Presence(this.facadeUniforms.uTilesClimbed);
+  private facadeMeshes: Mesh<InstancedBufferGeometry>[] = [];
+  private ahead: Roll | null = null;
+  private renderer!: WebGLRenderer;
   private occlusion: Record<Occlusion, { value: Data3DTexture }> = {
     tiles: { value: new Data3DTexture() },
     blockless: { value: new Data3DTexture() },
@@ -117,12 +148,11 @@ export class Tower extends Scene {
     this.materialUniforms = {
       ...this.uniforms,
       ...this.facadeUniforms,
+      ...this.presence.uniforms,
+      ...this.roomUniforms,
+      ...this.roomLight.uniforms,
       uConcrete: { value: new Color(palette.concrete).convertLinearToSRGB() },
       uConcreteWarm: { value: new Color(palette.concreteWarm).convertLinearToSRGB() },
-      uLamp: { value: new Color(palette.lamp).convertLinearToSRGB() },
-      uLampSoft: { value: new Color(palette.lampSoft).convertLinearToSRGB() },
-      uLampCool: { value: new Color(palette.lampCool).convertLinearToSRGB() },
-      uLampCold: { value: new Color(palette.lampCold).convertLinearToSRGB() },
       uSalt: { value: new Color(palette.salt).convertLinearToSRGB() },
       uGrime: { value: new Color(palette.grime).convertLinearToSRGB() },
       uCableGrey: { value: new Color(palette.cableGrey).convertLinearToSRGB() },
@@ -138,15 +168,19 @@ export class Tower extends Scene {
       uDenim: { value: new Color(palette.denim).convertLinearToSRGB() },
       uMadder: { value: new Color(palette.madder).convertLinearToSRGB() },
       uCoral: { value: new Color(palette.coral).convertLinearToSRGB() },
-      uBay: { value: BAY },
-      uTileHeight: { value: TILE_HEIGHT },
-      uPlantEvery: { value: PLANT_EVERY },
-      uOuterX: { value: OUTER_X },
       uSideX: { value: SIDE_X },
       uBeaconSpot: { value: beaconSpot(OUTER_X) },
       uSurfaceMeters: { value: MAP_METERS },
       uLight: { value: new Vector3(-0.45, 0.7, 0.55).normalize() },
       uFogDensity: { value: 0.022 },
+      uSkyMap: { value: this.sky.target.texture },
+      uLowLayer: { value: this.low.textures[0] },
+      uLowAir: { value: this.low.textures[1] },
+      uLowShape: { value: this.low.textures[2] },
+      uLowMask: { value: this.low.textures[3] },
+      uLowDepth: { value: this.low.depthTexture },
+      uLowSize: { value: new Vector2(1, 1) },
+      uDepthRange: { value: new Vector2(this.camera.near, this.camera.far) },
     };
     this.rebar = new Rebar(this.materialUniforms);
     this.building.add(
@@ -154,16 +188,26 @@ export class Tower extends Scene {
       this.rebar,
     );
     this.camera.position.z = VIEW.distance;
-    this.add(new Backdrop(this.uniforms), this.building, this.veil);
+    this.add(
+      this.sky,
+      this.roomLight,
+      new Backdrop(this.materialUniforms),
+      this.building,
+      this.veil,
+    );
   }
 
   async load(renderer: WebGLRenderer): Promise<void> {
+    this.renderer = renderer;
     this.build(await this.baking.geometry);
     const [maps, surface] = await Promise.all([
       this.baking.maps,
       bakeConcreteMaps(renderer),
       compileInTurns(renderer, this, this.camera),
+      this.presence.compile(renderer),
     ]);
+    this.applyRoll(await this.presence.take(renderer, 0));
+    this.takeAhead(1);
     this.uniforms.uFbm.value = fbmTexture(maps.fbm);
     this.uniforms.uSurface.value = surface;
     renderer.initTexture(this.uniforms.uFbm.value);
@@ -175,12 +219,7 @@ export class Tower extends Scene {
 
   private build({ facade, rebar, traces }: TowerGeometry): void {
     const materials = new Map<string, RawShaderMaterial>();
-    const meshes = facade.map(({ geometry, surface, occlusion }) => {
-      const key = `${occlusion} ${surface}`;
-      const material = materials.get(key) ?? this.facadeMaterial(surface, occlusion);
-      materials.set(key, material);
-      return new Mesh(unpackGeometry(geometry), material);
-    });
+    const lowMaterials = new Map<number, RawShaderMaterial>();
     const depthMaterial = new RawShaderMaterial({
       glslVersion: GLSL3,
       vertexShader,
@@ -188,11 +227,48 @@ export class Tower extends Scene {
       uniforms: this.materialUniforms,
       colorWrite: false,
     });
-    const depthMeshes = meshes.map((mesh) => new Mesh(mesh.geometry, depthMaterial));
-    for (const mesh of meshes) mesh.renderOrder = 1;
-    for (const mesh of [...meshes, ...depthMeshes]) mesh.frustumCulled = false;
+    const censusMaterial = new RawShaderMaterial({
+      glslVersion: GLSL3,
+      vertexShader,
+      fragmentShader: censusShader,
+      uniforms: this.materialUniforms,
+    });
+    for (const { geometry: baked, surface, occlusion, census } of facade) {
+      const key = `${occlusion} ${surface}`;
+      const material = materials.get(key) ?? this.facadeMaterial(surface, occlusion);
+      materials.set(key, material);
+      const lowMaterial = lowMaterials.get(surface) ?? this.lowMaterial(surface);
+      lowMaterials.set(surface, lowMaterial);
+      const geometry = unpackGeometry(baked);
+      const mesh = new Mesh(geometry, material);
+      const low = new Mesh(geometry, lowMaterial);
+      const lowDepth = new Mesh(geometry, depthMaterial);
+      mesh.renderOrder = low.renderOrder = 1;
+      low.layers.set(LOW_LAYER);
+      lowDepth.layers.set(LOW_LAYER);
+      const passes = [lowDepth, low, new Mesh(geometry, depthMaterial), mesh];
+      for (const pass of passes) pass.frustumCulled = false;
+      this.facadeMeshes.push(...passes);
+      this.building.add(...passes);
+      if (census) {
+        this.presence.watch(mesh, {
+          material: censusMaterial,
+          vertex: [
+            { name: 'aRole', value: [census.role] },
+            { name: 'aMin', value: census.min },
+          ],
+        });
+      }
+    }
     this.rebar.fill(rebar);
-    this.building.add(...depthMeshes, ...meshes, ...traceMeshes(traces, this.materialUniforms));
+    const traced = traceMeshes(traces, this.materialUniforms);
+    for (const mesh of traced) this.presence.watch(mesh);
+    this.building.add(...traced);
+  }
+
+  private applyRoll(roll: Roll): void {
+    this.presence.apply(roll);
+    for (const mesh of this.facadeMeshes) mesh.visible = mesh.geometry.instanceCount > 0;
   }
 
   private facadeMaterial(surface: number, occlusion: Occlusion): RawShaderMaterial {
@@ -212,6 +288,35 @@ export class Tower extends Scene {
     });
   }
 
+  private lowMaterial(surface: number): RawShaderMaterial {
+    return new RawShaderMaterial({
+      defines: { SURFACE: surface },
+      glslVersion: GLSL3,
+      vertexShader,
+      fragmentShader: lowShader,
+      uniforms: this.materialUniforms,
+    });
+  }
+
+  offscreenTarget(object: Object3D): WebGLRenderTarget | null {
+    if (object.layers.isEnabled(SKY_LAYER)) return this.sky.target;
+    if (object.layers.isEnabled(ROOM_LAYER)) return this.roomLight.target;
+    return object.layers.isEnabled(LOW_LAYER) ? this.low : null;
+  }
+
+  renderOffscreen(renderer: WebGLRenderer): void {
+    this.sky.render(renderer);
+    this.roomLight.render(renderer, this.facadeUniforms.uTilesClimbed.value);
+    this.lowCamera.copy(this.camera);
+    this.lowCamera.layers.set(LOW_LAYER);
+    const target = renderer.getRenderTarget();
+    renderer.setRenderTarget(this.low);
+    renderer.setClearColor(0, 0);
+    renderer.clear();
+    renderer.render(this, this.lowCamera);
+    renderer.setRenderTarget(target);
+  }
+
   setOpacity(opacity: number): void {
     this.veil.uniforms.uOpacity.value = 1 - opacity;
     this.veil.visible = opacity < 1;
@@ -219,6 +324,9 @@ export class Tower extends Scene {
 
   fit(aspect: number, width: number, height: number): void {
     this.uniforms.uResolution.value.set(width, height);
+    this.sky.fit(width, height);
+    this.low.setSize(Math.ceil(width / 2), Math.ceil(height / 2));
+    this.materialUniforms.uLowSize!.value.set(this.low.width, this.low.height);
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
   }
@@ -241,6 +349,7 @@ export class Tower extends Scene {
       this.lift -= up * TILE_HEIGHT;
       uTilesClimbed.value = (uTilesClimbed.value + up + TILE_SEEDS) % TILE_SEEDS;
       this.rebar.climb(uTilesClimbed.value);
+      this.turnRoll(uTilesClimbed.value);
     }
     this.building.position.y = -this.lift;
 
@@ -253,6 +362,25 @@ export class Tower extends Scene {
       ...this.onScreen(BACKLIGHTS[0]),
       ...this.onScreen(BACKLIGHTS[1]),
     );
+  }
+
+  private turnRoll(tilesClimbed: number): void {
+    if (this.ahead?.tilesClimbed === tilesClimbed) {
+      this.applyRoll(this.ahead);
+    } else {
+      this.presence.take(this.renderer, tilesClimbed).then((roll) => {
+        if (roll.tilesClimbed === this.facadeUniforms.uTilesClimbed.value) this.applyRoll(roll);
+      });
+    }
+    this.ahead = null;
+    this.takeAhead((tilesClimbed + 1) % TILE_SEEDS);
+  }
+
+  private takeAhead(tilesClimbed: number): void {
+    this.presence.take(this.renderer, tilesClimbed).then((roll) => {
+      const current = this.facadeUniforms.uTilesClimbed.value;
+      if (roll.tilesClimbed === (current + 1) % TILE_SEEDS) this.ahead = roll;
+    });
   }
 
   private flyCamera(dt: number, flight: FreeFly): number {
