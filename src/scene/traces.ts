@@ -58,7 +58,7 @@ export type TraceKind =
   | 'grilles'
   | 'boards';
 
-const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameters]> = {
+export const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameters]> = {
   vapour: [vapourVertex, vapourFragment, LAYERED],
   leak: [leakVertex, leakFragment, LAYERED],
   motes: [motesVertex, motesFragment, { ...LAYERED, blending: AdditiveBlending }],

@@ -39,7 +39,7 @@ function isDrawn(object: Object3D): object is Drawn {
 export class App {
   readonly quality = new Quality(() => this.applyQuality());
 
-  private renderer: WebGLRenderer;
+  readonly renderer: WebGLRenderer;
   private scene = new Scene();
   private camera = new PerspectiveCamera(22, 1, 0.1, 100);
   private loop = new Loop((frame) => this.update(frame));
@@ -50,7 +50,7 @@ export class App {
   private roleText = new RoleText(this.input);
   private film = new Film(this.target.texture, this.roleText.uniforms);
   readonly logo = new Logo(this.input);
-  private tower = new Tower(this.input);
+  readonly tower = new Tower(this.input);
   private view = new ArrayCamera([this.tower.camera, this.camera]);
   private renderScale: RenderScale;
   private isTowerRevealed = false;

@@ -19,6 +19,10 @@ if (canvas && context) {
     const { mountDebugPanel } = await import('./debug/panel');
     mountDebugPanel(app);
   }
+  if (query.has('reach')) {
+    const { measureReach } = await import('./debug/reach');
+    await measureReach(app);
+  }
 
   if (!onlyBuilding) await app.logo.ready;
   const logoCompiled = app.compile();

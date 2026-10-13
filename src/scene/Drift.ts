@@ -19,6 +19,14 @@ type Range = { min: number; max: number };
 type Name = keyof typeof CHANNELS;
 export type Pose = Record<Name, number> & { zoom: number; pace: number };
 
+export function driftExtent(): Record<Name | 'zoom', number> {
+  const extent = { zoom: ZOOM.degrees } as Record<Name | 'zoom', number>;
+  for (const [name, { breath, settle, sway }] of Object.entries(CHANNELS)) {
+    extent[name as Name] = breath + settle + Math.abs(sway);
+  }
+  return extent;
+}
+
 export const STILL: Pose = { x: 0, y: 0, pitch: 0, yaw: 0, roll: 0, zoom: 0, pace: 1 };
 
 function between({ min, max }: Range): number {

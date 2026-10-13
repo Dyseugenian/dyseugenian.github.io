@@ -1,8 +1,8 @@
 import {
   BoxGeometry,
+  type BufferGeometry,
   CylinderGeometry,
   Float32BufferAttribute,
-  type InstancedBufferGeometry,
   PlaneGeometry,
   RingGeometry,
   Vector3,
@@ -12,6 +12,7 @@ import {
   type BakedGeometry,
   COLUMNS,
   type Detail,
+  MIXED_FACE,
   OCCLUSION_MIN,
   OCCLUSION_SIZE,
   type Part,
@@ -26,6 +27,9 @@ import {
   inWindowBay,
   occluders,
   packGeometry,
+  partKey,
+  pieceGeometry,
+  standsIn,
   storeyGeometry,
   surfaceOf,
   surroundings,
@@ -35,6 +39,7 @@ import type { OcclusionBake } from './occlusion';
 import { pigeonGeometry } from './pigeon';
 import type { Patch, RebarBlocks } from './Rebar';
 import type { TraceKind } from './traces';
+import reach from './reach.json';
 
 const BLOCKLESS_COLUMNS = [0, 1];
 const DUCT_COLUMNS = [-2, 3];
@@ -93,7 +98,7 @@ const BAY_COLUMNS = Array.from(
 const BLOCKED_COLUMNS = BAY_COLUMNS.filter(
   (column) => !BLOCKLESS_COLUMNS.includes(column) && column !== COLUMNS.right,
 );
-const TRACE_COLUMNS = [COLUMNS.left, ...BAY_COLUMNS];
+export const TRACE_COLUMNS = [COLUMNS.left, ...BAY_COLUMNS];
 
 export function towerGeometry(): {
   geometry: TowerGeometry;
@@ -125,11 +130,7 @@ export function towerGeometry(): {
   ];
   return {
     geometry: {
-      facade: [
-        ...tileMeshes(),
-        edgeMesh(leftEdge.parts, COLUMNS.left, 'left'),
-        edgeMesh(rightEdge.parts, COLUMNS.right + 1, 'right'),
-      ],
+      facade: partBands().flatMap(bandMeshes),
       rebar: {
         groups: rebarGroups.map(({ parts, around, columns }) => ({
           patches: parts.flatMap((part) => exposedPatches(part, around)),
@@ -148,69 +149,208 @@ export function towerGeometry(): {
   };
 }
 
-function seen(part: Part, column: number, row: number): boolean {
-  if ((part.reach ?? Infinity) < row) return false;
-  if (column === COLUMNS.left) return inWindowBay(part) && !part.recessed;
-  if (column === COLUMNS.right) return !part.recessed;
-  return true;
-}
+type Spans = Record<string, number[]>;
+type Faces = Record<string, Spans>;
+const REACH = reach as {
+  parts: Record<string, Record<string, Faces>>;
+  traces: Record<string, Spans>;
+};
+const MESH_BUDGET = { fixed: 12, full: 8, reduced: 6, distant: 6, left: 3, right: 3 };
 
-function groupKey(part: Part): string {
-  const storey = gated(part) ? Math.floor(part.min.y / STOREY + 0.01) : 0;
-  return [
-    gated(part) ? part.role : 0,
-    storey,
-    part.reach ?? -1,
-    part.recessed ? 1 : 0,
-    inWindowBay(part) ? 1 : 0,
-    surfaceOf(part),
-  ].join(' ');
-}
+export type PartBand = {
+  name: Detail | 'fixed' | 'left' | 'right';
+  parts: Part[];
+  columns: number[];
+  rows: number[];
+  occlusion?: Occlusion;
+};
 
-function groupMeshes(parts: Part[], rows: number[]): FacadeMesh[] {
-  const groups = new Map<string, Part[]>();
-  for (const part of parts) {
-    const key = groupKey(part);
-    groups.set(key, [...(groups.get(key) ?? []), part]);
-  }
-  return [...groups.values()].flatMap((group) => {
-    const first = group[0]!;
-    const census = gated(first) ? { role: first.role!, min: first.min.toArray() } : null;
-    return (['tiles', 'blockless'] as const).flatMap((occlusion) => {
-      const tiles = TRACE_COLUMNS.filter(
-        (column) => BLOCKLESS_COLUMNS.includes(column) === (occlusion === 'blockless'),
-      ).flatMap((column) =>
-        rows.filter((row) => seen(first, column, row)).map((row): Tile => [column, row]),
-      );
-      if (tiles.length === 0) return [];
-      const geometry = packGeometry(facadeGeometry(group, tiles));
-      return [{ geometry, surface: surfaceOf(first), occlusion, census }];
-    });
-  });
-}
-
-function tileMeshes(): FacadeMesh[] {
+export function partBands(): PartBand[] {
   const bands: [Detail, number[]][] = [
     ['full', TILE_ROWS.filter((row) => row < DETAIL_ROWS.full)],
     ['reduced', TILE_ROWS.filter((row) => row >= DETAIL_ROWS.full && row < DETAIL_ROWS.reduced)],
     ['distant', TILE_ROWS.filter((row) => row >= DETAIL_ROWS.reduced)],
   ];
   const fittings = (parts: Part[]) => parts.filter((part) => surfaceOf(part) === SURFACES.fittings);
-  const fixed = tileParts('full').filter((part) => surfaceOf(part) !== SURFACES.fittings);
+  const full = tileParts('full');
+  const windows = full.filter(inWindowBay);
   return [
-    ...groupMeshes(fixed, TILE_ROWS),
-    ...bands.flatMap(([detail, rows]) => groupMeshes(fittings(tileParts(detail)), rows)),
+    {
+      name: 'fixed',
+      parts: full.filter((part) => surfaceOf(part) !== SURFACES.fittings),
+      columns: TRACE_COLUMNS,
+      rows: TILE_ROWS,
+    },
+    ...bands.map(([name, rows]): PartBand => ({
+      name,
+      parts: fittings(tileParts(name)),
+      columns: TRACE_COLUMNS,
+      rows,
+    })),
+    {
+      name: 'left',
+      parts: edge(-1, windows).parts,
+      columns: [COLUMNS.left],
+      rows: TILE_ROWS,
+      occlusion: 'left',
+    },
+    {
+      name: 'right',
+      parts: edge(1, windows).parts,
+      columns: [COLUMNS.right + 1],
+      rows: TILE_ROWS,
+      occlusion: 'right',
+    },
   ];
 }
 
-function edgeMesh(parts: Part[], column: number, occlusion: Occlusion): FacadeMesh {
-  const tiles = TILE_ROWS.map((row): Tile => [column, row]);
-  return {
-    geometry: packGeometry(facadeGeometry(parts, tiles)),
-    surface: SURFACES.concrete,
+function spanTiles(spans: Spans | undefined, columns: number[], rows: number[]): Tile[] {
+  if (spans === undefined) return [];
+  return Object.entries(spans).flatMap(([column, [first, last]]) => {
+    const at = Number(column);
+    if (!columns.includes(at)) return [];
+    return rows.filter((row) => row >= first! && row <= last!).map((row): Tile => [at, row]);
+  });
+}
+
+type Group = {
+  gating: string;
+  tiles: Map<string, Tile>;
+  pieces: BufferGeometry[];
+  triangles: number;
+};
+
+function tileKey(tiles: Tile[]): string {
+  return tiles
+    .map(([column, row]) => column + ',' + row)
+    .sort()
+    .join(' ');
+}
+
+function gatingKey(part: Part): string {
+  const storey = gated(part) ? Math.floor(part.min.y / STOREY + 0.01) : 0;
+  return [gated(part) ? part.role : 0, storey, surfaceOf(part), inWindowBay(part) ? 1 : 0].join(
+    ' ',
+  );
+}
+
+function variants(band: PartBand, tiles: Tile[]): [Occlusion, Tile[]][] {
+  if (band.occlusion) return [[band.occlusion, tiles]];
+  return (['tiles', 'blockless'] as const).map((occlusion) => [
     occlusion,
-    census: null,
-  };
+    tiles.filter(([column]) => BLOCKLESS_COLUMNS.includes(column) === (occlusion === 'blockless')),
+  ]);
+}
+
+function pieceGroups(band: PartBand): Group[] {
+  const table = REACH.parts[band.name]!;
+  const groups = new Map<string, Group>();
+  for (const part of band.parts) {
+    const faces = table[partKey(part)];
+    if (faces === undefined) throw new Error('Unmeasured part ' + band.name + ' ' + partKey(part));
+    const columns = band.occlusion
+      ? band.columns
+      : band.columns.filter((column) => standsIn(part, column));
+    const byFace = new Map<number, Tile[]>();
+    const all = new Map<string, Tile>();
+    for (let face = 0; face < MIXED_FACE; face++) {
+      const tiles = spanTiles(faces[face], columns, band.rows);
+      byFace.set(face, tiles);
+      for (const tile of tiles) all.set(tile.join(), tile);
+    }
+    byFace.set(MIXED_FACE, [...all.values()]);
+    const sets = new Map<string, { faces: Set<number>; tiles: Tile[] }>();
+    for (const [face, tiles] of byFace) {
+      if (tiles.length === 0) continue;
+      const key = tileKey(tiles);
+      const set = sets.get(key) ?? { faces: new Set<number>(), tiles };
+      set.faces.add(face);
+      sets.set(key, set);
+    }
+    for (const [key, { faces: kept, tiles }] of sets) {
+      const gating = gatingKey(part);
+      const piece = pieceGeometry({ part, faces: kept.size > MIXED_FACE ? null : kept });
+      const group = groups.get(gating + ' ' + key) ?? {
+        gating,
+        tiles: new Map(tiles.map((tile) => [tile.join(), tile])),
+        pieces: [],
+        triangles: 0,
+      };
+      group.pieces.push(piece);
+      group.triangles += piece.index!.count / 3;
+      groups.set(gating + ' ' + key, group);
+    }
+  }
+  return [...groups.values()];
+}
+
+function mergeGroups(groups: Group[], budget: number): Group[] {
+  const cost = (group: Group) => group.tiles.size * group.triangles;
+  while (groups.length > budget) {
+    let best: [number, number] | null = null;
+    let bestCost = Infinity;
+    for (let a = 0; a < groups.length; a++) {
+      for (let b = a + 1; b < groups.length; b++) {
+        const [one, other] = [groups[a]!, groups[b]!];
+        if (one.gating !== other.gating) continue;
+        const union = new Set([...one.tiles.keys(), ...other.tiles.keys()]).size;
+        const extra = union * (one.triangles + other.triangles) - cost(one) - cost(other);
+        if (extra < bestCost) {
+          bestCost = extra;
+          best = [a, b];
+        }
+      }
+    }
+    if (best === null) break;
+    const [a, b] = best;
+    const [one, other] = [groups[a]!, groups[b]!];
+    groups[a] = {
+      gating: one.gating,
+      tiles: new Map([...one.tiles, ...other.tiles]),
+      pieces: [...one.pieces, ...other.pieces],
+      triangles: one.triangles + other.triangles,
+    };
+    groups.splice(b, 1);
+  }
+  return groups;
+}
+
+function bandMeshes(band: PartBand): FacadeMesh[] {
+  return mergeGroups(pieceGroups(band), MESH_BUDGET[band.name]).flatMap(({ pieces, tiles }) => {
+    const first = pieces[0]!;
+    const role = first.getAttribute('aRole').getX(0);
+    const min = first.getAttribute('aMin');
+    const part: Part = {
+      kind: first.getAttribute('aKind').getX(0),
+      role,
+      min: new Vector3(min.getX(0), min.getY(0), min.getZ(0)),
+      max: new Vector3(),
+    };
+    const census = gated(part) ? { role, min: part.min.toArray() } : null;
+    return variants(band, [...tiles.values()]).flatMap(([occlusion, subset]) =>
+      subset.length === 0
+        ? []
+        : [
+            {
+              geometry: packGeometry(facadeGeometry(pieces, subset)),
+              surface: surfaceOf(part),
+              occlusion,
+              census,
+            },
+          ],
+    );
+  });
+}
+
+function traceTiles(kind: TraceKind, columns: number[], rows: number[]): Tile[] {
+  const last = TILE_ROWS[TILE_ROWS.length - 1]!;
+  const spans = Object.fromEntries(
+    Object.entries(REACH.traces[kind]!).map(([column, [first, top]]) => [
+      column,
+      [first!, Math.min(top! + 1, last)],
+    ]),
+  );
+  return spanTiles(spans, columns, rows);
 }
 
 function faceFrame(normal: Vector3): [Vector3, Vector3] {
@@ -311,7 +451,15 @@ function ductFittingShape() {
   return shape;
 }
 
-function traceGeometries(): TraceGeometry[] {
+export type TraceLayout = {
+  kind: TraceKind;
+  shape: BufferGeometry;
+  columns: number[];
+  tiles: Tile[];
+  count: number;
+};
+
+export function traceLayouts(): TraceLayout[] {
   const traceRows = TILE_ROWS.filter((row) => row >= -TRACE_ROWS.below && row < TRACE_ROWS.above);
   const cableRows = Array.from(
     { length: CABLE_ROWS.below + CABLE_ROWS.above },
@@ -320,57 +468,58 @@ function traceGeometries(): TraceGeometry[] {
   const below = (rows: number[], last: number) => rows.filter((row) => row < last);
   const quad = new PlaneGeometry(1, 1);
   const box = new BoxGeometry(1, 1, 1);
-  const cables = (rows: number[], segments: number): [TraceKind, InstancedBufferGeometry][] => [
-    ['wires', storeyGeometry(new PlaneGeometry(1, 1, 1, segments), TRACE_COLUMNS, rows, WIRES)],
-    ['fasteners', storeyGeometry(box, TRACE_COLUMNS, rows, WIRES * FASTENERS)],
+  const layout = (
+    kind: TraceKind,
+    shape: BufferGeometry,
+    columns: number[],
+    rows: number[],
+    count: number,
+  ): TraceLayout => ({ kind, shape, columns, tiles: traceTiles(kind, columns, rows), count });
+  const cables = (rows: number[], segments: number): TraceLayout[] => [
+    layout('wires', new PlaneGeometry(1, 1, 1, segments), TRACE_COLUMNS, rows, WIRES),
+    layout('fasteners', box, TRACE_COLUMNS, rows, WIRES * FASTENERS),
   ];
-  const geometries: [TraceKind, InstancedBufferGeometry][] = [
-    ['spouts', storeyGeometry(spoutShape(), TRACE_COLUMNS, below(traceRows, SEEN_ROWS.spouts), 1)],
-    ['drips', storeyGeometry(quad, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.spouts), SPOUT_DROPS)],
-    [
-      'grilles',
-      storeyGeometry(box, GRILLE_COLUMNS, below(traceRows, SEEN_ROWS.grilles), GRILLE_BARS),
-    ],
-    ['boards', storeyGeometry(box, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.boards), BOARDS)],
-    [
+  return [
+    layout('spouts', spoutShape(), TRACE_COLUMNS, below(traceRows, SEEN_ROWS.spouts), 1),
+    layout('drips', quad, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.spouts), SPOUT_DROPS),
+    layout('grilles', box, GRILLE_COLUMNS, below(traceRows, SEEN_ROWS.grilles), GRILLE_BARS),
+    layout('boards', box, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.boards), BOARDS),
+    layout(
       'ducts',
-      storeyGeometry(
-        new CylinderGeometry(1, 1, 1, 24, DUCT_RINGS, true),
-        DUCT_COLUMNS,
-        below(TILE_ROWS, SEEN_ROWS.ducts),
-        2,
-      ),
-    ],
-    [
-      'ductFittings',
-      storeyGeometry(ductFittingShape(), DUCT_COLUMNS, below(TILE_ROWS, SEEN_ROWS.ducts), 3),
-    ],
-    ['vapour', storeyGeometry(quad, TRACE_COLUMNS, traceRows, PUFFS)],
-    ['leak', storeyGeometry(quad, TRACE_COLUMNS, traceRows, LEAK_PIECES)],
-    ['motes', storeyGeometry(quad, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.motes), MOTES)],
+      new CylinderGeometry(1, 1, 1, 24, DUCT_RINGS, true),
+      DUCT_COLUMNS,
+      below(TILE_ROWS, SEEN_ROWS.ducts),
+      2,
+    ),
+    layout('ductFittings', ductFittingShape(), DUCT_COLUMNS, below(TILE_ROWS, SEEN_ROWS.ducts), 3),
+    layout('vapour', quad, TRACE_COLUMNS, traceRows, PUFFS),
+    layout('leak', quad, TRACE_COLUMNS, traceRows, LEAK_PIECES),
+    layout('motes', quad, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.motes), MOTES),
     ...cables(below(cableRows, CABLE_ROWS.near), CABLE_SEGMENTS.near),
     ...cables(
       cableRows.filter((row) => row >= CABLE_ROWS.near),
       CABLE_SEGMENTS.far,
     ),
-    [
+    layout(
       'pigeons',
-      storeyGeometry(
-        pigeonGeometry('full'),
-        TRACE_COLUMNS,
-        below(traceRows, PIGEON_ROWS.near),
-        PIGEONS,
-      ),
-    ],
-    [
+      pigeonGeometry('full'),
+      TRACE_COLUMNS,
+      below(traceRows, PIGEON_ROWS.near),
+      PIGEONS,
+    ),
+    layout(
       'pigeons',
-      storeyGeometry(
-        pigeonGeometry('distant'),
-        TRACE_COLUMNS,
-        traceRows.filter((row) => row >= PIGEON_ROWS.near && row < SEEN_ROWS.pigeons),
-        PIGEONS,
-      ),
-    ],
+      pigeonGeometry('distant'),
+      TRACE_COLUMNS,
+      traceRows.filter((row) => row >= PIGEON_ROWS.near && row < SEEN_ROWS.pigeons),
+      PIGEONS,
+    ),
   ];
-  return geometries.map(([kind, geometry]) => ({ kind, geometry: packGeometry(geometry) }));
+}
+
+function traceGeometries(): TraceGeometry[] {
+  return traceLayouts().map(({ kind, shape, tiles, count }) => ({
+    kind,
+    geometry: packGeometry(storeyGeometry(shape, tiles, count)),
+  }));
 }

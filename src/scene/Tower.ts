@@ -61,10 +61,10 @@ import {
   unpackGeometry,
 } from './facade';
 
-const VIEW = { fov: 64, distance: 6.5, vanish: 0.82 };
-const PITCH = Math.atan(1 / (VIEW.vanish * Math.tan(MathUtils.degToRad(VIEW.fov / 2))));
+export const VIEW = { fov: 64, distance: 6.5, vanish: 0.82 };
+export const PITCH = Math.atan(1 / (VIEW.vanish * Math.tan(MathUtils.degToRad(VIEW.fov / 2))));
 const CLIMB_SPEED = 0.9;
-const SWAY = { pitch: 0.12, shift: 1 };
+export const SWAY = { pitch: 0.12, shift: 1 };
 const SPOT = { reach: 8, y: -4, z: 3 };
 const REDUCED_MOTION_SPEED = 0.1;
 const TILE_SEEDS = 4096;
@@ -120,7 +120,7 @@ export class Tower extends Scene {
     ...this.facadeUniforms,
     ...this.roomUniforms,
   });
-  private materialUniforms: Record<string, IUniform>;
+  readonly materialUniforms: Record<string, IUniform>;
   private rebar: Rebar;
   private presence = new Presence(this.facadeUniforms.uTilesClimbed);
   private facadeMeshes: Mesh<InstancedBufferGeometry>[] = [];

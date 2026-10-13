@@ -59,8 +59,6 @@ const RAG_SIZE = { width: 0.42, drop: 0.5, z: -1.27 };
 const SHEET_Z = -2.75;
 const CLOTHES_LINE = { height: 1.05, z: -0.8, span: 1.12, slots: 4, drop: 0.95, thickness: 0.012 };
 
-const REACH = { recess: 3, jambs: 7, ledge: 15, parapet: 23 };
-
 const HOLE = { cover: 0.4, back: -2, rim: 0.35, segments: 32, rings: 6 };
 
 const ROTOR = { radius: 0.2, hub: 0.045, blades: 4, pitch: 0.45, rim: 0.025, depth: 0.05 };
@@ -79,9 +77,11 @@ export type Part = {
   protrudes?: boolean;
   role?: number;
   shape?: BufferGeometry;
-  reach?: number;
-  recessed?: boolean;
 };
+
+export type Piece = { part: Part; faces: Set<number> | null };
+
+export const MIXED_FACE = 6;
 
 type Span = [number, number];
 
@@ -216,10 +216,7 @@ function airConditioner(y: number, detail: Detail): Part[] {
   const intake = (bottom + top) / 2 + 0.02;
   const parts = [
     part(APPLIANCE, [-0.425, 0.425], [bottom, top], [back, front]),
-    hiddenAbove(
-      REACH.jambs,
-      part(APPLIANCE, [0.425, 0.465], [bottom + 0.1, bottom + 0.14], [-3.05, back + 0.08]),
-    ),
+    part(APPLIANCE, [0.425, 0.465], [bottom + 0.1, bottom + 0.14], [-3.05, back + 0.08]),
     part(TRIM, [-0.44, 0.44], [top, top + 0.02], [back - 0.015, front + 0.02]),
   ];
   if (detail !== 'distant') {
@@ -231,10 +228,7 @@ function airConditioner(y: number, detail: Detail): Part[] {
     );
   }
   if (detail === 'full') {
-    parts.push(
-      shaped(TRIM, shroud(fan, 24)),
-      hiddenAbove(REACH.jambs, shaped(FAN, rotor(fan, 12, 5))),
-    );
+    parts.push(shaped(TRIM, shroud(fan, 24)), shaped(FAN, rotor(fan, 12, 5)));
     for (let slat = intake - 0.2; slat < intake + 0.21; slat += 0.04) {
       parts.push(part(TRIM, [-0.375, -0.075], [slat - 0.007, slat + 0.007], [front, front + 0.02]));
     }
@@ -244,10 +238,7 @@ function airConditioner(y: number, detail: Detail): Part[] {
     );
   }
   if (detail === 'reduced') {
-    parts.push(
-      shaped(TRIM, shroud(fan, 12)),
-      hiddenAbove(REACH.jambs, shaped(FAN, rotor(fan, 6, 2))),
-    );
+    parts.push(shaped(TRIM, shroud(fan, 12)), shaped(FAN, rotor(fan, 6, 2)));
   }
   return parts.map(occasional);
 }
@@ -364,6 +355,20 @@ export function inWindowBay(part: Part): boolean {
   return part.min.x >= PIER_MAX.x;
 }
 
+export function standsIn(part: Part, column: number): boolean {
+  return column !== COLUMNS.left || inWindowBay(part);
+}
+
+export function soft({ kind }: Part): boolean {
+  return kind === CLOTH || kind === RAG || kind === SHEET;
+}
+
+export function partKey({ kind, role, min, max }: Part): string {
+  return [kind, role ?? 0, ...min.toArray(), ...max.toArray()]
+    .map((value) => Math.round(value * 1000) / 1000)
+    .join(' ');
+}
+
 export function gated({ role }: Part): boolean {
   return role !== undefined && [PLANT, OCCASIONAL, LAUNDRY, RAGGED, SHEETED, HOLED].includes(role);
 }
@@ -392,14 +397,6 @@ function sheeted(part: Part): Part {
   return { ...part, role: SHEETED };
 }
 
-function hiddenAbove(reach: number, part: Part): Part {
-  return { ...part, reach };
-}
-
-function recessed(reach: number, part: Part): Part {
-  return { ...part, reach, recessed: true };
-}
-
 export function tileParts(detail: Detail): Part[] {
   const parts = pierParts();
   for (const y of [0, STOREY]) {
@@ -408,19 +405,13 @@ export function tileParts(detail: Detail): Part[] {
     const glassBottom = y + 1.15;
     const glassTop = y + 3.2;
     parts.push(
-      recessed(REACH.recess, part(CONCRETE, [-1.4, 1.4], [y, top], [-3.5, -3.1])),
-      recessed(
-        REACH.recess,
-        regular(part(GLASS, [-1.05, 1.05], [glassBottom, glassTop], [-3.1, -3.05])),
-      ),
-      recessed(REACH.jambs, part(CONCRETE, [-1.4, -1.05], [sill, top], [-3.1, -2.5])),
-      recessed(REACH.jambs, part(CONCRETE, [1.05, 1.4], [sill, top], [-3.1, -2.5])),
-      recessed(REACH.recess, part(CONCRETE, [-1.05, 1.05], [glassTop, top], [-3.1, -2.5])),
-      hiddenAbove(REACH.ledge, part(CONCRETE, [-1.4, 1.4], [y, sill], [-3.1, -1.8])),
-      hiddenAbove(
-        REACH.parapet,
-        regular(part(CONCRETE, [-1.2, 1.2], [sill, glassBottom], [-3.1, -1.3])),
-      ),
+      part(CONCRETE, [-1.4, 1.4], [y, top], [-3.5, -3.1]),
+      regular(part(GLASS, [-1.05, 1.05], [glassBottom, glassTop], [-3.1, -3.05])),
+      part(CONCRETE, [-1.4, -1.05], [sill, top], [-3.1, -2.5]),
+      part(CONCRETE, [1.05, 1.4], [sill, top], [-3.1, -2.5]),
+      part(CONCRETE, [-1.05, 1.05], [glassTop, top], [-3.1, -2.5]),
+      part(CONCRETE, [-1.4, 1.4], [y, sill], [-3.1, -1.8]),
+      regular(part(CONCRETE, [-1.2, 1.2], [sill, glassBottom], [-3.1, -1.3])),
     );
     const { front, louvre, louvreSpacing } = PLANT_FLOOR;
     for (const [bottom, height] of [
@@ -458,22 +449,13 @@ export function tileParts(detail: Detail): Part[] {
     );
     const sheet = new PlaneGeometry(2.1, glassTop - glassBottom, segments.across, segments.across);
     parts.push(
-      hiddenAbove(
-        REACH.ledge,
-        ragged(shaped(RAG, rag.translate(0, glassBottom - RAG_SIZE.drop / 2, RAG_SIZE.z))),
-      ),
-      recessed(
-        REACH.recess,
-        sheeted(shaped(SHEET, sheet.translate(0, (glassBottom + glassTop) / 2, SHEET_Z))),
-      ),
+      ragged(shaped(RAG, rag.translate(0, glassBottom - RAG_SIZE.drop / 2, RAG_SIZE.z))),
+      sheeted(shaped(SHEET, sheet.translate(0, (glassBottom + glassTop) / 2, SHEET_Z))),
     );
     for (let blade = sill + louvreSpacing / 2; blade < glassTop; blade += louvreSpacing) {
       parts.push(
-        recessed(
-          REACH.recess,
-          plant(
-            part(CONCRETE, [-1.05, 1.05], [blade - louvre / 2, blade + louvre / 2], [-3.05, -2.55]),
-          ),
+        plant(
+          part(CONCRETE, [-1.05, 1.05], [blade - louvre / 2, blade + louvre / 2], [-3.05, -2.55]),
         ),
       );
     }
@@ -481,30 +463,60 @@ export function tileParts(detail: Detail): Part[] {
   return parts;
 }
 
-function partsGeometry(parts: Part[]): BufferGeometry {
-  const boxes = parts.map(({ kind, min, max, protrudes, role, shape }) => {
-    const size = max.clone().sub(min);
-    const center = max.clone().add(min).multiplyScalar(0.5);
-    const box =
-      shape?.clone() ??
-      new BoxGeometry(size.x, size.y, size.z).translate(center.x, center.y, center.z);
-    const count = box.getAttribute('position').count;
-    box.setAttribute('aKind', new Float32BufferAttribute(new Array<number>(count).fill(kind), 1));
-    box.setAttribute('aMin', new Float32BufferAttribute(repeat(min, count), 3));
-    box.setAttribute('aMax', new Float32BufferAttribute(repeat(max, count), 3));
-    box.setAttribute(
-      'aProtrudes',
-      new Float32BufferAttribute(new Array<number>(count).fill(protrudes ? 1 : 0), 1),
+export function faceOf(x: number, y: number, z: number): number {
+  const [sizeX, sizeY, sizeZ] = [Math.abs(x), Math.abs(y), Math.abs(z)];
+  if (sizeX > sizeY && sizeX > sizeZ) return x > 0 ? 0 : 1;
+  if (sizeY > sizeZ) return y > 0 ? 2 : 3;
+  return z > 0 ? 4 : 5;
+}
+
+function keepFaces(geometry: BufferGeometry, faces: Set<number>): void {
+  const index = geometry.index!.array;
+  const normal = geometry.getAttribute('normal');
+  const kept: number[] = [];
+  for (let at = 0; at < index.length; at += 3) {
+    const corners = [index[at]!, index[at + 1]!, index[at + 2]!];
+    const buckets = corners.map((corner) =>
+      faceOf(normal.getX(corner), normal.getY(corner), normal.getZ(corner)),
     );
-    box.setAttribute(
-      'aRole',
-      new Float32BufferAttribute(new Array<number>(count).fill(role ?? 0), 1),
+    const face = buckets.every((bucket) => bucket === buckets[0]) ? buckets[0]! : MIXED_FACE;
+    if (faces.has(face)) kept.push(...corners);
+  }
+  const used = new Map<number, number>();
+  for (const corner of kept) if (!used.has(corner)) used.set(corner, used.size);
+  for (const name of Object.keys(geometry.attributes)) {
+    const attribute = geometry.getAttribute(name) as BufferAttribute;
+    const compact = new BufferAttribute(
+      new Float32Array(used.size * attribute.itemSize),
+      attribute.itemSize,
     );
-    return box;
-  });
-  const merged = mergeGeometries(boxes)!;
-  for (const box of boxes) box.dispose();
-  return merged;
+    for (const [from, to] of used) compact.copyAt(to, attribute, from);
+    geometry.setAttribute(name, compact);
+  }
+  geometry.setIndex(kept.map((corner) => used.get(corner)!));
+}
+
+export function pieceGeometry({ part, faces }: Piece): BufferGeometry {
+  const { kind, min, max, protrudes, role, shape } = part;
+  const size = max.clone().sub(min);
+  const center = max.clone().add(min).multiplyScalar(0.5);
+  const box =
+    shape?.clone() ??
+    new BoxGeometry(size.x, size.y, size.z).translate(center.x, center.y, center.z);
+  if (faces) keepFaces(box, faces);
+  const count = box.getAttribute('position').count;
+  box.setAttribute('aKind', new Float32BufferAttribute(new Array<number>(count).fill(kind), 1));
+  box.setAttribute('aMin', new Float32BufferAttribute(repeat(min, count), 3));
+  box.setAttribute('aMax', new Float32BufferAttribute(repeat(max, count), 3));
+  box.setAttribute(
+    'aProtrudes',
+    new Float32BufferAttribute(new Array<number>(count).fill(protrudes ? 1 : 0), 1),
+  );
+  box.setAttribute(
+    'aRole',
+    new Float32BufferAttribute(new Array<number>(count).fill(role ?? 0), 1),
+  );
+  return box;
 }
 
 function repeat({ x, y, z }: Vector3, count: number): number[] {
@@ -513,29 +525,32 @@ function repeat({ x, y, z }: Vector3, count: number): number[] {
 
 export type Tile = [column: number, row: number];
 
-export function facadeGeometry(parts: Part[], tiles: Tile[]) {
-  const merged = partsGeometry(parts);
+export function facadeGeometry(pieces: BufferGeometry[], tiles: Tile[]) {
+  const merged = mergeGeometries(pieces)!;
   const geometry = new InstancedBufferGeometry();
   geometry.setIndex(merged.index);
   for (const [name, attribute] of Object.entries(merged.attributes)) {
     geometry.setAttribute(name, attribute);
   }
   const offsets: number[] = [];
-  const columns: number[] = [];
+  const tileIds: number[] = [];
   for (const [column, row] of tiles) {
     offsets.push(column * BAY, row * TILE_HEIGHT + (Math.abs(column) % 2) * STOREY, 0);
-    columns.push(column, row);
+    tileIds.push(column, row);
   }
   geometry.setAttribute('aOffset', new InstancedBufferAttribute(new Float32Array(offsets), 3));
-  geometry.setAttribute('aTile', new InstancedBufferAttribute(new Float32Array(columns), 2));
+  geometry.setAttribute('aTile', new InstancedBufferAttribute(new Float32Array(tileIds), 2));
   geometry.instanceCount = tiles.length;
   return geometry;
 }
 
+export function grid(columns: number[], rows: number[]): Tile[] {
+  return columns.flatMap((column) => rows.map((row): Tile => [column, row]));
+}
+
 export function storeyGeometry(
   shape: BufferGeometry,
-  columns: number[],
-  rows: number[],
+  tiles: Tile[],
   count: number,
 ): InstancedBufferGeometry {
   const geometry = new InstancedBufferGeometry();
@@ -544,23 +559,21 @@ export function storeyGeometry(
     geometry.setAttribute(name, attribute);
   }
   const offsets: number[] = [];
-  const tiles: number[] = [];
+  const tileIds: number[] = [];
   const storeys: number[] = [];
   const indices: number[] = [];
-  for (const column of columns) {
-    for (const row of rows) {
-      for (const storey of [0, 1]) {
-        for (let index = 0; index < count; index++) {
-          offsets.push(column * BAY, row * TILE_HEIGHT + (Math.abs(column) % 2) * STOREY, 0);
-          tiles.push(column, row);
-          storeys.push(storey);
-          indices.push(index);
-        }
+  for (const [column, row] of tiles) {
+    for (const storey of [0, 1]) {
+      for (let index = 0; index < count; index++) {
+        offsets.push(column * BAY, row * TILE_HEIGHT + (Math.abs(column) % 2) * STOREY, 0);
+        tileIds.push(column, row);
+        storeys.push(storey);
+        indices.push(index);
       }
     }
   }
   geometry.setAttribute('aOffset', new InstancedBufferAttribute(new Float32Array(offsets), 3));
-  geometry.setAttribute('aTile', new InstancedBufferAttribute(new Float32Array(tiles), 2));
+  geometry.setAttribute('aTile', new InstancedBufferAttribute(new Float32Array(tileIds), 2));
   geometry.setAttribute('aStorey', new InstancedBufferAttribute(new Float32Array(storeys), 1));
   geometry.setAttribute('aIndex', new InstancedBufferAttribute(new Float32Array(indices), 1));
   geometry.instanceCount = storeys.length;
