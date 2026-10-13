@@ -19,8 +19,6 @@ uniform vec3 uGrime;
 uniform vec3 uRust;
 uniform vec3 uMadder;
 uniform vec3 uDenim;
-uniform vec3 uSheenGreen;
-uniform vec3 uSheenPurple;
 uniform vec3 uCoral;
 
 in vec3 vWorld;
@@ -67,7 +65,9 @@ void main() {
     checkered = 1.0;
     barred = 0.0;
   }
-  float mottle = mix(0.93, 1.05, valueNoise(vShape * 140.0 + vSeed * 30.0));
+  float clumps = fbm(vShape * vec3(40.0, 55.0, 40.0) + vSeed * 30.0);
+  float mottle = mix(0.8, 1.08, clumps) * mix(0.9, 1.04, valueNoise(vShape * 260.0 + vSeed * 13.0));
+  float grime = smoothstep(0.5, 0.78, fbm(vShape * 30.0 + vSeed * 21.0) + 0.25 * smoothstep(0.12, 0.03, vShape.y));
   float patches = pied * step(0.55, valueNoise(vShape * 28.0 + vSeed * 9.0));
   vec3 white = uSalt * 0.9;
   vec3 plumage = body * mottle;
@@ -76,13 +76,9 @@ void main() {
   if (vPart < 0.5) {
     float head = smoothstep(0.196, 0.208, vShape.y) * smoothstep(0.03, 0.05, vShape.z);
     float neck = smoothstep(0.12, 0.145, vShape.y) * smoothstep(-0.015, 0.02, vShape.z) * (1.0 - head);
-    float facing = abs(dot(normal, toCamera));
-    float upper = smoothstep(0.15, 0.17, vShape.y + 0.3 * (0.06 - vShape.z) + 0.01 * (facing - 0.5));
-    vec3 sheen = mix(uSheenPurple, uSheenGreen, upper) * mix(0.7, 1.0, smoothstep(0.2, 0.9, facing));
-    plumage = mix(plumage, mix(body * 0.8, sheen, 0.8), neck);
+    plumage = mix(plumage, body * 0.8 * mottle, neck);
     plumage = mix(plumage, body * 0.82 * mottle, head);
     plumage = mix(plumage, body * 0.9, smoothstep(0.06, 0.03, vShape.y));
-    shine = 0.35 * neck;
     float rump = step(fract(vSeed * 3.7), 0.4) * barred * smoothstep(-0.1, -0.13, vShape.z) * smoothstep(0.09, 0.105, vShape.y);
     plumage = mix(plumage, white, rump * 0.7);
     plumage = mix(plumage, white, patches);
@@ -159,6 +155,9 @@ void main() {
   } else {
     plumage = mix(uCoral * 0.8, uGrime * 1.4, smoothstep(0.8, 1.0, vSurface.x) * step(vShape.y, 0.0045));
   }
+
+  float soiled = vPart < 0.5 || vPart > 4.5 && vPart < 8.5 ? 1.0 : 0.0;
+  plumage = mix(plumage, mix(plumage, uGrime, 0.55) * mix(1.0, 1.2, clumps), 0.45 * grime * soiled);
 
   float distance = length(vWorld - cameraPosition);
   float washed = 1.0 - smoothstep(14.0, 40.0, distance);

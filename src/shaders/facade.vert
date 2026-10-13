@@ -1,8 +1,8 @@
 precision highp float;
 
 #include "chunks/noise.glsl"
-#include "chunks/inset.glsl"
 #include "chunks/rooms.glsl"
+#include "chunks/inset.glsl"
 
 invariant gl_Position;
 
@@ -55,7 +55,8 @@ void main() {
   float pick = hash12(room + 223.0);
   float hung = hash12(room + 233.0);
   float holed = step(blockInset(tile), 0.0) * step(mod(floor(abs(tile.x - 0.5)) + tile.y, 2.0), 0.5);
-  float chosen = block > 0.5 ? abs(step(7.5, aRole) - holed) * (1.0 - blockless(tile) * step(aRole, 8.5))
+  float kept = blockRemoved(tile) ? 0.0 : 1.0;
+  float chosen = block > 0.5 ? abs(step(7.5, aRole) - holed) * (1.0 - blockless(tile) * step(aRole, 8.5)) * mix(1.0, kept, step(abs(aRole - 8.0), 0.5))
     : rare > 0.5 ? step(aRole > 5.5 ? 0.93 : 0.9, hash12(room + 193.0 + 10.0 * aRole))
     : laundry > 0.5 ? step(0.8, hung) : step(0.82, pick);
   float shown = aRole < 0.5 ? 1.0 : aRole < 1.5 ? 1.0 - plant : aRole < 2.5 ? plant
@@ -74,7 +75,8 @@ void main() {
   vec3 local = vec3(hub + turn * (position.xy - hub), position.z) + shift;
   local.z -= inset * step(aMax.z - INSET_REACH, position.z);
   float studStorey = 2.0 * tile.y + mod(abs(tile.x), 2.0) + floor(position.y / (0.5 * uTileHeight));
-  local.z -= STUD_DROP * step(9.5, aRole) * step(normal.z, 0.99) * step(mod(studStorey, uPlantEvery), 0.5);
+  float sunken = max(step(mod(studStorey, uPlantEvery), 0.5), step(studDamage(tile, position.y), STUD_MISSING));
+  local.z -= STUD_DROP * step(9.5, aRole) * step(normal.z, 0.99) * sunken;
   float hang = aMax.y - position.y;
   float across = position.x - 0.5 * (aMin.x + aMax.x);
   vec3 bent = vec3(turn * normal.xy, normal.z);

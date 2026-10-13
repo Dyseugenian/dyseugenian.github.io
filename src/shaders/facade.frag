@@ -7,6 +7,7 @@ precision highp sampler3D;
 #include "chunks/rebar.glsl"
 #include "chunks/light.glsl"
 #include "chunks/windows.glsl"
+#include "chunks/inset.glsl"
 #include "chunks/cracks.glsl"
 #include "chunks/sky.glsl"
 #include "chunks/clouds.glsl"
@@ -33,6 +34,7 @@ uniform vec3 uGlassGreen;
 uniform float uFogDensity;
 uniform float uSideX;
 uniform sampler3D uOcclusion;
+uniform sampler3D uBlocklessOcclusion;
 uniform vec3 uOcclusionMin;
 uniform vec3 uOcclusionSize;
 uniform sampler2D uSurface;
@@ -59,12 +61,19 @@ const float TIE_HOLE = 0.022;
 const float BUMP = 0.008;
 const float GRIT = 26.0;
 const float GRIT_DEPTH = 1.6;
+const float POPCORN_DEPTH = 5.0;
+const float POPCORN_SCALE = 0.23;
 const float DRIP_SPACING = 0.9;
 const float PIT_SPACING = 0.12;
 const vec3 STAIN_SIZES = vec3(10.0, 3.5, 1.2);
 const vec3 STAIN_COVER = vec3(0.4, 0.45, 0.2);
 const vec3 STAIN_SALTS = vec3(0.0, 31.0, 67.0);
 const float SPECK_SPACING = 0.35;
+const float PATCH_SPACING = 1.5;
+const float STUD_HEIGHT = 0.218;
+const vec3 STUD_HALF = vec3(0.66, 0.56, 0.218);
+const float STUD_X = -2.1;
+const float SOOT_RISE = 7.5;
 const float SIDE_LIGHT = 1.5;
 const float SIDE_FALLOFF = 3.5;
 const float GLASS_Z = -3.05;
@@ -244,6 +253,52 @@ float speck(vec2 wall, float footprint, out float pale) {
     * resolved(0.3 / radius, footprint);
 }
 
+float mended(vec2 p, float footprint, out vec2 sweep) {
+  vec2 cell = floor(p / PATCH_SPACING);
+  sweep = vec2(1.0, 0.0);
+  if (hash12(cell + 401.0) > 0.3) return 0.0;
+  float key = hash12(cell + 403.0) * 50.0;
+  vec2 centre = (cell + 0.5 + 0.2 * (vec2(hash12(cell + 405.0), hash12(cell + 407.0)) - 0.5)) * PATCH_SPACING;
+  float size = mix(0.08, 0.3, pow(hash12(cell + 409.0), 1.4));
+  float angle = 6.2832 * hash12(cell + 411.0);
+  sweep = vec2(cos(angle), sin(angle));
+  vec2 d = p - centre;
+  vec2 local = vec2(dot(d, sweep), dot(d, vec2(-sweep.y, sweep.x))) / size;
+  local.y *= mix(1.1, 2.4, hash12(cell + 413.0));
+  local += 0.7 * (vec2(valueNoise(local * 1.1 + key), valueNoise(local * 1.1 + key + 5.0)) - 0.5)
+    + 0.3 * (vec2(valueNoise(local * 3.3 + key + 9.0), valueNoise(local * 3.3 + key + 13.0)) - 0.5);
+  float strands = valueNoise(vec2(local.y * 7.0, key));
+  vec2 stretched = vec2(local.x / (local.x > 0.0 ? mix(1.0, 2.3, strands) : 1.0), local.y);
+  float reach = length(stretched);
+  float cover = 1.0 - smoothstep(0.9 - footprint / size, 1.0, reach);
+  return cover * mix(1.0, 0.55 * strands, smoothstep(0.35, 1.0, reach) * step(0.0, local.x));
+}
+
+float scorch(vec3 local, vec3 normal) {
+  vec2 tile = vec2(vTile.x, mod(vTile.y + uTilesClimbed, 4096.0));
+  vec2 room;
+  vec3 q;
+  bool found = false;
+  for (int below = 0; below < 3; below++) {
+    q = fromWindow(local, tile, float(below), room);
+    if (burnt(room)) {
+      found = true;
+      break;
+    }
+  }
+  float rise = q.y + 0.6;
+  if (!found || rise < 0.0) return 0.0;
+  float key = hash12(room + 713.0) * 50.0;
+  float tongues = fbm(vec2(q.x * 1.4 + key, rise * 0.35)) - 0.5;
+  float width = 0.9 + 0.28 * rise + 1.2 * tongues;
+  float spread = 1.0 - smoothstep(0.75 * width, width, abs(q.x));
+  float fingers = valueNoise(vec2(q.x * 3.0 + key, rise * 0.25));
+  float reach = SOOT_RISE * mix(0.3, 1.0, fingers) * mix(0.7, 1.15, hash12(room + 715.0));
+  float fade = 1.0 - smoothstep(0.45 * reach, reach, rise);
+  float ahead = 1.0 - smoothstep(3.0, 5.0, q.z);
+  return spread * fade * ahead * smoothstep(0.0, 0.9, rise) * mix(1.0, 1.4, max(-normal.y, 0.0)) * mix(1.0, 0.45, max(normal.y, 0.0));
+}
+
 Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   vec3 normal = frame[2];
   bool level = abs(normal.y) > 0.5;
@@ -284,6 +339,10 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   mat2 turn = mat2(0.8, 0.6, -0.6, 0.8);
   vec4 fine = texture(uSurface, turn * (p.yx + 31.0) / (uSurfaceMeters * 0.61));
   vec2 slope = (coarse.xy * 2.0 - 1.0) + 0.6 * (transpose(turn) * (fine.xy * 2.0 - 1.0));
+  float popcorn = smoothstep(0.6, 0.75, valueNoise(q * 0.4 + 61.0)) * mix(0.5, 1.0, valueNoise(q * 1.3 + 67.0));
+  vec4 lumps = texture(uSurface, turn * (p + 17.0) / (uSurfaceMeters * POPCORN_SCALE));
+  slope = slope * (1.0 + POPCORN_DEPTH * popcorn) + POPCORN_DEPTH * popcorn * (transpose(turn) * (lumps.xy * 2.0 - 1.0));
+  float cavity = mix(coarse.w, min(coarse.w, lumps.w), popcorn);
   float grain = 0.5;
   if (footprint < 0.6 / GRIT) {
     grain = grit(p, footprint);
@@ -292,11 +351,11 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   }
   vec3 detail = normalize(vec3(slope, 1.0));
   float relief = mix(coarse.z, fine.z, 0.4);
-  float cavity = coarse.w;
 
   vec3 albedo = body * mix(0.7, 1.12, blotch) * mix(0.86, 1.08, mottle);
   albedo *= mix(0.7, 1.08, weathering) * mix(0.84, 1.06, relief);
   albedo *= mix(0.7, 1.0, smoothstep(0.1, 0.5, cavity)) * mix(0.9, 1.06, grain);
+  albedo *= mix(1.0, mix(0.55, 1.3, lumps.z), popcorn);
   float height = 0.5 * mottle;
 
   float drip = upright * drips(p, toHigh.y, footprint);
@@ -308,6 +367,19 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
   float salt = smoothstep(0.6, 0.85, fbm(q * 3.2 + 23.0))
     * (0.4 * drip + 0.6 * exp(-fromLow.y / 0.5)) * upright;
   albedo = mix(albedo, uSalt, 0.7 * salt);
+
+  vec2 sweep;
+  float parge = mended(p, footprint, sweep);
+  if (parge > 0.0) {
+    vec2 trowel = vec2(dot(p, sweep), dot(p, vec2(-sweep.y, sweep.x)));
+    float marks = mix(0.9, 1.06, valueNoise(vec2(trowel.x * 2.0, trowel.y * 28.0)));
+    float tone = hash12(floor(p / PATCH_SPACING) + 415.0);
+    vec3 cement = tone < 0.35 ? uConcrete * mix(0.62, 0.75, tone / 0.35) : mix(uConcrete, uSalt, mix(0.15, 0.5, tone)) * 0.92;
+    albedo = mix(albedo, cement * marks * mix(0.9, 1.04, mottle), 0.9 * parge);
+    albedo *= 1.0 - 0.25 * smoothstep(0.25, 0.5, parge) * (1.0 - smoothstep(0.5, 0.8, parge));
+    detail = normalize(mix(detail, vec3(0.0, 0.0, 1.0), 0.75 * parge));
+    height += 0.5 * parge;
+  }
 
   vec3 climbed = vWorld + vec3(0.0, uClimb, 0.0);
   vec2 wall = vec2(dot(climbed, frame[0]), dot(climbed, frame[1])) + dot(climbed, normal) * vec2(1.37, 0.71);
@@ -332,7 +404,8 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
     float below = mod(BLOCK_RISE.x - vLocal.y, uTileHeight);
     float owner = step(BLOCK_RISE.y, vLocal.y);
     float runs = valueNoise(vec2(vLocal.x * 9.0, 3.0));
-    float wash = (plantFloor(roomOf(vTile, 2.0 * owner)) ? 0.0 : 1.0)
+    vec2 dripping = vec2(vTile.x, mod(vTile.y + uTilesClimbed + owner, 4096.0));
+    float wash = (plantFloor(roomOf(vTile, 2.0 * owner)) || blockRemoved(dripping) ? 0.0 : 1.0)
       * exp(-below / mix(0.3, 1.6, runs)) * mix(0.4, 1.0, valueNoise(vec2(vLocal.x * 30.0, below * 2.0)))
       + (plantFloor(roomOf(vTile, 0.0)) ? 0.0 : 0.6) * step(0.0, above) * exp(-above / 0.15);
     albedo = mix(albedo, uGrime, min(0.5 * wash, 0.7));
@@ -492,6 +565,12 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering) {
     float scuff = smoothstep(0.7, 0.9, valueNoise(p * 1.3 + 17.0))
       * smoothstep(0.55, 0.9, valueNoise(scratch * vec2(2.0, 60.0))) * resolved(60.0, footprint);
     albedo *= 1.0 + (hash12(scuffCell + 8.0) > 0.3 ? 0.2 : -0.25) * scuff;
+  }
+
+  float soot = scorch(vLocal, normal);
+  if (soot > 0.0) {
+    float dense = soot * mix(0.65, 1.2, fbm(q * 2.5 + 83.0));
+    albedo = mix(albedo, mix(uConcreteWarm * 0.3, uGrime * 0.2, smoothstep(0.2, 0.6, dense)), min(1.3 * dense, 0.96));
   }
 
   return Concrete(albedo, height, detail, vec3(0.0));
@@ -1020,6 +1099,47 @@ vec3 glassBlockWall(vec2 pane, vec3 view, vec3 window, vec3 glow, vec2 room, vec
   return mix(joint, face, block);
 }
 
+vec3 studApex(float y) {
+  return vec3(STUD_X, (floor(y / STUD_BAND) + 0.5) * STUD_BAND, STUD_HEIGHT);
+}
+
+int chipStud(vec3 p, float damage, vec3 eye, out vec3 hit, out vec3 hitNormal) {
+  vec3 apex = studApex(p.y);
+  vec3 jitter = vec3(fract(damage * 131.0), fract(damage * 291.0), fract(damage * 173.0)) - 0.5;
+  bool top = fract(damage * 37.0) < 0.35;
+  vec2 side = sign(vec2(fract(damage * 91.0), fract(damage * 53.0)) - 0.5);
+  vec3 corner = top ? apex : apex + vec3(side * STUD_HALF.xy, -STUD_HEIGHT);
+  vec3 cutNormal = normalize((top ? vec3(0.0, 0.0, 1.0) : vec3(side * STUD_HALF.xy, 0.25)) + 0.6 * jitter);
+  vec3 cut = corner - cutNormal * mix(0.08, top ? 0.16 : 0.3, fract(damage * 71.0));
+  float rough = 0.012 * (valueNoise(p * 45.0) - 0.5);
+  float d = dot(p - cut, cutNormal) + rough;
+  if (d < 0.0) return 0;
+  vec3 ray = normalize(p - eye);
+  float toward = dot(ray, cutNormal);
+  hit = p - ray * d / min(toward, -1e-3);
+  vec2 rel = abs(hit.xy - apex.xy) / STUD_HALF.xy;
+  if (toward < 0.0 && hit.z >= 0.0 && hit.z <= STUD_HEIGHT * (1.0 - max(rel.x, rel.y))) {
+    hitNormal = cutNormal;
+    return 2;
+  }
+  hit = p - ray * p.z / min(ray.z, -1e-3);
+  hitNormal = vec3(0.0, 0.0, 1.0);
+  return 3;
+}
+
+vec4 adhesive(vec3 albedo, vec2 at, float key, float footprint) {
+  vec2 inside = STUD_HALF.xy - abs(at);
+  float under = step(0.0, min(inside.x, inside.y));
+  float outline = exp(-abs(min(inside.x, inside.y)) / 0.012);
+  float dabs = smoothstep(0.58, 0.68, valueNoise(at * 4.5 + key * 40.0) + 0.3 * valueNoise(at * 15.0 + key * 7.0)) * under;
+  float torn = valueNoise(vec2(at.x * 12.0, at.y * 3.0) + key * 9.0);
+  float ridges = mix(0.5, 0.5 + 0.5 * sin(at.y * 220.0 + 3.0 * valueNoise(at * 6.0 + key)) * torn, resolved(35.0, footprint));
+  vec3 mortar = mix(uConcrete, uSalt, 0.2) * mix(0.84, 0.98, ridges) * mix(0.85, 1.05, valueNoise(at * 30.0 + key));
+  albedo = mix(albedo, albedo * 1.15, 0.7 * under);
+  albedo = mix(albedo, uGrime, 0.55 * outline);
+  return vec4(mix(albedo, mortar, 0.9 * dabs), dabs * (1.2 + 0.6 * ridges));
+}
+
 void main() {
   vec3 normal = normalize(vNormal);
   vec3 toCamera = normalize(cameraPosition - vWorld);
@@ -1028,7 +1148,8 @@ void main() {
   vec2 building = vec2(vWorld.x, vWorld.y + uClimb);
   float weathering = fbm(building * vec2(0.06, 0.035) + 3.0);
 
-  float openness = texture(uOcclusion, (vLocal + normal * 0.1 - uOcclusionMin) / uOcclusionSize).r;
+  vec3 inBake = (vLocal + normal * 0.1 - uOcclusionMin) / uOcclusionSize;
+  float openness = blockRemoved(tile) ? texture(uBlocklessOcclusion, inBake).r : texture(uOcclusion, inBake).r;
   float occlusion = smoothstep(0.08, 0.55, openness);
   vec2 fromSides = min(vLocal.xy - vMin.xy, vMax.xy - vLocal.xy);
   float sunk = vProtrudes * step(0.01, min(fromSides.x, fromSides.y)) * max(vMax.z - vLocal.z, 0.0);
@@ -1039,6 +1160,11 @@ void main() {
   vec3 hitNormal;
   float margin = 1e3;
   int broken = CONCRETE ? carve(vLocal, normal, vMin, vMax, seed, cameraPosition - origin, hit, hitNormal, margin) : 0;
+  bool studded = CONCRETE && abs(vMax.z - STUD_HEIGHT) < 0.005;
+  float damage = studded ? studDamage(tile, vLocal.y) : 1.0;
+  if (broken == 0 && studded && normal.z < 0.99 && damage < STUD_CHIPPED && damage >= STUD_MISSING) {
+    broken = chipStud(vLocal, damage, cameraPosition - origin, hit, hitNormal);
+  }
   mat3 frame = faceFrame(normal);
   Concrete surface = Concrete(uConcrete, 0.0, vec3(0.0, 0.0, 1.0), vec3(0.0));
   if (CONCRETE) surface = concrete(frame, seed, weathering);
@@ -1052,12 +1178,19 @@ void main() {
     vec2 at = vec2(q.x - mix(-0.8, 0.8, hash12(bay + 227.0)), vLocal.y - 0.5 * (vMin.y + vMax.y));
     if (hash12(bay + 229.0) > 0.55) surface = ventGrille(surface, at, bay);
   }
+  if (studded && (broken == 3 || normal.z > 0.99 && damage < STUD_MISSING)) {
+    vec3 at = broken == 3 ? hit : vLocal;
+    vec4 left = adhesive(surface.albedo, at.xy - studApex(at.y).xy, damage, length(fwidth(vLocal.xy)));
+    surface.albedo = left.rgb;
+    surface.height += left.a;
+  }
   vec3 shading = bumped(normalize(frame * surface.detail), surface.height * BUMP);
   if (broken > 0) {
-    float sunk = abs(dot(hit - vLocal, normal)) + (broken == 2 ? 0.08 : 0.0);
+    float sunk = broken == 3 ? 0.0 : abs(dot(hit - vLocal, normal)) + (broken == 2 ? 0.08 : 0.0);
     float aggregate = valueNoise(hit * 40.0) * 0.6 + valueNoise(hit * 110.0) * 0.4;
     surface.albedo *= mix(0.75, 1.3, aggregate) * mix(1.0, 0.6, smoothstep(0.0, 0.12, sunk));
     shading = hitNormal;
+    surface.albedo *= studded && broken == 2 ? 1.3 : 1.0;
     occlusion *= mix(1.0, 0.55, smoothstep(0.0, 0.12, sunk));
     float toBar = toRebar(hit, vMin, vMax) / REBAR_RADIUS;
     float bar = broken == 1 ? 1.0 - smoothstep(1.0, 1.5, toBar) : 0.0;
@@ -1113,6 +1246,13 @@ void main() {
       color = transmitted + reflection * fresnel * mix(1.0, 0.4, lit)
         + (uHaze * 0.12 + glow * 0.22) * dirt
         + (uRim * 0.15 + glow * 0.15) * rim + uRim * 0.1 * joint;
+
+      if (burnt(room)) {
+        float shattered = smoothstep(0.45, 0.55, valueNoise(pane * 2.5 + room * 3.7));
+        float soot = mix(0.75, 0.97, valueNoise(pane * 7.0 + room)) * (1.0 - shattered);
+        color = mix(color, uGrime * 0.02 + reflection * fresnel * 0.15, soot);
+        color = mix(color, inside * 0.2, shattered);
+      }
 
       float blur = fwidth(pane.x);
       if (papered(room)) {

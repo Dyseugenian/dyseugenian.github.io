@@ -1,6 +1,11 @@
 import {
+  type Camera,
+  type Line,
   MathUtils,
+  type Mesh,
+  type Object3D,
   PerspectiveCamera,
+  type Points,
   Scene,
   Vector2,
   WebGLRenderTarget,
@@ -18,6 +23,14 @@ import { Tower } from '../scene/Tower';
 
 const MAX_DRAWING_PIXELS = 3840 * 2160;
 const TOWER_FADE_SECONDS = 2.5;
+const WARM_UP_MS = 4;
+
+type Drawn = Mesh | Points | Line;
+type WarmUp = { objects: Drawn[]; camera: Camera; done: () => void };
+
+function isDrawn(object: Object3D): object is Drawn {
+  return 'geometry' in object;
+}
 
 export class App {
   readonly quality = new Quality(() => this.applyQuality());
@@ -27,6 +40,8 @@ export class App {
   private camera = new PerspectiveCamera(22, 1, 0.1, 100);
   private loop = new Loop((frame) => this.update(frame));
   private target = new WebGLRenderTarget(1, 1, { samples: 2 });
+  private warmUpTarget = new WebGLRenderTarget(1, 1);
+  private warmUps: WarmUp[] = [];
   private input = new Input();
   private roleText = new RoleText(this.input);
   private film = new Film(this.target.texture, this.roleText.uniforms);
@@ -62,19 +77,19 @@ export class App {
     if (onlyBuilding) this.tower.fly(new FreeFly(canvas));
   }
 
-  start(): void {
+  async start(): Promise<void> {
+    await this.renderer.compileAsync(this.film, this.camera);
     this.loop.start();
   }
 
   async compile(): Promise<void> {
-    await Promise.all([
-      this.renderer.compileAsync(this.scene, this.camera),
-      this.renderer.compileAsync(this.film, this.camera),
-    ]);
+    await this.renderer.compileAsync(this.scene, this.camera);
+    await this.warmUp(this.scene, this.camera);
   }
 
-  loadTower(): Promise<void> {
-    return this.tower.load(this.renderer);
+  async loadTower(): Promise<void> {
+    await this.tower.load(this.renderer);
+    await this.warmUp(this.tower, this.tower.camera);
   }
 
   revealTower(): void {
@@ -87,7 +102,37 @@ export class App {
     this.tower.visible = live;
   }
 
+  private warmUp(root: Object3D, camera: Camera): Promise<void> {
+    const objects: Drawn[] = [];
+    root.traverse((object) => {
+      if (isDrawn(object)) objects.push(object);
+    });
+    return new Promise((done) => this.warmUps.push({ objects, camera, done }));
+  }
+
+  private drawWarmUps(): void {
+    const deadline = performance.now() + WARM_UP_MS;
+    while (this.warmUps.length > 0 && performance.now() < deadline) {
+      const warmUp = this.warmUps[0]!;
+      const object = warmUp.objects.shift();
+      if (object === undefined) {
+        this.warmUps.shift();
+        warmUp.done();
+        continue;
+      }
+      const { frustumCulled } = object;
+      if (frustumCulled && object.geometry.boundingSphere === null) {
+        object.geometry.computeBoundingSphere();
+      }
+      object.frustumCulled = false;
+      this.renderer.setRenderTarget(this.warmUpTarget);
+      this.renderer.render(object, warmUp.camera);
+      object.frustumCulled = frustumCulled;
+    }
+  }
+
   private update({ dt, time }: Frame): void {
+    this.drawWarmUps();
     if (this.isTowerRevealed) {
       this.towerFade = Math.min(this.towerFade + dt / TOWER_FADE_SECONDS, 1);
       const opacity = MathUtils.smootherstep(this.towerFade, 0, 1);

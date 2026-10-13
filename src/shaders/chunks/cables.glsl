@@ -14,7 +14,6 @@ const float EDGE_FACE = 3.15;
 const float PIER_MIDDLE = -2.1;
 const float COURSE = 1.2;
 const float BLOCK_JOINT = 1.8;
-const float BLOCK_FRONT = 0.9;
 const float BLOCK_SIDE = -1.15;
 const float BLOCK_BACK = -1.0;
 const float SILL = 1.15;

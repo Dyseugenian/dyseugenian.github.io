@@ -13,6 +13,7 @@ uniform vec4 uBacklights;
 uniform vec3 uSky;
 uniform float uExposure;
 uniform float uFogDensity;
+uniform vec3 uConcrete;
 uniform vec3 uGrime;
 uniform vec3 uRust;
 uniform vec3 uSalt;
@@ -38,14 +39,14 @@ void main() {
   float threshold = mix(0.55, 0.32, vSeed);
   float rusting = smoothstep(threshold, threshold + 0.12, decay);
   float flaking = smoothstep(threshold - 0.06, threshold, decay) * (1.0 - rusting);
-  vec3 scale = mix(uRust * 0.16, uRust * 0.48, smoothstep(0.35, 0.7, fbm(vLocal * 35.0 + vSeed * 5.0)));
-  vec3 paint = fract(vSeed * 5.3) < 0.6 ? mix(uSalt, uGrime, 0.5) * 0.55 : uGrime * 0.45;
+  vec3 scale = mix(mix(uConcrete, uGrime, 0.6) * 0.5, mix(uRust, uConcrete, 0.4) * 0.3, smoothstep(0.35, 0.7, fbm(vLocal * 35.0 + vSeed * 5.0)));
+  vec3 paint = mix(uConcrete, uGrime, mix(0.35, 0.55, fract(vSeed * 5.3))) * 0.55;
   paint = mix(paint, paint * 1.35, 0.6 * flaking);
   vec3 body = mix(paint, scale, rusting) * mix(0.6, 1.0, soot);
   float far = length(vWorld - cameraPosition);
   float washed = 1.0 - smoothstep(14.0, 40.0, far);
   vec3 light = nightLight(normal, vWorld, 1.0, 0.6)
-    + windowWash(vLocal, normal, normal, vTile, vWorld.x - vLocal.x, 0.5) * washed;
+    + windowWash(vLocal, normal, normal, vTile, vWorld.x - vLocal.x, 0.25) * washed;
   float gloss = mix(0.06, 0.01, rusting);
   if (vLock > 1.5) {
     float pitting = smoothstep(0.5, 0.8, fbm(vLocal * 60.0 + vSeed * 17.0));
@@ -87,5 +88,9 @@ void main() {
   color = mix(color, haze, fog);
   vec3 climbed = vec3(0.0, uClimb, 0.0);
   color = mix(color, haze, 0.7 * clouds(cameraPosition + climbed, vWorld + climbed));
-  outColor = vec4(color * uExposure, 1.0);
+  vec3 origin = vWorld - vLocal;
+  float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
+  vec3 scatter = windowScatter(cameraPosition - origin, vLocal, vTile, origin, jitter) * washed
+    * mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
+  outColor = vec4((color + 0.5 * SCATTER * scatter * (1.0 - 0.5 * fog)) * uExposure, 1.0);
 }

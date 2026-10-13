@@ -97,7 +97,8 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
     super(createSpecks(0), material);
     this.uniforms = uniforms;
     this.frustumCulled = false;
-    this.loaded = new TextureLoader().loadAsync(densityUrl).then((density) => {
+    this.loaded = new TextureLoader().loadAsync(densityUrl).then(async (density) => {
+      await (density.image as HTMLImageElement).decode();
       uniforms.uDensity.value = density;
     });
   }

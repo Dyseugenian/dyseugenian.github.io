@@ -33,7 +33,8 @@ export class Decal extends Mesh<PlaneGeometry, RawShaderMaterial> {
 
     super(new PlaneGeometry(width, height), material);
     this.uniforms = uniforms;
-    this.loaded = new TextureLoader().loadAsync(url).then((map) => {
+    this.loaded = new TextureLoader().loadAsync(url).then(async (map) => {
+      await (map.image as HTMLImageElement).decode();
       uniforms.uMap.value = map;
       return map;
     });

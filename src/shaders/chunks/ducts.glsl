@@ -37,8 +37,8 @@ bool ductOf(float column, float section, out Duct duct) {
   return true;
 }
 
-float ductWall(float storey) {
-  return (storey < 0.5 ? DUCT_BLOCK_FACE : 0.0) - DUCT_WALL;
+float ductWall(float storey, float room) {
+  return (storey < 0.5 && !nearPlantFloor(room) ? DUCT_BLOCK_FACE : 0.0) - DUCT_WALL;
 }
 
 bool ductPiece(vec2 room, float storey, float index, out Duct duct, out DuctPiece piece) {
@@ -53,7 +53,7 @@ bool ductPiece(vec2 room, float storey, float index, out Duct duct, out DuctPiec
   float near = duct.rise > 0.0 ? base : base + height;
   float far = duct.rise > 0.0 ? base + height : base;
   float middle = base + 0.5 * height;
-  float wall = ductWall(storey);
+  float wall = ductWall(storey, room.y);
   piece.offset = offset;
   if (offset < 0.5) {
     piece.a = vec3(duct.x, middle, wall);
@@ -71,7 +71,7 @@ bool ductPiece(vec2 room, float storey, float index, out Duct duct, out DuctPiec
   float first = distance(piece.a, piece.b);
   float second = distance(piece.b, piece.c);
   piece.bend = min(1.6 * duct.radius, 0.45 * min(first, second));
-  piece.start = offset < 0.5 ? 0.0 : duct.z - ductWall(mod(storey + offset, 2.0)) + (offset - 0.5) * height;
+  piece.start = offset < 0.5 ? 0.0 : duct.z - ductWall(mod(storey + offset, 2.0), room.y - duct.rise * offset) + (offset - 0.5) * height;
   return true;
 }
 

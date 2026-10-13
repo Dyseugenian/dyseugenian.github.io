@@ -29,7 +29,6 @@ flat out vec2 vTile;
 flat out float vPart;
 flat out float vSeed;
 
-const float BLOCK_FRONT = 0.9;
 const float BAND = 0.06;
 const float ARM = 0.045;
 

@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  BufferAttribute,
   BufferGeometry,
   CircleGeometry,
   ClampToEdgeWrapping,
@@ -26,6 +27,12 @@ import { OCCLUSION } from './occlusion';
 export const BAY = 4.2;
 export const STOREY = 3.6;
 export const TILE_HEIGHT = 2 * STOREY;
+export const COLUMNS = { left: -3, right: 3 };
+const ROWS = { below: 1, above: 32 };
+export const TILE_ROWS = Array.from(
+  { length: ROWS.below + ROWS.above },
+  (_, index) => index - ROWS.below,
+);
 
 const CONCRETE = 0;
 const GLASS = 1;
@@ -256,29 +263,8 @@ const BLOCK_MAX = new Vector3(-1.15, 2.7, 0.9);
 const BLOCK_BORE = boreOf(BLOCK_MIN, BLOCK_MAX);
 const PIER_MIN = new Vector3(-2.8, 0, -3.2);
 const PIER_MAX = new Vector3(-1.4, TILE_HEIGHT, 0);
-export const PIER: Part = {
-  kind: CONCRETE,
-  min: PIER_MIN,
-  max: PIER_MAX,
-  shape: frontless(PIER_MIN, PIER_MAX),
-};
-const PIER_FRONT = { ...PIER, shape: front(PIER_MIN, PIER_MAX), role: UNBORED };
-const BORED_PIER_FRONT = {
-  ...PIER,
-  shape: front(PIER_MIN, PIER_MAX, BLOCK_BORE.center, BLOCK_BORE.radius),
-  role: HOLED,
-};
-const BLOCK = {
-  ...part(
-    CONCRETE,
-    [BLOCK_MIN.x, BLOCK_MAX.x],
-    [BLOCK_MIN.y, BLOCK_MAX.y],
-    [BLOCK_MIN.z, BLOCK_MAX.z],
-  ),
-  protrudes: true,
-  role: SOLID,
-};
-const HOLED_BLOCK = { ...BLOCK, shape: holedBlock(BLOCK_MIN, BLOCK_MAX), role: HOLED };
+export const OUTER_X = (COLUMNS.right + 1) * BAY + PIER_MIN.x + EDGE_WIDTH;
+export const SIDE_X = OUTER_X + EDGE_REACH;
 const STUDS = { band: 1.2, margin: 0.04, height: 0.218, across: 1 };
 
 function stud(low: Vector2, high: Vector2, face: number): BufferGeometry {
@@ -330,12 +316,41 @@ function studdedFront(): BufferGeometry {
   return mergeGeometries(pieces)!;
 }
 
-const STUDDED_FRONT = {
-  ...PIER,
-  max: new Vector3(PIER_MAX.x, PIER_MAX.y, PIER_MAX.z + STUDS.height),
-  shape: studdedFront(),
-  role: STUDDED,
-};
+function pierParts(): Part[] {
+  const pier: Part = {
+    kind: CONCRETE,
+    min: PIER_MIN,
+    max: PIER_MAX,
+    shape: frontless(PIER_MIN, PIER_MAX),
+  };
+  const block: Part = {
+    ...part(
+      CONCRETE,
+      [BLOCK_MIN.x, BLOCK_MAX.x],
+      [BLOCK_MIN.y, BLOCK_MAX.y],
+      [BLOCK_MIN.z, BLOCK_MAX.z],
+    ),
+    protrudes: true,
+    role: SOLID,
+  };
+  return [
+    pier,
+    { ...pier, shape: front(PIER_MIN, PIER_MAX), role: UNBORED },
+    {
+      ...pier,
+      shape: front(PIER_MIN, PIER_MAX, BLOCK_BORE.center, BLOCK_BORE.radius),
+      role: HOLED,
+    },
+    block,
+    { ...block, shape: holedBlock(BLOCK_MIN, BLOCK_MAX), role: HOLED },
+    {
+      ...pier,
+      max: new Vector3(PIER_MAX.x, PIER_MAX.y, PIER_MAX.z + STUDS.height),
+      shape: studdedFront(),
+      role: STUDDED,
+    },
+  ];
+}
 
 export const SURFACES = { concrete: 0, glass: 1, fittings: 2 };
 
@@ -346,7 +361,7 @@ export function surfaceOf({ kind }: Part): number {
 }
 
 export function inWindowBay(part: Part): boolean {
-  return part.min.x >= PIER.max.x;
+  return part.min.x >= PIER_MAX.x;
 }
 
 function regular(part: Part): Part {
@@ -388,7 +403,7 @@ export function seenIn(parts: Part[], row: number, outermost: boolean): Part[] {
 }
 
 export function tileParts(detail: Detail): Part[] {
-  const parts: Part[] = [PIER, PIER_FRONT, BORED_PIER_FRONT, BLOCK, HOLED_BLOCK, STUDDED_FRONT];
+  const parts = pierParts();
   for (const y of [0, STOREY]) {
     const top = y + STOREY;
     const sill = y + 0.55;
@@ -569,13 +584,26 @@ export function surroundings(parts: Part[]): Part[] {
   return [-1, 0, 1].flatMap((column) => stack(parts, column));
 }
 
+function edgeSpan(outward: number): Span {
+  return outward < 0
+    ? [PIER_MAX.x - EDGE_WIDTH, PIER_MAX.x]
+    : [PIER_MIN.x, PIER_MIN.x + EDGE_WIDTH];
+}
+
+export function edgeVolume(outward: number) {
+  const [left] = edgeSpan(outward);
+  return {
+    min: new Vector3(left - EDGE.margin, 0, OCCLUSION.back),
+    size: new Vector3(EDGE_WIDTH + 2 * EDGE.margin, TILE_HEIGHT, OCCLUSION.front - OCCLUSION.back),
+  };
+}
+
 export function edge(outward: number, windows: Part[]) {
-  const [left, right] =
-    outward < 0 ? [PIER.max.x - EDGE_WIDTH, PIER.max.x] : [PIER.min.x, PIER.min.x + EDGE_WIDTH];
+  const [left, right] = edgeSpan(outward);
   const [inner, outer] = outward < 0 ? [right, left] : [left, right];
   const out = (distance: number) => outer + outward * distance;
   const across = (from: number, to: number): Span => (from < to ? [from, to] : [to, from]);
-  const parts = [part(CONCRETE, [left, right], [0, TILE_HEIGHT], [PIER.min.z, PIER.max.z])];
+  const parts = [part(CONCRETE, [left, right], [0, TILE_HEIGHT], [PIER_MIN.z, PIER_MAX.z])];
   const into = (distance: number) => inner - outward * distance;
   const corners = [
     across(out(EDGE.reach - EDGE.depth), out(EDGE.reach)),
@@ -588,18 +616,55 @@ export function edge(outward: number, windows: Part[]) {
       ...corners.map((corner) => part(CONCRETE, corner, rib, [EDGE.behind, 0])),
     );
   }
-  const min = new Vector3(left - EDGE.margin, 0, OCCLUSION.back);
-  const size = new Vector3(
-    EDGE_WIDTH + 2 * EDGE.margin,
-    TILE_HEIGHT,
-    OCCLUSION.front - OCCLUSION.back,
-  );
   const around = [...stack(parts, 0), ...stack(windows, outward < 0 ? 0 : -1)];
-  return { parts, min, size, around };
+  return { parts, around };
 }
 
 export function occluders(around: Part[]): Part[] {
   return around.filter(({ role }) => role === undefined || role === REGULAR || role === SOLID);
+}
+
+export type BakedGeometry = {
+  index: Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer> | null;
+  attributes: {
+    name: string;
+    array: Float32Array<ArrayBuffer>;
+    itemSize: number;
+    instanced: boolean;
+  }[];
+  instanceCount: number;
+};
+
+export function packGeometry(geometry: InstancedBufferGeometry): BakedGeometry {
+  return {
+    index: (geometry.index?.array as BakedGeometry['index']) ?? null,
+    attributes: Object.entries(geometry.attributes).map(([name, attribute]) => ({
+      name,
+      array: attribute.array as Float32Array<ArrayBuffer>,
+      itemSize: attribute.itemSize,
+      instanced: 'isInstancedBufferAttribute' in attribute,
+    })),
+    instanceCount: geometry.instanceCount,
+  };
+}
+
+export function unpackGeometry({
+  index,
+  attributes,
+  instanceCount,
+}: BakedGeometry): InstancedBufferGeometry {
+  const geometry = new InstancedBufferGeometry();
+  if (index) geometry.setIndex(new BufferAttribute(index, 1));
+  for (const { name, array, itemSize, instanced } of attributes) {
+    geometry.setAttribute(
+      name,
+      instanced
+        ? new InstancedBufferAttribute(array, itemSize)
+        : new BufferAttribute(array, itemSize),
+    );
+  }
+  geometry.instanceCount = instanceCount;
+  return geometry;
 }
 
 export function occlusionTexture(openness: Uint8Array): Data3DTexture {

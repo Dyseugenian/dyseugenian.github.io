@@ -1,6 +1,7 @@
 precision highp float;
 
 #include "chunks/hash.glsl"
+#include "chunks/rooms.glsl"
 #include "chunks/inset.glsl"
 #include "chunks/spalls.glsl"
 #include "chunks/rebar.glsl"
@@ -9,7 +10,6 @@ uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
 uniform vec3 cameraPosition;
-uniform float uTilesClimbed;
 uniform float uBay;
 uniform float uTileHeight;
 uniform vec2 uResolution;
@@ -45,6 +45,7 @@ vec3 awayFrom(vec3 direction, vec3 normal) {
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
+  if (aProtrudes > 0.5 && blockRemoved(tile)) return;
   vec2 seed = vec2(hash12(tile), hash12(tile + 1.7)) * 97.0;
   vec3 high = aHigh - vec3(0.0, 0.0, aProtrudes * blockInset(tile));
   vec2 low = vec2(dot(aLow, aRight), dot(aLow, aUp));

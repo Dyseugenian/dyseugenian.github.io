@@ -10,8 +10,7 @@ const onlyBuilding = new URLSearchParams(location.search).has('building');
 
 if (canvas && context) {
   const app = new App(canvas, context, onlyBuilding);
-  app.start();
-  const towerLoaded = app.loadTower();
+  await app.start();
 
   if (new URLSearchParams(location.search).has('debug')) {
     const { mountDebugPanel } = await import('./debug/panel');
@@ -19,7 +18,9 @@ if (canvas && context) {
   }
 
   if (!onlyBuilding) await app.logo.ready;
-  await app.compile();
+  const logoCompiled = app.compile();
+  const towerLoaded = app.loadTower();
+  await logoCompiled;
   app.setStageLive(true);
   await towerLoaded;
   app.revealTower();

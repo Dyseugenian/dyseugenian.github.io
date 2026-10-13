@@ -1,8 +1,8 @@
 precision highp float;
 
 #include "chunks/hash.glsl"
-#include "chunks/inset.glsl"
 #include "chunks/rooms.glsl"
+#include "chunks/inset.glsl"
 
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
@@ -35,6 +35,7 @@ flat out float vSeed;
 
 const float PI = 3.14159;
 const float TAU = 6.28318;
+const float GOLDEN = 0.618034;
 const float STAY = 46.0;
 const float SLOT = 6.0;
 const float CROUCH = 0.45;
@@ -45,7 +46,7 @@ const float PECK = 3.2;
 const float GLANCE = 1.9;
 const float FACING = 11.0;
 const float LEDGE_Y = 1.15;
-const float LEDGE_Z = -1.42;
+const float LEDGE_Z = -1.37;
 const float SILL_Y = 0.55;
 const float AC_TOP = 1.82;
 const float AC_Z = -1.48;
@@ -134,7 +135,7 @@ Perch ledgeIn(vec2 room, float pick, float place) {
   float pier = step(-uOuterX + EDGE_WIDTH + 0.01, x - 2.8);
   float block = pier * (plantFloor(vec2(room.x, room.y - storey)) ? 0.0 : 1.0);
   float edgeSide = x - 1.4 - EDGE_WIDTH < -uOuterX + 0.01 ? -1.0 : x + 1.4 + EDGE_WIDTH > uOuterX - 0.01 ? 1.0 : 0.0;
-  float weights[7] = float[7](1.0 - plant, 1.2 * cooled, 0.3 * (1.0 - plant), 0.6 * block * (1.0 - blockless(tile)), 0.8 * abs(edgeSide), plant, 0.6 * plant);
+  float weights[7] = float[7](1.0 - plant, 1.2 * cooled, 0.3 * (1.0 - plant), 0.6 * block * (1.0 - blockless(tile)) * (blockRemoved(tile) ? 0.0 : 1.0), 0.8 * abs(edgeSide), plant, 0.6 * plant);
   float total = 0.0;
   for (int i = 0; i < 7; i++) total += weights[i];
   float chosen = pick * total;
@@ -156,14 +157,14 @@ Perch ledgeIn(vec2 room, float pick, float place) {
   }
   if (kind == 2) return Perch(vec3(side * 1.3, SILL_Y, -2.05), vec2(side * 1.3));
   if (kind == 3) {
-    return Perch(vec3(mix(-2.9, -1.3, along), 2.7 - storey * 0.5 * uTileHeight, 0.75 - blockInset(tile)), vec2(-2.9, -1.3));
+    return Perch(vec3(mix(-2.9, -1.3, along), 2.7 - storey * 0.5 * uTileHeight, 0.83 - blockInset(tile)), vec2(-2.9, -1.3));
   }
   if (kind == 4) {
     vec2 rib = edgeSide * vec2(1.55, 3.7);
-    return Perch(vec3(mix(rib.x, rib.y, along), RIB_TOP, 0.4), edgeSide > 0.0 ? rib : rib.yx);
+    return Perch(vec3(mix(rib.x, rib.y, along), RIB_TOP, 0.63), edgeSide > 0.0 ? rib : rib.yx);
   }
   vec2 ledge = vec2(pier > 0.5 ? -2.7 : -1.3, 1.3);
-  return Perch(vec3(mix(ledge.x, ledge.y, along), kind == 5 ? SILL_Y : 0.5 * uTileHeight, 0.45), ledge);
+  return Perch(vec3(mix(ledge.x, ledge.y, along), kind == 5 ? SILL_Y : 0.5 * uTileHeight, 0.53), ledge);
 }
 
 Perch perchIn(float stay, vec2 room, Perch home, float seed) {
@@ -246,8 +247,9 @@ float facingTarget(float n, float seed) {
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
-  float present = aIndex < 0.5 ? 0.36 : aIndex < 1.5 ? 0.16 : 0.1;
-  if (hash12(room + 291.0 + 7.0 * aIndex) > present) return;
+  float spaced = fract(room.y * GOLDEN + hash12(vec2(room.x, 0.0) + 307.0));
+  float present = aIndex < 0.5 ? step(spaced, 0.44) : step(hash12(room + 291.0 + 7.0 * aIndex), aIndex < 1.5 ? 0.16 : 0.1);
+  if (present < 0.5) return;
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
   float seed = hash12(room + aIndex * 5.0);
   Perch home = ledgeIn(room, hash12(room + 293.0 + 3.0 * aIndex), fract(hash12(room + 297.0) + 0.31 * aIndex));

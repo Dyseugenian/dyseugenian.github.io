@@ -1,44 +1,35 @@
 import { bakeFbm } from './noise';
-import { bakeOcclusion, type OcclusionBake } from './occlusion';
-import { pigeonGeometry } from './pigeon';
+import { bakeOcclusion } from './occlusion';
+import { type Occlusion, type TowerGeometry, towerGeometry } from './towerGeometry';
 
-export type MapsRequest = Record<
-  'occlusion' | 'blocklessOcclusion' | 'leftOcclusion' | 'rightOcclusion',
-  OcclusionBake
->;
-export type TowerMaps = ReturnType<typeof bake>;
+export type TowerMaps = {
+  fbm: Uint16Array<ArrayBuffer>;
+  occlusion: Record<Occlusion, Uint8Array<ArrayBuffer>>;
+};
+export type BakeReply = { geometry: TowerGeometry } | { maps: TowerMaps };
 
-function bake(request: MapsRequest) {
-  return {
-    fbm: bakeFbm(),
-    occlusion: bakeOcclusion(request.occlusion),
-    blocklessOcclusion: bakeOcclusion(request.blocklessOcclusion),
-    leftOcclusion: bakeOcclusion(request.leftOcclusion),
-    rightOcclusion: bakeOcclusion(request.rightOcclusion),
-    pigeon: pigeon(),
-  };
+function buffersOf({ facade, traces }: TowerGeometry): ArrayBuffer[] {
+  const buffers = new Set<ArrayBuffer>();
+  for (const { geometry } of [...facade, ...traces]) {
+    if (geometry.index) buffers.add(geometry.index.buffer);
+    for (const { array } of geometry.attributes) buffers.add(array.buffer);
+  }
+  return [...buffers];
 }
 
-function pigeon() {
-  const geometry = pigeonGeometry();
-  return {
-    index: geometry.index!.array as Uint16Array | Uint32Array,
-    attributes: Object.entries(geometry.attributes).map(([name, attribute]) => ({
-      name,
-      array: attribute.array as Float32Array,
-      itemSize: attribute.itemSize,
-    })),
-  };
-}
+const { geometry, occlusion } = towerGeometry();
+postMessage({ geometry } satisfies BakeReply, { transfer: buffersOf(geometry) });
 
-addEventListener('message', (event: MessageEvent<MapsRequest>) => {
-  const maps = bake(event.data);
-  const { pigeon, ...textures } = maps;
-  postMessage(maps, {
-    transfer: [
-      ...Object.values(textures).map((texels) => texels.buffer),
-      pigeon.index.buffer,
-      ...pigeon.attributes.map(({ array }) => array.buffer),
-    ],
-  });
+const maps: TowerMaps = {
+  fbm: bakeFbm(),
+  occlusion: {
+    tiles: bakeOcclusion(occlusion.tiles),
+    blockless: bakeOcclusion(occlusion.blockless),
+    left: bakeOcclusion(occlusion.left),
+    right: bakeOcclusion(occlusion.right),
+  },
+};
+postMessage({ maps } satisfies BakeReply, {
+  transfer: [maps.fbm.buffer, ...Object.values(maps.occlusion).map((texels) => texels.buffer)],
 });
+close();

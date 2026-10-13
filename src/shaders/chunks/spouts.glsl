@@ -3,7 +3,6 @@ const float PIER_HALF = 0.7;
 const float RECESS_HALF = 1.4;
 const float GAP_MIDDLE = 1.8;
 const float BLOCK_TOP = 2.7;
-const float BLOCK_FRONT = 0.9;
 const vec2 BLOCK_SPAN = vec2(-3.05, -1.15);
 const float LEDGE_BOTTOM = 0.55;
 const float UNDER_LEDGE = -1.45;

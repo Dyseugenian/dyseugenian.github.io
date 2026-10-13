@@ -1,17 +1,11 @@
 import {
   AdditiveBlending,
-  BoxGeometry,
-  CylinderGeometry,
-  DoubleSide,
-  Float32BufferAttribute,
-  BufferGeometry,
   CustomBlending,
+  DoubleSide,
   GLSL3,
   Mesh,
   OneFactor,
   OneMinusSrcAlphaFactor,
-  PlaneGeometry,
-  RingGeometry,
   RawShaderMaterial,
   type IUniform,
   type ShaderMaterialParameters,
@@ -36,19 +30,12 @@ import ductFittingVertex from '../shaders/duct-fitting.vert';
 import ductFragment from '../shaders/duct.frag';
 import grilleVertex from '../shaders/grille.vert';
 import grilleFragment from '../shaders/grille.frag';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { storeyGeometry } from './facade';
-
-const PUFFS = 16;
-const LEAK_PIECES = 4;
-const MOTES = 12;
-const PIGEONS = 3;
-const WIRES = 13;
-const FASTENERS = 8;
-const SPOUT_DROPS = 8;
-const SPOUT_RINGS = 96;
-const DUCT_RINGS = 36;
-const GRILLE_BARS = 63;
+import boardVertex from '../shaders/board.vert';
+import boardFragment from '../shaders/board.frag';
+import cameraVertex from '../shaders/camera.vert';
+import cameraFragment from '../shaders/camera.frag';
+import { unpackGeometry } from './facade';
+import type { TraceGeometry } from './towerGeometry';
 
 const LAYERED: ShaderMaterialParameters = {
   blending: CustomBlending,
@@ -58,177 +45,55 @@ const LAYERED: ShaderMaterialParameters = {
   depthWrite: false,
 };
 
-export function traces(
-  columns: number[],
-  rows: number[],
-  uniforms: Record<string, IUniform>,
-): Mesh[] {
-  const quad = new PlaneGeometry(1, 1);
-  const layers: [number, string, string, ShaderMaterialParameters][] = [
-    [PUFFS, vapourVertex, vapourFragment, LAYERED],
-    [LEAK_PIECES, leakVertex, leakFragment, LAYERED],
-  ];
-  return layers.map(([count, vertexShader, fragmentShader, options]) =>
-    instanced(
-      storeyGeometry(quad, columns, rows, count),
-      vertexShader,
-      fragmentShader,
-      uniforms,
-      options,
-    ),
-  );
-}
+export type TraceKind =
+  | 'vapour'
+  | 'leak'
+  | 'motes'
+  | 'wires'
+  | 'fasteners'
+  | 'pigeons'
+  | 'spouts'
+  | 'drips'
+  | 'ducts'
+  | 'ductFittings'
+  | 'grilles'
+  | 'boards'
+  | 'cameras';
 
-export function motes(columns: number[], rows: number[], uniforms: Record<string, IUniform>): Mesh {
-  return instanced(
-    storeyGeometry(new PlaneGeometry(1, 1), columns, rows, MOTES),
-    motesVertex,
-    motesFragment,
-    uniforms,
-    { ...LAYERED, blending: AdditiveBlending },
-  );
-}
+const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameters]> = {
+  vapour: [vapourVertex, vapourFragment, LAYERED],
+  leak: [leakVertex, leakFragment, LAYERED],
+  motes: [motesVertex, motesFragment, { ...LAYERED, blending: AdditiveBlending }],
+  wires: [wireVertex, wireFragment, LAYERED],
+  fasteners: [fastenerVertex, fastenerFragment, {}],
+  pigeons: [pigeonVertex, pigeonFragment, {}],
+  spouts: [spoutVertex, spoutFragment, { side: DoubleSide }],
+  drips: [spoutDripVertex, leakFragment, LAYERED],
+  ducts: [ductVertex, ductFragment, {}],
+  ductFittings: [ductFittingVertex, ductFragment, {}],
+  grilles: [grilleVertex, grilleFragment, {}],
+  boards: [boardVertex, boardFragment, {}],
+  cameras: [cameraVertex, cameraFragment, {}],
+};
 
-export function cables(
-  columns: number[],
-  rows: number[],
-  segments: number,
-  uniforms: Record<string, IUniform>,
-): Mesh[] {
-  const ribbon = new PlaneGeometry(1, 1, 1, segments);
-  return [
-    instanced(
-      storeyGeometry(ribbon, columns, rows, WIRES),
-      wireVertex,
-      wireFragment,
-      uniforms,
-      LAYERED,
-    ),
-    instanced(
-      storeyGeometry(new BoxGeometry(1, 1, 1), columns, rows, WIRES * FASTENERS),
-      fastenerVertex,
-      fastenerFragment,
-      uniforms,
-      {},
-    ),
-  ];
-}
-
-export function pigeons(
-  columns: number[],
-  rows: number[],
-  uniforms: Record<string, IUniform>,
-): Mesh {
-  const geometry = storeyGeometry(new BufferGeometry(), columns, rows, PIGEONS);
-  return instanced(geometry, pigeonVertex, pigeonFragment, uniforms, {});
-}
-
-export function spouts(
-  columns: number[],
-  rows: number[],
-  uniforms: Record<string, IUniform>,
-): Mesh[] {
-  const pieces = [
-    new CylinderGeometry(1, 1, 1, 16, SPOUT_RINGS, true).rotateX(Math.PI / 2).translate(0, 0, 0.5),
-    new CylinderGeometry(1.35, 1.35, 0.03, 16).rotateX(Math.PI / 2).translate(0, 0, 0.015),
-    new CylinderGeometry(1.1, 1.1, 0.06, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, -0.03),
-    new RingGeometry(1, 1.1, 16),
-  ].map((piece, index) => {
-    const part = Math.min(index, 2);
-    const plain = piece.toNonIndexed();
-    plain.deleteAttribute('uv');
-    const count = plain.getAttribute('position').count;
-    plain.setAttribute('aPart', new Float32BufferAttribute(new Float32Array(count).fill(part), 1));
-    return plain;
+export function traceMeshes(traces: TraceGeometry[], uniforms: Record<string, IUniform>): Mesh[] {
+  const materials = new Map<TraceKind, RawShaderMaterial>();
+  return traces.map(({ kind, geometry }) => {
+    let material = materials.get(kind);
+    if (material === undefined) {
+      const [vertexShader, fragmentShader, options] = SHADERS[kind];
+      material = new RawShaderMaterial({
+        glslVersion: GLSL3,
+        vertexShader,
+        fragmentShader,
+        uniforms,
+        ...options,
+      });
+      materials.set(kind, material);
+    }
+    const mesh = new Mesh(unpackGeometry(geometry), material);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = kind === 'spouts' ? 1 : 2;
+    return mesh;
   });
-  const shape = mergeGeometries(pieces)!;
-  for (const piece of pieces) piece.dispose();
-  const spout = instanced(
-    storeyGeometry(shape, columns, rows, 1),
-    spoutVertex,
-    spoutFragment,
-    uniforms,
-    { side: DoubleSide },
-  );
-  spout.renderOrder = 1;
-  const drips = instanced(
-    storeyGeometry(new PlaneGeometry(1, 1), columns, rows, SPOUT_DROPS),
-    spoutDripVertex,
-    leakFragment,
-    uniforms,
-    LAYERED,
-  );
-  return [spout, drips];
-}
-
-export function ducts(
-  columns: number[],
-  rows: number[],
-  uniforms: Record<string, IUniform>,
-): Mesh[] {
-  const duct = instanced(
-    storeyGeometry(new CylinderGeometry(1, 1, 1, 24, DUCT_RINGS, true), columns, rows, 2),
-    ductVertex,
-    ductFragment,
-    uniforms,
-    {},
-  );
-  const pieces = [
-    new CylinderGeometry(1, 1, 1, 24, 1, true),
-    new BoxGeometry(1, 1, 1),
-    new BoxGeometry(1, 1, 1),
-    new RingGeometry(1, 1.35, 24),
-  ].map((piece, part) => {
-    const plain = piece.toNonIndexed();
-    plain.deleteAttribute('uv');
-    const count = plain.getAttribute('position').count;
-    plain.setAttribute('aPart', new Float32BufferAttribute(new Float32Array(count).fill(part), 1));
-    return plain;
-  });
-  const shape = mergeGeometries(pieces)!;
-  for (const piece of pieces) piece.dispose();
-  const fittings = instanced(
-    storeyGeometry(shape, columns, rows, 3),
-    ductFittingVertex,
-    ductFragment,
-    uniforms,
-    {},
-  );
-  return [duct, fittings];
-}
-
-export function grilles(
-  columns: number[],
-  rows: number[],
-  uniforms: Record<string, IUniform>,
-): Mesh {
-  return instanced(
-    storeyGeometry(new BoxGeometry(1, 1, 1), columns, rows, GRILLE_BARS),
-    grilleVertex,
-    grilleFragment,
-    uniforms,
-    {},
-  );
-}
-
-function instanced(
-  geometry: BufferGeometry,
-  vertexShader: string,
-  fragmentShader: string,
-  uniforms: Record<string, IUniform>,
-  options: ShaderMaterialParameters,
-): Mesh {
-  const mesh = new Mesh(
-    geometry,
-    new RawShaderMaterial({
-      glslVersion: GLSL3,
-      vertexShader,
-      fragmentShader,
-      uniforms,
-      ...options,
-    }),
-  );
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 2;
-  return mesh;
 }

@@ -17,7 +17,7 @@ const float SCATTER = 1.2;
 const int GLOW_STEPS = 8;
 
 vec3 windowLight(vec2 room, float x) {
-  if (abs(x) + 1.05 > uOuterX || plantFloor(room)) return vec3(0.0);
+  if (abs(x) + 1.05 > uOuterX || plantFloor(room) || boarded(room) || burnt(room)) return vec3(0.0);
   float cluster = valueNoise(room * vec2(0.9, 0.2) + 5.0);
   float chance = mix(0.1, 0.6, smoothstep(0.3, 0.75, cluster));
   float era = floor(uTime / SWITCH_PERIOD + hash12(room + 43.0));

@@ -8,84 +8,28 @@ import {
   InstancedBufferGeometry,
   Mesh,
   RawShaderMaterial,
-  Vector3,
   type IUniform,
 } from 'three';
 import vertexShader from '../shaders/rebar.vert';
 import fragmentShader from '../shaders/rebar.frag';
-import type { Part } from './facade';
 
-const PATCH = 0.6;
 const BARS = 4;
 const SIDES = 8;
 const RINGS = 8;
 const TILE_SEEDS = 4096;
 const SPALL = { spacings: [1.4, 3.8], chances: [0.4, 0.3], exposed: 0.6, smallest: 0.12 };
 const STICKING_OUT = [0.7, 0.4];
-const LIFT = 0.02;
-const FACES = [
-  new Vector3(0, 0, 1),
-  new Vector3(1, 0, 0),
-  new Vector3(-1, 0, 0),
-  new Vector3(0, -1, 0),
-];
 
-export type RebarTiles = { parts: Part[]; around: Part[]; columns: number[] };
-
-type Patch = { part: Part; normal: Vector3; right: Vector3; up: Vector3; bounds: number[] };
-
-function faceFrame(normal: Vector3): [Vector3, Vector3] {
-  if (Math.abs(normal.y) > 0.5) return [new Vector3(1, 0, 0), new Vector3(0, 0, 1)];
-  if (Math.abs(normal.x) > 0.5) return [new Vector3(0, 0, 1), new Vector3(0, 1, 0)];
-  return [new Vector3(1, 0, 0), new Vector3(0, 1, 0)];
-}
-
-function covered(point: Vector3, around: Part[]): boolean {
-  return around.some(
-    ({ min, max }) =>
-      point.x > min.x &&
-      point.x < max.x &&
-      point.y > min.y &&
-      point.y < max.y &&
-      point.z > min.z &&
-      point.z < max.z,
-  );
-}
-
-function exposedPatches(part: Part, around: Part[]): Patch[] {
-  return FACES.flatMap((normal) => {
-    const [right, up] = faceFrame(normal);
-    const axis = new Vector3(Math.abs(normal.x), Math.abs(normal.y), Math.abs(normal.z));
-    const plane = axis.dot(normal.x + normal.y + normal.z > 0 ? part.max : part.min);
-    const low = [part.min.dot(right), part.min.dot(up)] as const;
-    const size = [part.max.dot(right) - low[0], part.max.dot(up) - low[1]] as const;
-    const counts = size.map((length) => Math.max(Math.round(length / PATCH), 1));
-    const patches: Patch[] = [];
-    for (let i = 0; i < counts[0]!; i++) {
-      for (let j = 0; j < counts[1]!; j++) {
-        const u = [low[0] + (i * size[0]) / counts[0]!, low[0] + ((i + 1) * size[0]) / counts[0]!];
-        const v = [low[1] + (j * size[1]) / counts[1]!, low[1] + ((j + 1) * size[1]) / counts[1]!];
-        const samples = [
-          [0.5, 0.5],
-          [0.15, 0.15],
-          [0.85, 0.15],
-          [0.15, 0.85],
-          [0.85, 0.85],
-        ].map(([s, t]) =>
-          right
-            .clone()
-            .multiplyScalar(u[0]! + s! * (u[1]! - u[0]!))
-            .addScaledVector(up, v[0]! + t! * (v[1]! - v[0]!))
-            .addScaledVector(axis, plane)
-            .addScaledVector(normal, LIFT),
-        );
-        if (samples.some((point) => covered(point, around))) continue;
-        patches.push({ part, normal, right, up, bounds: [u[0]!, v[0]!, u[1]!, v[1]!] });
-      }
-    }
-    return patches;
-  });
-}
+export type Patch = {
+  low: number[];
+  high: number[];
+  protrudes: number;
+  normal: number[];
+  right: number[];
+  up: number[];
+  bounds: number[];
+};
+export type RebarBlocks = { groups: { patches: Patch[]; columns: number[] }[]; rows: number[] };
 
 function tube(): BufferGeometry {
   const positions: number[] = [];
@@ -169,7 +113,7 @@ export class Rebar extends Mesh<InstancedBufferGeometry, RawShaderMaterial> {
   private blocks: Block[] = [];
   private sticking = new Map<number, number[]>();
 
-  constructor(groups: RebarTiles[], rows: number[], uniforms: Record<string, IUniform>) {
+  constructor(uniforms: Record<string, IUniform>) {
     const shape = tube();
     const geometry = new InstancedBufferGeometry();
     geometry.setIndex(shape.index);
@@ -184,8 +128,11 @@ export class Rebar extends Mesh<InstancedBufferGeometry, RawShaderMaterial> {
         side: DoubleSide,
       }),
     );
-    groups.forEach(({ parts, around, columns }, group) => {
-      const patches = parts.flatMap((part) => exposedPatches(part, around));
+    this.frustumCulled = false;
+  }
+
+  fill({ groups, rows }: RebarBlocks): void {
+    groups.forEach(({ patches, columns }, group) => {
       for (const column of columns) {
         for (const row of rows) this.blocks.push({ group, column, row, patches });
       }
@@ -194,9 +141,8 @@ export class Rebar extends Mesh<InstancedBufferGeometry, RawShaderMaterial> {
     for (const [name, size] of ATTRIBUTES) {
       const attribute = new InstancedBufferAttribute(new Float32Array(capacity * size), size);
       attribute.setUsage(DynamicDrawUsage);
-      geometry.setAttribute(name, attribute);
+      this.geometry.setAttribute(name, attribute);
     }
-    this.frustumCulled = false;
     this.climb(0);
   }
 
@@ -212,17 +158,18 @@ export class Rebar extends Mesh<InstancedBufferGeometry, RawShaderMaterial> {
       const bars = this.sticking.get(key) ?? stickingBars(patches, column, tileRow);
       sticking.set(key, bars);
       for (const bar of bars) {
-        const { part, normal, right, up, bounds } = patches[Math.floor(bar / BARS)]!;
+        const { low, high, protrudes, normal, right, up, bounds } =
+          patches[Math.floor(bar / BARS)]!;
         const values = [
           [column, row],
-          part.min.toArray(),
-          part.max.toArray(),
-          normal.toArray(),
-          right.toArray(),
-          up.toArray(),
+          low,
+          high,
+          normal,
+          right,
+          up,
           bounds,
           [bar % BARS],
-          [part.protrudes ? 1 : 0],
+          [protrudes],
         ];
         values.forEach((value, index) => {
           (attributes[index]!.array as Float32Array).set(value, count * value.length);
