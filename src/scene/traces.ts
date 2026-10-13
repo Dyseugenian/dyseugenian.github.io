@@ -32,8 +32,6 @@ import grilleVertex from '../shaders/grille.vert';
 import grilleFragment from '../shaders/grille.frag';
 import boardVertex from '../shaders/board.vert';
 import boardFragment from '../shaders/board.frag';
-import cameraVertex from '../shaders/camera.vert';
-import cameraFragment from '../shaders/camera.frag';
 import { unpackGeometry } from './facade';
 import type { TraceGeometry } from './towerGeometry';
 
@@ -57,8 +55,7 @@ export type TraceKind =
   | 'ducts'
   | 'ductFittings'
   | 'grilles'
-  | 'boards'
-  | 'cameras';
+  | 'boards';
 
 const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameters]> = {
   vapour: [vapourVertex, vapourFragment, LAYERED],
@@ -73,7 +70,6 @@ const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameters]> = {
   ductFittings: [ductFittingVertex, ductFragment, {}],
   grilles: [grilleVertex, grilleFragment, {}],
   boards: [boardVertex, boardFragment, {}],
-  cameras: [cameraVertex, cameraFragment, {}],
 };
 
 export function traceMeshes(traces: TraceGeometry[], uniforms: Record<string, IUniform>): Mesh[] {

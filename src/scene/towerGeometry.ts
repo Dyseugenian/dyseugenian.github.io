@@ -37,7 +37,6 @@ import type { TraceKind } from './traces';
 const BLOCKLESS_COLUMNS = [0, 1];
 const DUCT_COLUMNS = [-2, 3];
 const GRILLE_COLUMNS = [-1, 0, 1];
-const CAMERA_COLUMNS = [-1, 2];
 const DETAIL_ROWS = { full: 5, reduced: 11 };
 const REBAR_ROWS = { below: 1, above: 4 };
 const TRACE_ROWS = { below: 1, above: 8 };
@@ -50,7 +49,6 @@ const SEEN_ROWS = {
   motes: 4,
   spouts: 7,
   ducts: 12,
-  cameras: 10,
 };
 
 const PUFFS = 16;
@@ -64,7 +62,6 @@ const SPOUT_RINGS = 96;
 const DUCT_RINGS = 36;
 const GRILLE_BARS = 63;
 const BOARDS = 14;
-const CAMERA_PARTS = 15;
 
 const PATCH = 0.6;
 const LIFT = 0.02;
@@ -311,10 +308,6 @@ function traceGeometries(): TraceGeometry[] {
       storeyGeometry(box, GRILLE_COLUMNS, below(traceRows, SEEN_ROWS.grilles), GRILLE_BARS),
     ],
     ['boards', storeyGeometry(box, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.boards), BOARDS)],
-    [
-      'cameras',
-      storeyGeometry(box, CAMERA_COLUMNS, below(TILE_ROWS, SEEN_ROWS.cameras), CAMERA_PARTS),
-    ],
     [
       'ducts',
       storeyGeometry(

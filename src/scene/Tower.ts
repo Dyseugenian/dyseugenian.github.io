@@ -30,7 +30,6 @@ import { beneathGrain } from '../post/Film';
 import { Rebar } from './Rebar';
 import { traceMeshes } from './traces';
 import { Backdrop } from './Backdrop';
-import { Bottles } from './Bottles';
 import { Beacons, beaconSpot } from './Beacons';
 import { Drift, STILL } from './Drift';
 import { MAP_METERS, bakeConcreteMaps } from './concreteMaps';
@@ -96,7 +95,6 @@ export class Tower extends Scene {
   private building = new Group();
   private materialUniforms: Record<string, IUniform>;
   private rebar: Rebar;
-  private bottles: Bottles;
   private occlusion: Record<Occlusion, { value: Data3DTexture }> = {
     tiles: { value: new Data3DTexture() },
     blockless: { value: new Data3DTexture() },
@@ -151,13 +149,12 @@ export class Tower extends Scene {
       uFogDensity: { value: 0.022 },
     };
     this.rebar = new Rebar(this.materialUniforms);
-    this.bottles = new Bottles(this.materialUniforms);
     this.building.add(
       new Beacons(beaconSpot(OUTER_X), TILE_ROWS, this.materialUniforms),
       this.rebar,
     );
     this.camera.position.z = VIEW.distance;
-    this.add(new Backdrop(this.uniforms), this.building, this.bottles, this.veil);
+    this.add(new Backdrop(this.uniforms), this.building, this.veil);
   }
 
   async load(renderer: WebGLRenderer): Promise<void> {
@@ -250,8 +247,6 @@ export class Tower extends Scene {
     const phase = (this.uniforms.uTime.value / BEACON_PERIOD) % 1;
     this.facadeUniforms.uBeacon.value =
       MathUtils.smoothstep(phase, 0, 0.08) * (1 - MathUtils.smoothstep(phase, 0.3, 0.55));
-
-    this.bottles.update(step, this.camera.position, this.facadeUniforms.uSpot.value);
 
     this.uniforms.uVanish.value.set(...this.onScreen(UP));
     this.uniforms.uBacklights.value.set(

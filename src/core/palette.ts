@@ -17,8 +17,6 @@ export const palette = {
   beacon: '#e3301f',
   spot: '#d6b07c',
   glassGreen: '#9cc4ad',
-  bottleAmber: '#8a4a14',
-  bottleGreen: '#3c6e2e',
   newsprint: '#d8c69a',
   newsprintAged: '#a88447',
   appliance: '#b8b3a5',
