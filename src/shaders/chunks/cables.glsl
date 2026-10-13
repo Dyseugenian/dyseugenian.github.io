@@ -24,6 +24,17 @@ const float RUN_BAYS = 4.0;
 const float RUN_CHANCE = 0.2;
 const float LEGS = 8.0;
 const float BRANCH_LEAD = 0.375;
+const float GUST_RATE = 0.35;
+const float WIND_SPEED = 9.0;
+const float WAVE_SPEED = 5.0;
+const float SURGE = 1.6;
+const float SURGE_LAG = 0.8;
+const float STREET_LINKS = 3.0;
+const vec3 POLE_DRIFT = vec3(0.0, -0.8, -2.5);
+const float SLAP_EVERY = 11.0;
+const float SLAP_CHANCE = 0.45;
+const float SLAP_REACH = 0.45;
+const float WALL_GAP = 0.012;
 const vec3 UP = vec3(0.0, 1.0, 0.0);
 const vec3 OUT = vec3(0.0, 0.0, 1.0);
 
@@ -46,16 +57,61 @@ vec3 leadFace[8];
 vec2 crookKey;
 vec4 fastener[8];
 vec4 fastenerFace[8];
+float gustRow;
+float gustDelay;
+float gustTravel;
+vec3 flutterSway;
+float flutterRate;
+float flutterPhase;
+float links;
+vec3 onward;
+float slapKey;
 float size;
 float thickness;
 float seed;
 
+float gustAt(float lag) {
+  return valueNoise(vec2((uTime - lag) * GUST_RATE, gustRow)) - 0.4;
+}
+
+float flutterAt(float lag) {
+  return sin(flutterRate * (uTime - lag) + flutterPhase);
+}
+
+vec3 swayAt(vec3 sway, float lag, float rest) {
+  float gust = gustAt(lag);
+  return sway * (gust + rest + SURGE * (gust - gustAt(lag + SURGE_LAG))) + flutterSway * flutterAt(lag);
+}
+
+float slapAt(float key) {
+  float cycle = uTime / SLAP_EVERY + hash12(vec2(key, 917.0));
+  if (hash12(vec2(key, floor(cycle))) > SLAP_CHANCE) return 0.0;
+  float since = fract(cycle) * SLAP_EVERY;
+  if (since < 0.12) return smoothstep(0.0, 0.12, since);
+  return exp(-5.0 * (since - 0.12)) * abs(cos(15.0 * (since - 0.12)));
+}
+
+vec3 polePoint(Wire wire, float link) {
+  float past = max(link - 1.0, 0.0);
+  return link < 0.5 ? wire.from : wire.to + onward * past + POLE_DRIFT * past * past;
+}
+
 vec3 wirePoint(Wire wire, float t) {
   if (wire.shape == SPAN) {
-    return mix(wire.from, wire.to, t) - UP * 4.0 * wire.sag * t * (1.0 - t) + wire.sway * sin(3.1416 * t);
+    float along = t * links;
+    float link = min(floor(along), links - 1.0);
+    float u = along - link;
+    vec3 start = polePoint(wire, link);
+    vec3 end = polePoint(wire, link + 1.0);
+    float stretch = length(end - start) / length(wire.to - wire.from);
+    float lag = gustDelay + gustTravel * stretch * (link + u);
+    return mix(start, end, u) - UP * 4.0 * wire.sag * stretch * u * (1.0 - u)
+      + swayAt(wire.sway, lag, 0.0) * stretch * sin(3.1416 * u);
   }
   if (wire.shape == DANGLE) {
-    return mix(wire.from, wire.to, t) + wire.sway * t * t;
+    vec3 point = mix(wire.from, wire.to, t) + swayAt(wire.sway, gustDelay + gustTravel * t, 0.4) * t * t;
+    point.z = max(point.z - SLAP_REACH * slapAt(slapKey) * t, WALL_GAP);
+    return point;
   }
   float angle = 6.2832 * wire.sag * t;
   vec2 oval = wire.to.xy * (1.0 + 0.12 * sin(angle * 0.37 + wire.to.z));
@@ -151,15 +207,20 @@ void blockLead(vec3 from, float front, float lane, float base) {
   fasten(5, lead[5], -OUT, 0.02, CLIP);
 }
 
-Wire streetSpan(vec3 from, vec3 reach, vec2 bend, float gust, float flutter) {
+Wire streetSpan(vec3 from, vec3 reach, vec2 bend) {
   float sag = (bend.x < 0.6 ? mix(0.1, 0.16, bend.y) : mix(0.04, 0.07, bend.y)) * length(reach);
-  return Wire(SPAN, from, from + reach, sag, 0.0, vec3(0.15 * flutter, 0.0, 0.5 * gust));
+  vec3 aim = vec3(hash12(reach.xz * 3.1), hash12(reach.yz * 5.7), hash12(reach.xy * 2.3));
+  links = STREET_LINKS;
+  onward = vec3(sign(reach.x) * mix(16.0, 28.0, aim.x), mix(-2.0, 1.0, aim.y), -mix(1.0, 6.0, aim.z));
+  gustTravel = length(reach) / WAVE_SPEED;
+  flutterSway = vec3(0.15, 0.0, 0.0);
+  return Wire(SPAN, from, from + reach, sag, 0.0, vec3(0.0, 0.0, 0.5));
 }
 
-Wire branch(vec2 room, vec3 from, vec3 pick, vec2 bend, float gust, float flutter) {
+Wire branch(vec2 room, vec3 from, vec3 pick, vec2 bend) {
   float side = (mod(room.x, 2.0) < 0.5) != (bend.y < 0.2) ? 1.0 : -1.0;
   vec3 reach = vec3(side * mix(1.2, 2.6, pick.x) * uBay, -mix(4.0, 12.0, pick.y), mix(9.0, 16.0, pick.z));
-  return streetSpan(from, reach, bend, gust, flutter);
+  return streetSpan(from, reach, bend);
 }
 
 vec3 runClip(vec2 pier, float x, float joint, float second) {
@@ -256,6 +317,9 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
   slackTo = 1.0;
   slackBow = vec3(0.0);
   for (int i = 0; i < 8; i++) fastener[i] = vec4(0.0);
+  links = 1.0;
+  onward = vec3(0.0);
+  flutterSway = vec3(0.0);
   if (plantFloor(room)) return false;
   float x = room.x * uBay;
   bool leftPier = x - SIDE_WALL - EDGE_WIDTH > -uOuterX + 0.01;
@@ -269,8 +333,14 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
   thickness = hash12(room + key + 8.0) < 0.18 ? 2.0 : 1.0;
   seed = pick.y;
   vec2 bend = vec2(hash12(room + key + 9.0), hash12(room + key + 10.0));
-  float gust = valueNoise(vec2(uTime * 0.35, room.y * 0.3 + room.x * 0.7)) - 0.4;
-  float flutter = sin(uTime * mix(1.6, 2.6, pick.x) + pick.y * 40.0);
+  gustRow = room.y * 0.3 + room.x * 0.7;
+  gustDelay = 0.6 * hash12(room + key + 11.0);
+  gustTravel = 0.0;
+  flutterRate = mix(1.6, 2.6, pick.x);
+  flutterPhase = pick.y * 40.0;
+  slapKey = pick.z * 97.0 + index;
+  float gust = gustAt(gustDelay);
+  float flutter = flutterAt(gustDelay);
   float side = storey < 0.5 ? 1.0 : -1.0;
   float bareX = storey < 0.5 ? uBay + PIER_MIDDLE : PIER_MIDDLE;
   bool barePier = storey < 0.5 ? rightPier : leftPier;
@@ -281,7 +351,7 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
     vec3 from = vec3(bareX - side * mix(0.35, 0.55, more.y), base + (3.0 - index) * COURSE, STANDOFF);
     pierLead(from, side, index, base);
     fasten(0, from, OUT, STANDOFF, ANCHOR);
-    wire = branch(room, from, pick, bend, gust, flutter);
+    wire = branch(room, from, pick, bend);
     leadShare = BRANCH_LEAD;
     size = mix(0.3, 1.0, size);
     return true;
@@ -292,7 +362,7 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
     vec3 from = vec3(mix(-2.85, -1.6, more.x), BLOCK_JOINT, front);
     blockLead(from, front, 2.0, base);
     fasten(0, from, OUT, STANDOFF, ANCHOR);
-    wire = branch(room, from, pick, bend, gust, flutter);
+    wire = branch(room, from, pick, bend);
     leadShare = BRANCH_LEAD;
     size = mix(0.3, 1.0, size);
     return true;
@@ -358,8 +428,11 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
   size = mix(0.5, 1.0, hash12(run + 711.0 + second));
   thickness = hash12(run + 719.0 + second) < 0.25 ? 2.0 : 1.0;
   seed = hash12(run + 713.0 + second);
-  float runGust = valueNoise(vec2(uTime * 0.35, room.y * 0.3)) - 0.4;
-  float runFlutter = sin(uTime * 2.1 + hash12(run + 709.0) * 40.0);
+  gustRow = room.y * 0.3;
+  gustDelay = (x + PIER_MIDDLE) / WIND_SPEED;
+  gustTravel = uBay / WIND_SPEED;
+  flutterRate = 2.1;
+  flutterPhase = hash12(run + 709.0) * 40.0;
 
   if (index < 4.5) {
     float lo = second > 0.5 ? min(feedPier, targetPier) : first;
@@ -369,8 +442,8 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
     vec3 to = runClip(room + vec2(1.0, 0.0), uBay + PIER_MIDDLE, joint, second);
     float slack = hash12(room + 713.0 + second);
     float sag = slack > 0.85 ? mix(0.9, 1.2, pick.z) : mix(0.15, 0.7, slack * slack);
-    wire = Wire(SPAN, from, to, sag, 0.0,
-      vec3(0.02 * runFlutter, 0.0, 0.25 * runGust + 0.02 * runFlutter) * (0.3 + sag));
+    flutterSway = vec3(0.02, 0.0, 0.02) * (0.3 + sag);
+    wire = Wire(SPAN, from, to, sag, 0.0, vec3(0.0, 0.0, 0.25) * (0.3 + sag));
     fasten(0, from, OUT, from.z, CLIP);
     if (room.x + 1.0 == hi) fasten(1, to, OUT, to.z, CLIP);
     return true;
@@ -390,7 +463,8 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
       runBend.x = 1.0;
     }
     reach += vec3(0.4, 0.3, 0.6) * second;
-    wire = streetSpan(from, reach, runBend, runGust, runFlutter);
+    wire = streetSpan(from, reach, runBend);
+    gustDelay = (x + from.x) / WIND_SPEED;
     fasten(0, from, OUT, from.z, ANCHOR);
     return true;
   }
@@ -420,6 +494,8 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
   if (chance > 0.6) return false;
   float drop = mix(0.5, 1.4, pick.x);
   vec3 to = clip + vec3(side * mix(-0.1, 0.1, pick.y), -drop, mix(0.0, 0.2, pick.z));
-  wire = Wire(DANGLE, clip, to, 0.0, 0.0, vec3(0.05 * flutter, 0.0, 0.3 * (gust + 0.4)) * 0.3 * drop);
+  gustTravel = 0.6;
+  flutterSway = vec3(0.05, 0.0, 0.0) * 0.3 * drop;
+  wire = Wire(DANGLE, clip, to, 0.0, 0.0, vec3(0.0, 0.0, 0.3) * 0.3 * drop);
   return true;
 }

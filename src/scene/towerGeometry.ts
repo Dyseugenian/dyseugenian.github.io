@@ -66,7 +66,8 @@ const PIGEON_ROWS = { near: 2 };
 const WIRES = 13;
 const FASTENERS = 8;
 const SPOUT_DROPS = 8;
-const SPOUT_RINGS = 96;
+const SPOUT_RINGS = 128;
+const SPOUT_PARTS = [0, 1, 2, 2, 3, 4, 5, 6, 7, 8];
 const DUCT_RINGS = 36;
 const GRILLE_BARS = 63;
 const BOARDS = 14;
@@ -420,13 +421,18 @@ function spoutShape() {
     new CylinderGeometry(1.35, 1.35, 0.03, 16).rotateX(Math.PI / 2).translate(0, 0, 0.015),
     new CylinderGeometry(1.1, 1.1, 0.06, 16, 1, true).rotateX(Math.PI / 2).translate(0, 0, -0.03),
     new RingGeometry(1, 1.1, 16),
+    new CylinderGeometry(1.16, 1.16, 1, 16).rotateX(Math.PI / 2),
+    new CylinderGeometry(1.16, 1.16, 1, 16).rotateX(Math.PI / 2),
+    new CylinderGeometry(1, 1, 1, 16).rotateX(Math.PI / 2),
+    new CylinderGeometry(1, 1, 1, 16).rotateX(Math.PI / 2),
+    new BoxGeometry(1, 1, 1),
+    new BoxGeometry(1, 1, 1),
   ].map((piece, index) => {
-    const part = Math.min(index, 2);
-    const plain = piece.toNonIndexed();
-    plain.deleteAttribute('uv');
-    const count = plain.getAttribute('position').count;
-    plain.setAttribute('aPart', new Float32BufferAttribute(new Float32Array(count).fill(part), 1));
-    return plain;
+    piece.deleteAttribute('uv');
+    const count = piece.getAttribute('position').count;
+    const part = SPOUT_PARTS[index]!;
+    piece.setAttribute('aPart', new Float32BufferAttribute(new Float32Array(count).fill(part), 1));
+    return piece;
   });
   const shape = mergeGeometries(pieces)!;
   for (const piece of pieces) piece.dispose();
@@ -475,13 +481,20 @@ export function traceLayouts(): TraceLayout[] {
     rows: number[],
     count: number,
   ): TraceLayout => ({ kind, shape, columns, tiles: traceTiles(kind, columns, rows), count });
+  const pipes: [TraceKind, TraceKind][] = [
+    ['spouts', 'drips'],
+    ['stacks', 'stackDrips'],
+    ['runs', 'runDrips'],
+  ];
   const cables = (rows: number[], segments: number): TraceLayout[] => [
     layout('wires', new PlaneGeometry(1, 1, 1, segments), TRACE_COLUMNS, rows, WIRES),
     layout('fasteners', box, TRACE_COLUMNS, rows, WIRES * FASTENERS),
   ];
   return [
-    layout('spouts', spoutShape(), TRACE_COLUMNS, below(traceRows, SEEN_ROWS.spouts), 1),
-    layout('drips', quad, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.spouts), SPOUT_DROPS),
+    ...pipes.flatMap(([pipe, drips]) => [
+      layout(pipe, spoutShape(), TRACE_COLUMNS, below(traceRows, SEEN_ROWS.spouts), 1),
+      layout(drips, quad, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.spouts), SPOUT_DROPS),
+    ]),
     layout('grilles', box, GRILLE_COLUMNS, below(traceRows, SEEN_ROWS.grilles), GRILLE_BARS),
     layout('boards', box, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.boards), BOARDS),
     layout(

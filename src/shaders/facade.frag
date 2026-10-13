@@ -408,11 +408,6 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
     albedo *= 1.0 + (hash12(scuffCell + 8.0) > 0.3 ? 0.2 : -0.25) * scuff;
   }
 
-  if (low.dense > 0.0) {
-    float dense = low.dense;
-    albedo = mix(albedo, mix(uConcreteWarm * 0.3, uGrime * 0.2, smoothstep(0.2, 0.6, dense)), min(1.3 * dense, 0.96));
-  }
-
   return Concrete(albedo, height, detail, vec3(0.0));
 }
 
@@ -1088,13 +1083,6 @@ void main() {
       color = transmitted + reflection * fresnel * mix(1.0, 0.4, lit)
         + (uHaze * 0.12 + glow * 0.22) * dirt
         + (uRim * 0.15 + glow * 0.15) * rim + uRim * 0.1 * joint;
-
-      if (burnt(room)) {
-        float shattered = smoothstep(0.45, 0.55, valueNoise(pane * 2.5 + room * 3.7));
-        float soot = mix(0.75, 0.97, valueNoise(pane * 7.0 + room)) * (1.0 - shattered);
-        color = mix(color, uGrime * 0.02 + reflection * fresnel * 0.15, soot);
-        color = mix(color, inside * 0.2, shattered);
-      }
 
       float blur = fwidth(pane.x);
       if (papered(room)) {

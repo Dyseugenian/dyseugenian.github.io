@@ -110,7 +110,7 @@ function traceMaterial(
     glslVersion: GLSL3,
     vertexShader: tagged(lit, 'flat out vec2 vTileId;', 'vTileId = aTile;'),
     fragmentShader: reachFragment,
-    defines: { TRACE: 1 },
+    defines: { ...options.defines, TRACE: 1 },
     uniforms: { ...uniforms, uMesh: { value: mesh } },
     depthWrite: false,
     side: options.side ?? FrontSide,

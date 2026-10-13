@@ -52,11 +52,17 @@ export type TraceKind =
   | 'fasteners'
   | 'pigeons'
   | 'spouts'
+  | 'stacks'
+  | 'runs'
   | 'drips'
+  | 'stackDrips'
+  | 'runDrips'
   | 'ducts'
   | 'ductFittings'
   | 'grilles'
   | 'boards';
+
+const PIPES: TraceKind[] = ['spouts', 'stacks', 'runs'];
 
 export const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameters]> = {
   vapour: [vapourVertex, vapourFragment, LAYERED],
@@ -66,7 +72,11 @@ export const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameter
   fasteners: [fastenerVertex, fastenerFragment, {}],
   pigeons: [pigeonVertex, pigeonFragment, {}],
   spouts: [spoutVertex, spoutFragment, { side: DoubleSide }],
+  stacks: [spoutVertex, spoutFragment, { side: DoubleSide, defines: { STACK: 1 } }],
+  runs: [spoutVertex, spoutFragment, { side: DoubleSide, defines: { RUN: 1 } }],
   drips: [spoutDripVertex, leakFragment, LAYERED],
+  stackDrips: [spoutDripVertex, leakFragment, { ...LAYERED, defines: { STACK: 1 } }],
+  runDrips: [spoutDripVertex, leakFragment, { ...LAYERED, defines: { RUN: 1 } }],
   ducts: [ductVertex, ductFragment, {}],
   ductFittings: [ductFittingVertex, ductFragment, {}],
   grilles: [grilleVertex, grilleFragment, {}],
@@ -93,7 +103,7 @@ export function traceMeshes(
     }
     const mesh = new Mesh(unpackGeometry(geometry), material);
     mesh.frustumCulled = false;
-    mesh.renderOrder = kind === 'spouts' ? 1 : 2;
+    mesh.renderOrder = PIPES.includes(kind) ? 1 : 2;
     return mesh;
   });
 }

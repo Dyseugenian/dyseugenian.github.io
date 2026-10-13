@@ -29,33 +29,6 @@ layout(location = 2) out vec4 outShape;
 layout(location = 3) out vec4 outMask;
 
 const bool CONCRETE = SURFACE == 0;
-const float SOOT_RISE = 7.5;
-
-float scorch(vec3 local, vec3 normal) {
-  vec2 tile = vec2(vTile.x, mod(vTile.y + uTilesClimbed, 4096.0));
-  vec2 room;
-  vec3 q;
-  bool found = false;
-  for (int below = 0; below < 3; below++) {
-    q = fromWindow(local, tile, float(below), room);
-    if (burnt(room)) {
-      found = true;
-      break;
-    }
-  }
-  float rise = q.y + 0.6;
-  if (!found || rise < 0.0) return 0.0;
-  float key = hash12(room + 713.0) * 50.0;
-  float tongues = fbm(vec2(q.x * 1.4 + key, rise * 0.35)) - 0.5;
-  float width = 0.9 + 0.28 * rise + 1.2 * tongues;
-  float spread = 1.0 - smoothstep(0.75 * width, width, abs(q.x));
-  float fingers = valueNoise(vec2(q.x * 3.0 + key, rise * 0.25));
-  float reach = SOOT_RISE * mix(0.3, 1.0, fingers) * mix(0.7, 1.15, hash12(room + 715.0));
-  float fade = 1.0 - smoothstep(0.45 * reach, reach, rise);
-  float ahead = 1.0 - smoothstep(3.0, 5.0, q.z);
-  return spread * fade * ahead * smoothstep(0.0, 0.9, rise) * mix(1.0, 1.4, max(-normal.y, 0.0)) * mix(1.0, 0.45, max(normal.y, 0.0));
-}
-
 bool spallsNear(vec2 p, float upright, float footprint) {
   for (int layer = 0; layer < 2; layer++) {
     float spacing = SPALL_SPACINGS[layer];
@@ -105,7 +78,6 @@ void main() {
   float cloud = clouds(cameraPosition + climbed, vWorld + climbed);
 
   vec4 layer = vec4(0.0, 0.0, 0.0, 1.0);
-  float dense = 0.0;
   vec4 mask = vec4(0.0);
   if (CONCRETE) {
     vec2 seed = vec2(hash12(tile), hash12(tile + 1.7)) * 97.0;
@@ -120,11 +92,6 @@ void main() {
     vec3 risen = vWorld + climbed;
     vec2 wall = vec2(dot(risen, frame[0]), dot(risen, frame[1])) + dot(risen, normal) * vec2(1.37, 0.71);
     layer = stains(wall, upright, weathering, footprint);
-    float soot = scorch(vLocal, normal);
-    if (soot > 0.0) {
-      vec2 warp = vec2(fbm(p * 0.6), fbm(p * 0.6 + 7.3)) - 0.5;
-      dense = soot * mix(0.65, 1.2, fbm((p + warp * 0.8) * 2.5 + 83.0));
-    }
     mask = vec4(
       spallsNear(p, upright, footprint) ? 1.0 : 0.0,
       cracksNear(p, fromLow, fromLow + toHigh, upright, footprint) ? 1.0 : 0.0,
@@ -133,6 +100,6 @@ void main() {
   }
   outLayer = vec4(sqrt(clamp(layer.rgb / 1.2, 0.0, 1.0)), layer.a / 1.1);
   outAir = vec4(sqrt(clamp(scatter / 4.0, 0.0, 1.0)), mist);
-  outShape = vec4(normal.xy * 0.5 + 0.5, cloud, dense / 2.0);
+  outShape = vec4(normal.xy * 0.5 + 0.5, cloud, 0.0);
   outMask = mask;
 }

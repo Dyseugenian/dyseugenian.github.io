@@ -28,19 +28,19 @@ in float vRun;
 in vec2 vAround;
 in vec3 vTangent;
 flat in float vLength;
-flat in float vClosed;
+flat in vec2 vEnds;
 flat in float vSeed;
+flat in float vPattern;
 
 uniform float uPresence;
 
 out vec4 outColor;
 
-const float IRON = 0.4;
-const float PAINTED = 0.7;
-const float GALVANISED = 0.88;
+const float IRON = 0.55;
+const float PAINTED = 0.8;
+const float GALVANISED = 0.95;
 const float JOINT_SPACING = 1.1;
 const float SCALE_BUMP = 0.012;
-const float WALL_DEPTH = 0.1;
 
 vec3 bumped(vec3 normal, float height) {
   vec3 dx = dFdx(vWorld);
@@ -60,7 +60,7 @@ void main() {
   vec3 normal = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
   float inside = !gl_FrontFacing || (vPart == 1.0 && vRadial < 1.0) ? 1.0 : 0.0;
   vec3 toCamera = normalize(cameraPosition - vWorld);
-  float seed = vSeed * 97.0 + vTile.x * 13.0;
+  float seed = vPattern * 97.0 + vTile.x * 13.0;
   vec2 ring = normalize(vAround + vec2(1e-4));
   vec3 surface = vec3(vRun * 6.0, ring * 0.9) + seed;
   float upright = abs(normalize(vTangent).y);
@@ -75,16 +75,16 @@ void main() {
   float joint = 0.0;
   if (vPart < 0.5) {
     float spacing = JOINT_SPACING * mix(0.8, 1.3, fract(vSeed * 5.3));
-    float toJoint = abs(fract(vRun / spacing + fract(vSeed * 3.1)) - 0.5) * spacing;
+    float toJoint = abs(fract(vRun / spacing + vPattern) - 0.5) * spacing;
     joint = 1.0 - smoothstep(0.015, 0.05, toJoint);
   }
-  float atWall = exp(-max(vRun - WALL_DEPTH, 0.0) / 0.12);
-  if (vClosed > 0.5) atWall = max(atWall, exp(-max(vLength - WALL_DEPTH - vRun, 0.0) / 0.12));
-  float dripping = step(vDrips, 0.5) * (1.0 - vClosed) * mix(0.35, 1.0, vDrips * 2.0);
+  float atWall = vEnds.x > 0.0 ? exp(-max(vRun - vEnds.x, 0.0) / 0.12) : 0.0;
+  if (vEnds.y > 0.0) atWall = max(atWall, exp(-max(vLength - vEnds.y - vRun, 0.0) / 0.12));
+  float dripping = step(vDrips, 0.5) * mix(0.35, 1.0, vDrips * 2.0);
   float mouth = dripping * smoothstep(0.8, 1.0, vAlong);
 
   vec3 rust = mix(uRust * 0.25, uRust * mix(0.55, 0.75, fine), smoothstep(0.25, 0.75, blotch)) * mix(0.93, 1.04, grain);
-  rust = mix(rust, uGrime, 0.35 + 0.2 * smoothstep(0.4, 0.9, blotch));
+  rust = mix(rust, uGrime, 0.2 + 0.2 * smoothstep(0.4, 0.9, blotch));
   float pits = smoothstep(0.7, 0.92, grain);
   float scale = fine * 0.6 + grain * 0.4;
   float rusting;
@@ -97,30 +97,30 @@ void main() {
     height = scale - 0.5 * pits;
     gloss = 0.04;
   } else if (vSeed < PAINTED) {
-    vec3 paint = fract(vSeed * 11.7) < 0.5 ? mix(uGrime, uConcrete, 0.4) : mix(uMoss, uConcrete, 0.45);
-    paint = mix(paint, vec3(dot(paint, vec3(0.3, 0.59, 0.11))) * 1.2, 0.65) * mix(0.82, 1.0, blotch);
+    vec3 paint = fract(vSeed * 11.7) < 0.5 ? mix(uGrime, uConcrete, 0.25) : mix(uMoss, uConcrete, 0.3);
+    paint = mix(paint, vec3(dot(paint, vec3(0.3, 0.59, 0.11))) * 1.2, 0.65) * mix(0.7, 0.85, blotch);
     float flakes = valueNoise(surface * vec3(1.6, 5.0, 5.0) + 7.0) + 0.3 * underside + 0.4 * joint + 0.25 * atWall;
     flakes += 0.15 * (fine - 0.5);
-    rusting = smoothstep(0.64, 0.68, flakes);
-    float edge = smoothstep(0.6, 0.64, flakes) * (1.0 - rusting);
-    float stain = smoothstep(0.48, 0.64, flakes) * (1.0 - rusting);
+    rusting = smoothstep(0.5, 0.54, flakes);
+    float edge = smoothstep(0.46, 0.5, flakes) * (1.0 - rusting);
+    float stain = smoothstep(0.34, 0.5, flakes) * (1.0 - rusting);
     float blisters = stain * smoothstep(0.55, 0.8, fine);
     paint = mix(paint, uRust * 0.5, 0.25 * stain);
     albedo = mix(paint, rust, rusting);
     height = (1.0 - rusting) * 0.6 + 0.5 * edge + 0.5 * blisters + rusting * (scale - 0.5 * pits) * 0.5;
     gloss = mix(0.14, 0.04, rusting);
   } else if (vSeed < GALVANISED) {
-    vec3 zinc = mix(uConcrete, uGrime, 0.35) * mix(0.5, 0.62, blotch);
+    vec3 zinc = mix(uConcrete, uGrime, 0.35) * mix(0.36, 0.46, blotch);
     zinc = mix(zinc, uSalt * 0.7, 0.12 * smoothstep(0.6, 0.9, blotch));
-    rusting = smoothstep(0.6, 0.85, valueNoise(surface * vec3(3.0, 4.0, 4.0) + 5.0) + 0.1 * (fine - 0.5)
+    rusting = smoothstep(0.42, 0.7, valueNoise(surface * vec3(3.0, 4.0, 4.0) + 5.0) + 0.1 * (fine - 0.5)
       + 0.35 * underside + 0.4 * joint + 0.25 * atWall);
     albedo = mix(zinc, rust, rusting);
     height = 0.15 * grain + rusting * (scale - 0.5 * pits);
     gloss = mix(0.12, 0.04, rusting);
   } else {
-    albedo = uConcrete * mix(0.55, 0.7, blotch);
+    albedo = uConcrete * mix(0.36, 0.46, blotch);
     albedo = mix(albedo, uMoss * 0.8, 0.35 * underside * smoothstep(0.35, 0.75, blotch));
-    rusting = min(0.5 * joint + 0.35 * atWall, 1.0);
+    rusting = min(0.6 * joint + 0.45 * atWall + 0.3 * runs, 1.0);
     albedo = mix(albedo, rust, rusting);
     height = 0.5 * grain + 0.3 * fine;
     gloss = 0.05;
@@ -131,7 +131,7 @@ void main() {
   albedo = mix(albedo, uSalt * 0.8, 0.25 * atWall * smoothstep(0.4, 0.8, blotch) * (1.0 - inside));
   albedo = mix(albedo, uSalt * 0.8, 0.25 * mouth * underside * smoothstep(0.4, 0.8, fine));
   albedo *= 1.0 - 0.15 * joint;
-  albedo = mix(albedo, vec3(dot(albedo, vec3(0.3, 0.59, 0.11))), 0.3);
+  albedo = mix(albedo, vec3(dot(albedo, vec3(0.3, 0.59, 0.11))), 0.15);
   albedo = mix(albedo, rust * 0.55, inside);
   float wet = max(mouth * underside * (1.0 - inside), dripping * trough);
   albedo *= 1.0 - 0.45 * wet;

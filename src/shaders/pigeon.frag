@@ -13,8 +13,6 @@ uniform vec3 uConcrete;
 uniform vec3 uMoss;
 uniform vec3 uSalt;
 uniform vec3 uGrime;
-uniform vec3 uRust;
-uniform vec3 uMadder;
 uniform vec3 uDenim;
 uniform vec3 uCoral;
 
@@ -55,10 +53,6 @@ void main() {
   float barred = 1.0;
   if (breed > 0.9) {
     pied = 1.0;
-  } else if (breed > 0.82) {
-    body = mix(uRust, uMadder, 0.4) * 0.75;
-    dark = uRust * 0.35;
-    flight = body * 0.8;
   } else if (breed > 0.7) {
     body = mix(uConcrete, uGrime, 0.7);
     flight = body * 0.8;

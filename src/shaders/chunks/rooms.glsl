@@ -24,13 +24,8 @@ bool sheeted(vec2 room) {
   return !plantFloor(room) && hash12(room + 253.0) >= 0.93;
 }
 
-bool burnt(vec2 room) {
-  return !plantFloor(room) && !glassBlocks(room) && !sheeted(room) && hash12(room + 709.0) < 0.02;
-}
-
 bool boarded(vec2 room) {
-  return !plantFloor(room) && !glassBlocks(room) && !sheeted(room)
-    && (hash12(room + 701.0) < 0.05 || burnt(room) && hash12(room + 711.0) < 0.5);
+  return !plantFloor(room) && !glassBlocks(room) && !sheeted(room) && hash12(room + 701.0) < 0.05;
 }
 
 bool papered(vec2 room) {

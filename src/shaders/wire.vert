@@ -21,8 +21,12 @@ out vec3 vSide;
 out vec3 vTangent;
 out float vAcross;
 out float vAlpha;
+out float vSoft;
 flat out vec2 vTile;
 flat out float vSeed;
+
+const vec2 SOFT_RANGE = vec2(10.0, 50.0);
+const float SOFT_SPREAD = 1.5;
 
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
@@ -40,8 +44,9 @@ void main() {
   vec4 world = modelMatrix * vec4(middle + aOffset, 1.0);
   vec3 toCamera = cameraPosition - world.xyz;
   float pixel = 2.0 * length(toCamera) / (projectionMatrix[1][1] * uResolution.y);
+  float soft = smoothstep(SOFT_RANGE.x, SOFT_RANGE.y, length(toCamera));
   float radius = wireRadius(size) * thickness;
-  float halfWidth = max(radius, 0.6 * pixel * thickness);
+  float halfWidth = max(radius, 0.6 * pixel * thickness) * (1.0 + SOFT_SPREAD * soft);
   vec3 side = normalize(cross(tangent, toCamera));
   vec3 widened = side * position.x * 2.0 * halfWidth;
   world.xyz += widened;
@@ -50,7 +55,8 @@ void main() {
   vSide = side;
   vTangent = tangent;
   vAcross = position.x * 2.0;
-  vAlpha = max(radius / halfWidth, 0.5);
+  vAlpha = max(radius / halfWidth, 0.5) * mix(1.0, 0.55, soft);
+  vSoft = soft;
   vTile = tile;
   vSeed = seed;
   gl_Position = projectionMatrix * viewMatrix * world;

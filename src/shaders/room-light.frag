@@ -18,7 +18,7 @@ out vec4 outColor;
 const float SWITCH_PERIOD = 30.0;
 
 vec3 roomLight(vec2 room) {
-  if (abs(room.x) * uBay + 1.05 > uOuterX || plantFloor(room) || boarded(room) || burnt(room)) return vec3(0.0);
+  if (abs(room.x) * uBay + 1.05 > uOuterX || plantFloor(room) || boarded(room)) return vec3(0.0);
   float cluster = valueNoise(room * vec2(0.9, 0.2) + 5.0);
   float chance = mix(0.1, 0.6, smoothstep(0.3, 0.75, cluster));
   float era = floor(uTime / SWITCH_PERIOD + hash12(room + 43.0));

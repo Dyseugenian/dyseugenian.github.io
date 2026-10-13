@@ -32,19 +32,25 @@ const float GRAVITY = 9.8;
 
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-  vec2 room = roomOf(aTile, aStorey);
   float drop = aIndex;
-  if (!spoutOf(room, aTile, aStorey)) return;
-  Spout spout = spoutAt(room, aTile);
-  if (spout.drips > 0.5) return;
+  Spout spout = pipeAt(aTile, aStorey);
+  if (spout.count < 2 || spout.drips > 0.5) return;
   if (uPresence > 0.5) {
     markPresent();
     return;
   }
-  vec3 lip = spoutLip(spout);
-  bool overBlock = lip.z < spout.landing && lip.x > BLOCK_SPAN.x && lip.x < BLOCK_SPAN.y;
-  float reach = overBlock ? lip.y - BLOCK_TOP : 3.0;
-  vec2 seed = room;
+  follow(spout);
+  vec3 lip = spoutLip(spout.radius);
+  float column = floor((lip.x - BLOCK_SPAN.x) / uBay);
+  float x = lip.x - column * uBay;
+  float shift = (mod(abs(aTile.x + column), 2.0) - mod(abs(aTile.x), 2.0)) * 0.5 * uTileHeight;
+  float row = floor((lip.y - shift - BLOCK_TOP) / uTileHeight);
+  vec2 below = vec2(aTile.x + column, mod(aTile.y + row + uTilesClimbed, 4096.0));
+  float landing = BLOCK_FRONT - blockInset(below);
+  bool overBlock = blockless(below) < 0.5 && lip.z < landing && x > BLOCK_SPAN.x && x < BLOCK_SPAN.y;
+  float reach = overBlock ? lip.y - shift - BLOCK_TOP - row * uTileHeight : 3.0;
+  vec2 room = roomOf(aTile, aStorey);
+  vec2 seed = room + PIECE * 37.0;
   float flow = spout.drips * 2.0;
   float count = ceil(mix(1.0, DROPS, flow * flow * flow));
   if (drop >= count) return;

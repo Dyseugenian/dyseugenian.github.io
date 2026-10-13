@@ -11,7 +11,6 @@ struct Low {
   vec3 scatter;
   float mist;
   float cloud;
-  float dense;
   vec4 mask;
 };
 
@@ -74,7 +73,6 @@ Low sampleLow(vec3 normal) {
   low.scatter = air.rgb * air.rgb * 4.0;
   low.mist = air.a;
   low.cloud = shape.z;
-  low.dense = shape.w * 2.0;
   low.mask = mask;
   return low;
 }
