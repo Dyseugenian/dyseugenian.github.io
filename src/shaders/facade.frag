@@ -13,9 +13,9 @@ precision highp sampler3D;
 #include "chunks/cracks.glsl"
 #include "chunks/sky.glsl"
 #include "chunks/lowres.glsl"
+#include "chunks/cloth.glsl"
 
 uniform vec3 cameraPosition;
-uniform vec2 uResolution;
 uniform vec3 uSky;
 uniform float uExposure;
 uniform vec3 uConcrete;
@@ -411,10 +411,6 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
   return Concrete(albedo, height, detail, vec3(0.0));
 }
 
-float groove(float toEdge, float blur, float width) {
-  return 1.0 - smoothstep(width - blur, width + blur, toEdge);
-}
-
 float beamHit(vec3 pane, vec3 ray, vec3 window, vec2 room, float ceilingY, float limit,
     inout vec3 normal, out float crease) {
   crease = 1.0;
@@ -628,10 +624,6 @@ Concrete airConditioner(Concrete surface, vec3 normal) {
   return surface;
 }
 
-float seam(float distance, float width) {
-  return groove(abs(distance), fwidth(distance), width);
-}
-
 Concrete laundry(Concrete surface) {
   vec3 halfSize = 0.5 * (vMax - vMin);
   surface.detail = vec3(0.0, 0.0, 1.0);
@@ -641,89 +633,34 @@ Concrete laundry(Concrete surface) {
     return surface;
   }
   float seed = hash12(vec2(vTile.x, mod(vTile.y + uTilesClimbed, 4096.0)) + vMin.y * 3.7 + vMin.x * 5.3);
-  float u = vCloth.x;
-  float au = abs(u);
+  Garment piece = garment(seed, vCloth, vFold);
+  if (garmentCut(piece)) discard;
+  float au = abs(vCloth.x);
   float drop = vCloth.y;
-  float size = fract(seed * 7.31);
-  int garment = int(seed * 6.0);
-  if (garment == 0) discard;
-  float shape = 1.0;
-  float pegs = 0.09;
-  float stitches = 0.0;
-  float trim = 0.0;
-  float worn = 0.0;
-  if (garment == 1) {
-    float width = mix(0.15, 0.23, size);
-    float hem = mix(0.4, 0.6, fract(seed * 11.7));
-    shape = max(au - width, drop - hem);
-    trim = step(abs(drop - hem + 0.09), 0.025) + step(abs(drop - hem + 0.15), 0.01);
-    stitches = seam(drop - 0.03, 0.004) + seam(drop - hem + 0.03, 0.004);
-    pegs = width - 0.03;
-  } else if (garment == 2) {
-    float body = max(au - 0.17, drop - 0.58);
-    float sleeve = max(au - min(0.17 + 0.6 * (drop - 0.36), 0.26), max(0.36 - drop, drop - 0.56));
-    float neck = length(vec2(u, drop - 0.6)) - 0.065;
-    shape = max(min(body, sleeve), -neck);
-    stitches = seam(neck - 0.018, 0.004) + seam(au - 0.17, 0.004) * step(0.36, drop) + seam(drop - 0.03, 0.004);
-    vec2 print = abs(vec2(u, drop - 0.3)) - vec2(0.07, 0.05);
-    trim = step(0.45, fract(seed * 41.0)) * (1.0 - step(0.0, max(print.x, print.y)));
-    worn = 1.0 - smoothstep(0.0, 0.02, neck);
-    pegs = 0.14;
-  } else if (garment == 3) {
-    float hem = mix(0.7, 0.85, size);
-    shape = max(au - 0.15 + 0.02 * drop / hem, drop - hem);
-    float crotch = min(0.012 + 0.03 * (drop - 0.3) - au, drop - 0.3);
-    shape = max(shape, crotch);
-    vec2 pocket = abs(vec2(au - 0.08, drop - 0.14)) - vec2(0.04, 0.05);
-    stitches = seam(drop - 0.05, 0.004) + seam(au - 0.13, 0.003) * step(0.05, drop)
-      + seam(max(pocket.x, pocket.y), 0.003) + seam(crotch + 0.012, 0.003) + seam(drop - hem + 0.025, 0.003);
-    trim = 1.0 - smoothstep(0.045, 0.05, drop);
-    worn = exp(-pow((drop - 0.5) / 0.08, 2.0)) * (1.0 - smoothstep(0.04, 0.1, abs(au - 0.075)));
-    pegs = 0.12;
-  } else if (garment == 4) {
-    vec2 leg = abs(vec2(au - 0.09, drop - 0.11)) - vec2(0.023, 0.118);
-    vec2 foot = abs(vec2(au - 0.13, drop - 0.22)) - vec2(0.038, 0.023);
-    shape = min(length(max(leg, 0.0)) + min(max(leg.x, leg.y), 0.0),
-      length(max(foot, 0.0)) + min(max(foot.x, foot.y), 0.0)) - 0.012;
-    trim = 1.0 - smoothstep(0.045, 0.055, drop) + smoothstep(0.16, 0.172, au)
-      + smoothstep(0.222, 0.234, drop) * (1.0 - smoothstep(0.098, 0.11, au));
-    stitches = seam(drop - 0.055, 0.003);
-  } else if (garment == 5) {
-    float width = mix(0.22, 0.26, size);
-    float hem = mix(0.75, 0.92, fract(seed * 13.3));
-    shape = max(au - width, drop - hem);
-    trim = 1.0 - step(0.06, drop);
-    stitches = 0.6 * (seam(u, 0.003) + seam(drop - hem * 0.5, 0.003)) + seam(drop - hem + 0.02, 0.003);
-    pegs = width - 0.03;
-  }
-  shape += smoothstep(0.0, 0.25, drop) * (garment == 4 ? 0.25 : 1.0) * (0.007 * vFold + 0.014 * (valueNoise(vec2(u * 9.0, drop * 6.0 + seed * 20.0)) - 0.5));
-  float droop = 0.025 * max(1.0 - pow(au / pegs, 2.0), 0.0) + 0.3 * max(au - pegs - 0.02, 0.0);
-  if (garment != 4) shape = max(shape, droop - drop);
-  float peg = max(abs(au - pegs) - 0.008, drop + 0.01 - 0.05);
-  if (min(shape, peg) > 0.0) discard;
 
   float tone = fract(seed * 23.0);
   vec3 cloth = tone < 0.3 ? uLinen : tone < 0.5 ? uDenim : tone < 0.65 ? uMadder
     : tone < 0.82 ? mix(uLinen, uDenim, 0.5) : mix(uLinen, uMadder, 0.45);
-  if (garment == 3) cloth = mix(uDenim, uGrime * 3.0, step(0.7, tone));
-  if (garment == 5) cloth = mix(uLinen, cloth, 0.2);
-  if (garment == 4) cloth *= mix(0.6, 1.0, 1.0 - pow(clamp((au - 0.09) / 0.036, -1.0, 1.0), 2.0) * step(drop, 0.2));
+  if (piece.kind == 3) cloth = mix(uDenim, uGrime * 3.0, step(0.7, tone));
+  if (piece.kind == 5) cloth = mix(uLinen, cloth, 0.2);
+  float crease = clamp((au - 0.09) / 0.036, -1.0, 1.0);
+  if (piece.kind == 4) cloth *= mix(0.6, 1.0, 1.0 - crease * crease * step(drop, 0.2));
   vec3 accent = tone < 0.5 ? uMadder : uLinen;
-  cloth = mix(cloth, garment == 3 || garment == 5 ? cloth * 0.75 : accent, 0.6 * min(trim, 1.0));
-  cloth = mix(cloth, uLinen, 0.25 * worn);
-  cloth *= 1.0 - 0.3 * min(stitches, 1.0);
-  cloth *= 1.0 - 0.25 * (1.0 - smoothstep(0.004, 0.016, -shape));
-  cloth *= mix(0.75, 1.05, valueNoise(vec2(u * 12.0, drop * 2.0 + seed * 9.0)));
-  cloth *= mix(0.75, 1.0, smoothstep(0.0, 0.1, drop - droop));
+  cloth = mix(cloth, piece.kind == 3 || piece.kind == 5 ? cloth * 0.75 : accent, 0.6 * min(piece.trim, 1.0));
+  cloth = mix(cloth, uLinen, 0.25 * piece.worn);
+  cloth *= 1.0 - 0.3 * min(piece.stitches, 1.0);
+  cloth *= 1.0 - 0.25 * (1.0 - smoothstep(0.004, 0.016, -piece.shape));
+  cloth *= mix(0.75, 1.05, valueNoise(vec2(vCloth.x * 12.0, drop * 2.0 + seed * 9.0)));
+  cloth *= mix(0.75, 1.0, smoothstep(0.0, 0.1, drop - piece.droop));
   cloth *= mix(0.45, 1.15, smoothstep(-1.7, 1.7, vFold));
-  surface.albedo = mix(cloth, mix(uMadder, uDenim, step(0.5, fract(seed * 53.0))) * 1.2, step(peg, 0.0));
+  surface.albedo = mix(cloth, mix(uMadder, uDenim, step(0.5, fract(seed * 53.0))) * 1.2, step(piece.peg, 0.0));
   return surface;
 }
 
 Concrete rag(Concrete surface) {
   float seed = hash12(vec2(vTile.x, mod(vTile.y + uTilesClimbed, 4096.0)) + vMin.y * 3.7);
-  float hem = (vMax.y - vMin.y) * mix(0.55, 1.0, valueNoise(vec2(vCloth.x * 14.0, seed * 50.0)));
-  if (vCloth.y > hem || valueNoise(vCloth * 8.0 + seed * 30.0) > 0.86) discard;
+  float hem = ragHem(seed, vCloth, vMax.y - vMin.y);
+  if (ragTorn(seed, vCloth, hem)) discard;
   vec3 cloth = seed < 0.4 ? uMadder : seed < 0.7 ? uDenim : uLinen;
   surface.albedo = mix(cloth * 0.75, uGrime, 0.2 + 0.4 * vCloth.y / hem) * mix(0.8, 1.1, valueNoise(vCloth * 40.0))
     * mix(0.65, 1.05, smoothstep(-1.6, 1.6, vFold));
@@ -734,9 +671,8 @@ Concrete rag(Concrete surface) {
 
 Concrete sheet(Concrete surface, vec2 tile) {
   vec2 size = vMax.xy - vMin.xy;
-  vec2 at = vec2(vCloth.x / size.x + 0.5, 1.0 - vCloth.y / size.y);
-  float inward = min(1.6 * min(at.x, 1.0 - at.x), at.y);
-  if (fbm(vLocal.xy * 2.5 + vMin.y * 7.0) > 0.5 + 1.1 * inward) discard;
+  vec2 at = onSheet(vCloth, size);
+  if (sheetTorn(vLocal.xy, vMin.y, at)) discard;
   float creases = valueNoise(vLocal.xy * vec2(9.0, 2.5) + vMin.y);
   vec2 border = min(at, 1.0 - at) * size;
   float taped = step(min(border.x, border.y), 0.04);
@@ -1015,9 +951,10 @@ void main() {
     vec2 at = vec2(q.x - mix(-0.8, 0.8, hash12(bay + 227.0)), vLocal.y - 0.5 * (vMin.y + vMax.y));
     if (hash12(bay + 229.0) > 0.55) surface = ventGrille(surface, at, bay);
   }
+  float footprint = length(fwidth(vLocal.xy));
   if (studded && (broken == 3 || normal.z > 0.99 && damage < STUD_MISSING)) {
     vec3 at = broken == 3 ? hit : vLocal;
-    vec4 left = adhesive(surface.albedo, at.xy - studApex(at.y).xy, damage, length(fwidth(vLocal.xy)));
+    vec4 left = adhesive(surface.albedo, at.xy - studApex(at.y).xy, damage, footprint);
     surface.albedo = left.rgb;
     surface.height += left.a;
   }
@@ -1043,7 +980,8 @@ void main() {
       * depth * mix(0.4, 1.0, occlusion);
   }
 
-  vec3 haze = skyColor(gl_FragCoord.xy, uResolution);
+  vec4 sky = skyAt(gl_FragCoord.xy, uResolution);
+  vec3 haze = skyClear(sky);
   vec3 color = surface.albedo * light + surface.emission;
   float lit = 0.0;
   if (GLASS) {
@@ -1099,7 +1037,9 @@ void main() {
   color += uRim * SIDE_LIGHT * facing * side * surface.albedo / uConcrete * mix(0.5, 1.0, occlusion);
 
   float fog = 1.0 - exp(-distance * uFogDensity * mix(0.5, 1.7, low.mist));
-  color = mix(color, haze, fog * mix(1.0, 0.6, lit)) + SCATTER * low.scatter * (1.0 - 0.5 * fog);
+  float hazing = fog * mix(1.0, 0.6, lit);
+  color = mix(color, haze, hazing) + SCATTER * low.scatter * (1.0 - 0.5 * fog);
   color = mix(color, haze, low.cloud);
+  color += skyFlash(sky, 1.0 - (1.0 - hazing) * (1.0 - low.cloud));
   outColor = vec4(color * uExposure, 1.0);
 }

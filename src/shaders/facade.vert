@@ -55,7 +55,7 @@ void main() {
   vec2 room = vec2(tile.x, mod(storey, 8192.0));
   float pick = hash12(room + 223.0);
   float hung = hash12(room + 233.0);
-  float holed = step(blockInset(tile), 0.0) * step(mod(floor(abs(tile.x - 0.5)) + tile.y, 2.0), 0.5);
+  float holed = holedBlock(tile) ? 1.0 : 0.0;
   float kept = blockRemoved(tile) ? 0.0 : 1.0;
   float chosen = block > 0.5 ? abs(step(7.5, aRole) - holed) * (1.0 - blockless(tile) * step(aRole, 8.5)) * mix(1.0, kept, step(abs(aRole - 8.0), 0.5))
     : rare > 0.5 ? step(aRole > 5.5 ? 0.93 : 0.9, hash12(room + 193.0 + 10.0 * aRole))
@@ -102,7 +102,8 @@ void main() {
     float twist = 0.5 * (valueNoise(vec2(uTime * 0.5, hung * 31.0 + aMin.x * 5.0)) - 0.5);
     float wave = 0.035 * lag * sin(uTime * mix(2.5, 3.5, hung) + phase - 9.0 * hang);
     local.z += pleat * ripple + hang * (swing * mix(0.55, 1.25, lag) + twist * across) + wave;
-    local.y -= laundry * LINE_SAG * (1.0 - pow(position.x / LINE_HALF, 2.0));
+    float along = position.x / LINE_HALF;
+    local.y -= laundry * LINE_SAG * (1.0 - along * along);
     bent.x -= (pleat * slope + twist * hang) * normal.z;
     bent.y += (swing * mix(0.55, 2.0, lag) + twist * across) * normal.z;
     vFold = ripple * smoothstep(0.0, 0.25, hang);

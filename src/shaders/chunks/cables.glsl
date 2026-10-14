@@ -2,6 +2,7 @@
 #include "light.glsl"
 #include "windows.glsl"
 #include "inset.glsl"
+#include "ducts.glsl"
 
 const float SPAN = 0.0;
 const float DANGLE = 1.0;
@@ -230,7 +231,12 @@ vec3 runClip(vec2 pier, float x, float joint, float second) {
 }
 
 bool clearWindow(vec2 room) {
-  return hash12(room + 253.0) < 0.93 && !airConditioned(room);
+  return !sheeted(room) && !glassBlocks(room) && !boarded(room) && !papered(room) && !grilled(room)
+    && !airConditioned(room);
+}
+
+bool jointDucted(float pier, float storey) {
+  return ducted(vec2(pier, storey), 0.0) || ducted(vec2(pier, mod(storey + 1.0, 8192.0)), 0.0);
 }
 
 bool bareAt(float pier, vec2 room, float storey) {
@@ -348,6 +354,10 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
 
   if (index < 1.5) {
     if (!barePier || !clear || chance > 0.105) return false;
+    float pier = storey < 0.5 ? room.x + 1.0 : room.x;
+    if (index < 0.5 ? plantFloor(room + vec2(0.0, 1.0)) || jointDucted(pier, room.y) : ducted(vec2(pier, room.y), 0.0)) {
+      return false;
+    }
     vec3 from = vec3(bareX - side * mix(0.35, 0.55, more.y), base + (3.0 - index) * COURSE, STANDOFF);
     pierLead(from, side, index, base);
     fasten(0, from, OUT, STANDOFF, ANCHOR);
@@ -358,6 +368,7 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
   }
   if (index < 2.5) {
     if (storey > 0.5 || !leftPier || !clear || chance > 0.135) return false;
+    if (blockless(tile) > 0.5 || blockRemoved(tile) || holedBlock(tile) || ducted(room, 0.0)) return false;
     float front = BLOCK_FRONT - blockInset(tile) + STANDOFF;
     vec3 from = vec3(mix(-2.85, -1.6, more.x), BLOCK_JOINT, front);
     blockLead(from, front, 2.0, base);
@@ -384,10 +395,10 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
       float storeys = 1.0 + floor(4.0 * pick.x);
       for (int i = 1; i <= 4; i++) {
         if (float(i) > storeys) break;
-        vec2 above = room + vec2(0.0, float(i));
+        vec2 above = vec2(room.x, mod(room.y + float(i), 8192.0));
         if (plantFloor(above) || airConditioned(above) && airConditionerMount(above).w == wallSide) return false;
       }
-      if (!clearWindow(room + vec2(0.0, storeys))) return false;
+      if (!clearWindow(vec2(room.x, mod(room.y + storeys, 8192.0)))) return false;
       riser(wallSide, base, storeys);
       return true;
     }
@@ -397,7 +408,7 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
       if (float(i) > storeys) break;
       if (plantFloor(room - vec2(0.0, float(i)))) return false;
     }
-    if (!clearWindow(room - vec2(0.0, storeys))) return false;
+    if (!clearWindow(vec2(room.x, mod(room.y - storeys, 8192.0)))) return false;
     hanger(mix(-0.8, 0.8, more.x), mix(-0.3, 0.3, more.y), base, storeys,
       vec3(0.03 * flutter, 0.0, mix(0.06, 0.15, pick.z) + 0.06 * (gust + 0.4)));
     return true;
@@ -415,7 +426,10 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
 
   bool bareFirst = bareAt(first, room, storey);
   bool bareLast = bareAt(last + 1.0, room, storey);
-  bool feedLeft = bareFirst != bareLast ? bareFirst : hash12(run + 731.0) < 0.5;
+  bool firstDucted = jointDucted(first, room.y);
+  bool lastDucted = jointDucted(last + 1.0, room.y);
+  if (firstDucted && lastDucted) return false;
+  bool feedLeft = firstDucted || lastDucted ? lastDucted : bareFirst != bareLast ? bareFirst : hash12(run + 731.0) < 0.5;
   float feedPier = feedLeft ? first : last + 1.0;
   float endPier = feedLeft ? last + 1.0 : first;
   float target = feedLeft ? first + 1.0 + floor(hash12(run + 735.0) * (last - first))

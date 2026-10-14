@@ -4,6 +4,7 @@ uniform sampler2D uLowShape;
 uniform sampler2D uLowMask;
 uniform sampler2D uLowDepth;
 uniform vec2 uLowSize;
+uniform vec2 uResolution;
 uniform vec2 uDepthRange;
 
 struct Low {
@@ -21,7 +22,7 @@ float viewDepth(float z) {
 }
 
 Low sampleLow(vec3 normal) {
-  vec2 at = gl_FragCoord.xy * 0.5 - 0.5;
+  vec2 at = gl_FragCoord.xy * uLowSize / uResolution - 0.5;
   vec2 base = floor(at);
   vec2 f = at - base;
   float depth = viewDepth(gl_FragCoord.z);

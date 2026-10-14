@@ -76,6 +76,7 @@ export type Part = {
   max: Vector3;
   protrudes?: boolean;
   role?: number;
+  front?: number;
   shape?: BufferGeometry;
 };
 
@@ -325,7 +326,7 @@ function pierParts(): Part[] {
     role: SOLID,
   };
   return [
-    pier,
+    { ...pier, front: UNBORED },
     { ...pier, shape: front(PIER_MIN, PIER_MAX), role: UNBORED },
     {
       ...pier,

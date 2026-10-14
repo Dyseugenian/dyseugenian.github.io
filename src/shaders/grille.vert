@@ -27,7 +27,6 @@ flat out float vLock;
 out vec3 vBox;
 flat out vec3 vSize;
 
-const float GRILLE_CHANCE = 0.035;
 const float HALF_WIDTH = 1.13;
 const float BOTTOM = 1.15;
 const float HEIGHT = 2.13;
@@ -51,7 +50,7 @@ const float CUT_HEIGHT = 0.45;
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 room = roomOf(aTile, aStorey);
-  if (plantFloor(room) || glassBlocks(room) || boarded(room) || hash12(room + 601.0) > GRILLE_CHANCE) return;
+  if (!grilled(room)) return;
   if (uPresence > 0.5) {
     markPresent();
     return;

@@ -110,6 +110,13 @@ export class Presence {
     return { tilesClimbed, present };
   }
 
+  whole(tilesClimbed: number): Roll {
+    const present = this.watched.map(({ count }) =>
+      Uint32Array.from({ length: count }, (_, slot) => slot),
+    );
+    return { tilesClimbed, present };
+  }
+
   apply({ present }: Roll): void {
     this.watched.forEach(({ geometry, full, drawn }, index) => {
       const slots = present[index]!;
@@ -117,9 +124,13 @@ export class Presence {
         const { itemSize } = attribute;
         const source = full[column]!.array as Float32Array;
         const array = attribute.array as Float32Array;
-        slots.forEach((slot, at) => {
-          array.set(source.subarray(slot * itemSize, (slot + 1) * itemSize), at * itemSize);
-        });
+        if (slots.length * itemSize === source.length) {
+          array.set(source);
+        } else {
+          slots.forEach((slot, at) => {
+            array.set(source.subarray(slot * itemSize, (slot + 1) * itemSize), at * itemSize);
+          });
+        }
         attribute.clearUpdateRanges();
         attribute.addUpdateRange(0, slots.length * itemSize);
         attribute.needsUpdate = true;

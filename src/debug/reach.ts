@@ -261,6 +261,7 @@ export async function measureReach(app: App): Promise<void> {
     parts.add(mesh);
   };
   for (const { name, parts: list, rows } of partBands()) {
+    if (name === 'left' || name === 'right') continue;
     for (const part of list) {
       const columns = TRACE_COLUMNS.filter((column) => standsIn(part, column));
       addPart(name, part, grid(columns, rows));

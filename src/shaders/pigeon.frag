@@ -4,6 +4,7 @@ precision highp float;
 #include "chunks/light.glsl"
 #include "chunks/windows.glsl"
 #include "chunks/sky.glsl"
+#include "chunks/clouds.glsl"
 
 uniform vec3 cameraPosition;
 uniform vec2 uResolution;
@@ -160,11 +161,18 @@ void main() {
   float washed = 1.0 - smoothstep(14.0, 40.0, distance);
   vec3 light = nightLight(normal, vWorld, 1.0, 0.3) + windowWash(vLocal, normal, normal, vTile, 0.3) * washed;
   float glint = shine * pow(max(dot(reflect(-toCamera, normal), uLight), 0.0), 24.0);
-  float fog = 1.0 - exp(-distance * uFogDensity);
-  vec3 haze = skyColor(gl_FragCoord.xy, uResolution);
+  float mist = fbm(vec3(vWorld.x * 0.05, (vWorld.y + uClimb) * 0.04, uTime * 0.04));
+  float fog = 1.0 - exp(-distance * uFogDensity * mix(0.5, 1.7, mist));
+  vec4 sky = skyAt(gl_FragCoord.xy, uResolution);
+  vec3 haze = skyClear(sky);
   vec3 origin = vWorld - vLocal;
   float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
   vec3 scatter = windowScatter(cameraPosition - origin, vLocal, vTile, origin, jitter) * washed
     * mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
-  outColor = vec4((mix(plumage * light + glint * light, haze, fog) + SCATTER * scatter * (1.0 - 0.5 * fog)) * uExposure, 1.0);
+  vec3 color = mix(plumage * light + glint * light, haze, fog) + SCATTER * scatter * (1.0 - 0.5 * fog);
+  vec3 climbed = vec3(0.0, uClimb, 0.0);
+  float veil = clouds(cameraPosition + climbed, vWorld + climbed);
+  color = mix(color, haze, veil);
+  color += skyFlash(sky, 1.0 - (1.0 - fog) * (1.0 - veil));
+  outColor = vec4(color * uExposure, 1.0);
 }

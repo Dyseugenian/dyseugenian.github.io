@@ -47,8 +47,15 @@ void hide() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
 }
 
+Spout spoutOfInstance() {
+#ifdef LAID_OUT
+  if (uPresence < 0.5) return laidSpout();
+#endif
+  return pipeAt(aTile, aStorey);
+}
+
 void main() {
-  Spout spout = pipeAt(aTile, aStorey);
+  Spout spout = spoutOfInstance();
   if (spout.count < 2) {
     hide();
     return;

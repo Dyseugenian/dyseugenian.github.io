@@ -32,6 +32,7 @@ const float FACE_Z = -2.5;
 const float THICKNESS = 0.022;
 const float PLANKS = 12.0;
 const float HALF_SPAN = 1.29;
+const float REVEAL_HALF = 1.4;
 
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
@@ -70,6 +71,7 @@ void main() {
     }
     angle = shape > 0.85 ? (hash12(key + 9.0) - 0.5) * 0.36 : (hash12(key + 9.0) - 0.5) * 0.1;
     if (vPanel > 0.5) angle *= 0.3;
+    span = min(span, (2.0 * (REVEAL_HALF - abs(shift)) - width * abs(sin(angle))) / cos(angle));
     centre = vec2(shift, cursor + 0.5 * width);
     size = vec2(span, width);
     layer = mod(aIndex, 2.0) + step(0.85, shape);

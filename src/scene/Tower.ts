@@ -32,6 +32,7 @@ import type { Input } from '../core/Input';
 import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 import { beneathGrain } from '../post/Film';
+import { PipeLayout } from './PipeLayout';
 import { Presence, type Roll } from './Presence';
 import { Rebar } from './Rebar';
 import { RoomLight } from './RoomLight';
@@ -123,6 +124,8 @@ export class Tower extends Scene {
   readonly materialUniforms: Record<string, IUniform>;
   private rebar: Rebar;
   private presence = new Presence(this.facadeUniforms.uTilesClimbed);
+  private pipeLayout: PipeLayout;
+  private pipesClimbed = -1;
   private facadeMeshes: Mesh<InstancedBufferGeometry>[] = [];
   private ahead: Roll | null = null;
   private renderer!: WebGLRenderer;
@@ -183,6 +186,7 @@ export class Tower extends Scene {
       uDepthRange: { value: new Vector2(this.camera.near, this.camera.far) },
     };
     this.rebar = new Rebar(this.materialUniforms);
+    this.pipeLayout = new PipeLayout(this.materialUniforms);
     this.building.add(
       new Beacons(beaconSpot(OUTER_X), TILE_ROWS, this.materialUniforms),
       this.rebar,
@@ -205,6 +209,7 @@ export class Tower extends Scene {
       bakeConcreteMaps(renderer),
       compileInTurns(renderer, this, this.camera),
       this.presence.compile(renderer),
+      this.pipeLayout.compile(renderer),
     ]);
     this.applyRoll(await this.presence.take(renderer, 0));
     this.takeAhead(1);
@@ -262,12 +267,16 @@ export class Tower extends Scene {
     }
     this.rebar.fill(rebar);
     const traced = traceMeshes(traces, this.materialUniforms);
-    for (const mesh of traced) this.presence.watch(mesh);
+    for (const mesh of traced) {
+      this.presence.watch(mesh);
+      if (mesh.material.defines.LAID_OUT) this.pipeLayout.lay(mesh);
+    }
     this.building.add(...traced);
   }
 
   private applyRoll(roll: Roll): void {
     this.presence.apply(roll);
+    this.pipesClimbed = -1;
     for (const mesh of this.facadeMeshes) mesh.visible = mesh.geometry.instanceCount > 0;
   }
 
@@ -304,9 +313,18 @@ export class Tower extends Scene {
     return object.layers.isEnabled(LOW_LAYER) ? this.low : null;
   }
 
+  async restore(renderer: WebGLRenderer): Promise<void> {
+    this.uniforms.uSurface.value = await bakeConcreteMaps(renderer);
+    this.pipesClimbed = -1;
+  }
+
   renderOffscreen(renderer: WebGLRenderer): void {
     this.sky.render(renderer);
     this.roomLight.render(renderer, this.facadeUniforms.uTilesClimbed.value);
+    if (this.pipesClimbed !== this.facadeUniforms.uTilesClimbed.value) {
+      this.pipeLayout.render(renderer);
+      this.pipesClimbed = this.facadeUniforms.uTilesClimbed.value;
+    }
     this.lowCamera.copy(this.camera);
     this.lowCamera.layers.set(LOW_LAYER);
     const target = renderer.getRenderTarget();
@@ -368,6 +386,7 @@ export class Tower extends Scene {
     if (this.ahead?.tilesClimbed === tilesClimbed) {
       this.applyRoll(this.ahead);
     } else {
+      this.applyRoll(this.presence.whole(tilesClimbed));
       this.presence.take(this.renderer, tilesClimbed).then((roll) => {
         if (roll.tilesClimbed === this.facadeUniforms.uTilesClimbed.value) this.applyRoll(roll);
       });

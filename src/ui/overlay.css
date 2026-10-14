@@ -136,8 +136,10 @@ body {
   color: transparent;
 }
 
-.stage-live:not(.no-webgl) .tagline button:hover {
-  cursor: none;
+@media (prefers-reduced-motion: no-preference) {
+  .stage-live:not(.no-webgl) .tagline button:hover {
+    cursor: none;
+  }
 }
 
 .tagline li + li::before {

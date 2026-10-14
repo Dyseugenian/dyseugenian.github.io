@@ -18,12 +18,14 @@ const SIDES = 8;
 const RINGS = 8;
 const TILE_SEEDS = 4096;
 const SPALL = { spacings: [1.4, 3.8], chances: [0.4, 0.3], exposed: 0.6, smallest: 0.12 };
-const STICKING_OUT = [0.7, 0.4];
+const SLACK = 0.02;
+const f = Math.fround;
 
 export type Patch = {
   low: number[];
   high: number[];
   protrudes: number;
+  role: number;
   normal: number[];
   right: number[];
   up: number[];
@@ -56,39 +58,37 @@ function tube(): BufferGeometry {
 }
 
 function fract(x: number): number {
-  return x - Math.floor(x);
+  return f(x - Math.floor(x));
 }
 
 function hash12(x: number, y: number): number {
-  const a = fract(x * 0.1031);
-  const b = fract(y * 0.1031);
-  const shift = a * (b + 33.33) + b * (a + 33.33) + a * (a + 33.33);
-  return fract((a + shift + b + shift) * (a + shift));
+  const scale = f(0.1031);
+  const lift = f(33.33);
+  const a = fract(f(f(x) * scale));
+  const b = fract(f(f(y) * scale));
+  const shift = f(f(f(a * f(b + lift)) + f(b * f(a + lift))) + f(a * f(a + lift)));
+  return fract(f(f(f(a + shift) + f(b + shift)) * f(a + shift)));
 }
 
-function exposedSpall(u: number, v: number, seedU: number, seedV: number, layer: number): number {
-  const spacing = SPALL.spacings[layer]!;
-  const cellU = Math.floor((u + seedU) / spacing) + layer * 113;
-  const cellV = Math.floor((v + seedV) / spacing) + layer * 113;
-  if (hash12(cellU + 41, cellV + 41) > SPALL.chances[layer]!) return -1;
+function exposedSpall(u: number, v: number, seedU: number, seedV: number, layer: number): boolean {
+  const spacing = f(SPALL.spacings[layer]!);
+  const cellU = Math.floor(f(f(u + seedU) / spacing)) + layer * 113;
+  const cellV = Math.floor(f(f(v + seedV) / spacing)) + layer * 113;
+  if (hash12(cellU + 41, cellV + 41) > SPALL.chances[layer]! + SLACK) return false;
   const size = spacing * (0.04 + 0.2 * hash12(cellU + 43, cellV + 43) ** 1.7);
-  if (hash12(cellU + 47, cellV + 47) < SPALL.exposed || size < SPALL.smallest) return -1;
-  return Math.floor(hash12(cellU + 53, cellV + 53) * 512);
+  return hash12(cellU + 47, cellV + 47) >= SPALL.exposed - SLACK && size >= SPALL.smallest - SLACK;
 }
 
 function stickingBars(patches: Patch[], column: number, row: number): number[] {
-  const seedU = hash12(column, row) * 97;
-  const seedV = hash12(column + 1.7, row + 1.7) * 97;
+  const seedU = f(hash12(column, row) * 97);
+  const seedV = f(hash12(f(column + f(1.7)), f(row + f(1.7))) * 97);
   const bars: number[] = [];
   patches.forEach(({ bounds }, index) => {
-    const u = 0.5 * (bounds[0]! + bounds[2]!);
-    const v = 0.5 * (bounds[1]! + bounds[3]!);
+    const u = f(0.5 * f(f(bounds[0]!) + f(bounds[2]!)));
+    const v = f(0.5 * f(f(bounds[1]!) + f(bounds[3]!)));
     for (let layer = 0; layer < 2; layer++) {
-      const key = exposedSpall(u, v, seedU, seedV, layer);
-      if (key < 0) continue;
-      for (let bar = 0; bar < 2; bar++) {
-        if (hash12(key, 71 + 13 * bar) <= STICKING_OUT[bar]!)
-          bars.push(index * BARS + layer * 2 + bar);
+      if (exposedSpall(u, v, seedU, seedV, layer)) {
+        bars.push(index * BARS + layer * 2, index * BARS + layer * 2 + 1);
       }
     }
   });
@@ -105,6 +105,7 @@ const ATTRIBUTES = [
   ['aPatch', 4],
   ['aBar', 1],
   ['aProtrudes', 1],
+  ['aRole', 1],
 ] as const;
 
 type Block = { group: number; column: number; row: number; patches: Patch[] };
@@ -158,7 +159,7 @@ export class Rebar extends Mesh<InstancedBufferGeometry, RawShaderMaterial> {
       const bars = this.sticking.get(key) ?? stickingBars(patches, column, tileRow);
       sticking.set(key, bars);
       for (const bar of bars) {
-        const { low, high, protrudes, normal, right, up, bounds } =
+        const { low, high, protrudes, role, normal, right, up, bounds } =
           patches[Math.floor(bar / BARS)]!;
         const values = [
           [column, row],
@@ -170,6 +171,7 @@ export class Rebar extends Mesh<InstancedBufferGeometry, RawShaderMaterial> {
           bounds,
           [bar % BARS],
           [protrudes],
+          [role],
         ];
         values.forEach((value, index) => {
           (attributes[index]!.array as Float32Array).set(value, count * value.length);

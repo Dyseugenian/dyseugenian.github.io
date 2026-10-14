@@ -96,9 +96,7 @@ const BAY_COLUMNS = Array.from(
   { length: COLUMNS.right - COLUMNS.left },
   (_, index) => COLUMNS.left + 1 + index,
 );
-const BLOCKED_COLUMNS = BAY_COLUMNS.filter(
-  (column) => !BLOCKLESS_COLUMNS.includes(column) && column !== COLUMNS.right,
-);
+const BLOCKED_COLUMNS = BAY_COLUMNS.filter((column) => !BLOCKLESS_COLUMNS.includes(column));
 export const TRACE_COLUMNS = [COLUMNS.left, ...BAY_COLUMNS];
 
 export function towerGeometry(): {
@@ -404,6 +402,7 @@ function exposedPatches(part: Part, around: Part[]): Patch[] {
           low: part.min.toArray(),
           high: part.max.toArray(),
           protrudes: part.protrudes ? 1 : 0,
+          role: (normal.z > 0 ? part.front : undefined) ?? part.role ?? 0,
           normal: normal.toArray(),
           right: right.toArray(),
           up: up.toArray(),

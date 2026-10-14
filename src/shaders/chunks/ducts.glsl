@@ -1,7 +1,7 @@
 const float DUCT_CHANCE = 0.776;
 const float DUCT_COLUMN = 2.5;
 const float DUCT_X = -2.1;
-const float DUCT_CLEARANCE = 0.59;
+const float DUCT_CLEARANCE = 0.62;
 const float DUCT_WALL = 0.1;
 const float DUCT_BLOCK_FACE = 0.45;
 const float DUCT_BRACKET = 1.8;
@@ -73,6 +73,12 @@ bool ductPiece(vec2 room, float storey, float index, out Duct duct, out DuctPiec
   piece.bend = min(1.6 * duct.radius, 0.45 * min(first, second));
   piece.start = offset < 0.5 ? 0.0 : duct.z - ductWall(mod(storey + offset, 2.0), room.y - duct.rise * offset) + (offset - 0.5) * height;
   return true;
+}
+
+bool ducted(vec2 room, float storey) {
+  Duct duct;
+  DuctPiece piece;
+  return ductPiece(room, storey, 0.0, duct, piece) || ductPiece(room, storey, 1.0, duct, piece);
 }
 
 float ductLength(DuctPiece piece) {

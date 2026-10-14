@@ -66,13 +66,9 @@ function localize(html: string, language: Language | null): string {
     .replace(
       `<link rel="canonical" href="${SITE}" />`,
       `<link rel="canonical" href="${SITE}${shown}/" />`,
-    );
-  if (language) {
-    return page.replace(
-      `property="og:url" content="${SITE}"`,
-      `property="og:url" content="${SITE}${language}/"`,
-    );
-  }
+    )
+    .replace(`property="og:url" content="${SITE}"`, `property="og:url" content="${SITE}${shown}/"`);
+  if (language) return page;
   const redirect = `location.replace((${RUSSIAN_SPEAKING}.test(navigator.language) ? '/ru/' : '/en/') + location.search + location.hash);`;
   return page.replace(
     '<meta charset="UTF-8" />',

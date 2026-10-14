@@ -24,7 +24,7 @@ const float RUN_FALL = 0.01;
 const float RUN_DEPTH = 0.14;
 const float TEE_CHANCE = 0.5;
 const float CRANK_CLEAR = 0.04;
-const float HIGH_UNIT = 1.45;
+const float HIGH_UNIT = 1.2;
 const float BEND_WEIGHT = 0.5;
 const float MISMATCH = 0.12;
 const float SUPPORT_LOW = 0.35;
@@ -116,12 +116,6 @@ float lengthTo(Spout spout, int index) {
     total += distance(spout.points[i], spout.points[i + 1]);
   }
   return total;
-}
-
-bool ducted(vec2 room, float storey) {
-  Duct duct;
-  DuctPiece piece;
-  return ductPiece(room, storey, 0.0, duct, piece) || ductPiece(room, storey, 1.0, duct, piece);
 }
 
 bool innerPier(float column) {
@@ -231,7 +225,9 @@ float runMode(float node, Stack stack, bool beyond, float side, float recess, fl
   if (node == FEED && stack.feed == -side) return FED;
   float pick = hash12(vec2(2.0 * recess + side, storey) + 941.0);
   if (studded || (node != BREAK && node != PLAIN && node != THROUGH)) return pick < 0.55 ? WALL_END : OPEN_END;
-  return pick < 0.3 ? WALL_END : pick < 0.5 ? OPEN_END : pick < 0.75 ? FRONT_WALL : FRONT_DROP;
+  if (node == BREAK && beyond && side > 0.0) return pick < 0.55 ? WALL_END : OPEN_END;
+  float drop = necked(pier, storey) ? FRONT_WALL : FRONT_DROP;
+  return pick < 0.3 ? WALL_END : pick < 0.5 ? OPEN_END : pick < 0.75 ? FRONT_WALL : drop;
 }
 
 Reach reachOut(float side, float mode, vec3 stack, float y, float fall, float seam, float radius, float front,
@@ -608,22 +604,60 @@ Spout pipeAt(vec2 tile, float storey) {
   return spout;
 }
 
-vec3 route[PIPE_POINTS];
+vec4 spoutTexel(Spout spout, int i) {
+  float fields[PIPE_POINTS] = float[](float(spout.count), spout.radius, spout.bend, spout.drips,
+    spout.source, spout.sink, spout.sleeves.x, spout.sleeves.y, spout.supports.x, spout.supports.y,
+    spout.braces.x, spout.braces.y, spout.seed, spout.pattern);
+  return vec4(spout.points[i], fields[i]);
+}
+
 int routeCount;
 float routeBend;
 
+#ifdef LAID_OUT
+uniform sampler2D uPipeLayout;
+
+vec4 laidTexel(int i) {
+  return texelFetch(uPipeLayout, ivec2(i, gl_InstanceID), 0);
+}
+
+Spout laidSpout() {
+  Spout spout = emptySpout();
+  spout.count = int(laidTexel(0).w);
+  spout.radius = laidTexel(1).w;
+  spout.bend = laidTexel(2).w;
+  spout.drips = laidTexel(3).w;
+  spout.source = laidTexel(4).w;
+  spout.sink = laidTexel(5).w;
+  spout.sleeves = vec2(laidTexel(6).w, laidTexel(7).w);
+  spout.supports = vec2(laidTexel(8).w, laidTexel(9).w);
+  spout.braces = vec2(laidTexel(10).w, laidTexel(11).w);
+  spout.seed = laidTexel(12).w;
+  spout.pattern = laidTexel(13).w;
+  return spout;
+}
+
+vec3 routePoint(int i) {
+  return laidTexel(i).xyz;
+}
+
+vec3 routeSegment(int i) {
+  return laidTexel(PIPE_POINTS + i).xyz;
+}
+
+vec2 routeTotals() {
+  return laidTexel(2 * PIPE_POINTS - 1).xy;
+}
+
 void follow(Spout spout) {
-  for (int i = 0; i < PIPE_POINTS; i++) route[i] = spout.points[i];
   routeCount = spout.count;
   routeBend = spout.bend;
 }
+#else
+vec3 route[PIPE_POINTS];
 
-float spoutLength() {
-  float total = 0.0;
-  for (int i = 0; i + 1 < routeCount; i++) {
-    total += distance(route[i], route[i + 1]);
-  }
-  return total;
+vec3 routePoint(int i) {
+  return route[i];
 }
 
 float spoutCorner(int i) {
@@ -632,22 +666,45 @@ float spoutCorner(int i) {
   return min(routeBend, 0.45 * min(before, after));
 }
 
+vec3 routeSegment(int i) {
+  float span = distance(route[i], route[i + 1]);
+  float opening = i > 0 ? spoutCorner(i) : 0.0;
+  float closing = i + 2 < routeCount ? spoutCorner(i + 1) : 0.0;
+  return vec3(span, opening, closing);
+}
+
+vec2 routeTotals() {
+  float bend = 0.5 * BEND_WEIGHT;
+  vec2 totals = vec2(0.0);
+  for (int i = 0; i + 1 < routeCount; i++) {
+    vec3 segment = routeSegment(i);
+    totals.x += segment.x;
+    totals.y += segment.x - segment.y - segment.z + (segment.y > 0.0 ? bend : 0.0)
+      + (segment.z > 0.0 ? bend : 0.0);
+  }
+  return totals;
+}
+
+void follow(Spout spout) {
+  for (int i = 0; i < PIPE_POINTS; i++) route[i] = spout.points[i];
+  routeCount = spout.count;
+  routeBend = spout.bend;
+}
+#endif
+
+float spoutLength() {
+  return routeTotals().x;
+}
+
 float spoutRun(float t) {
   float bend = 0.5 * BEND_WEIGHT;
-  float total = 0.0;
-  for (int i = 0; i + 1 < routeCount; i++) {
-    float span = distance(route[i], route[i + 1]);
-    float opening = i > 0 ? spoutCorner(i) : 0.0;
-    float closing = i + 2 < routeCount ? spoutCorner(i + 1) : 0.0;
-    total += span - opening - closing + (opening > 0.0 ? bend : 0.0) + (closing > 0.0 ? bend : 0.0);
-  }
-  float left = t * total;
+  float left = t * routeTotals().y;
   float s = 0.0;
   for (int i = 0; i + 1 < routeCount; i++) {
-    float span = distance(route[i], route[i + 1]);
-    float opening = i > 0 ? spoutCorner(i) : 0.0;
-    float closing = i + 2 < routeCount ? spoutCorner(i + 1) : 0.0;
-    float straight = span - opening - closing;
+    vec3 segment = routeSegment(i);
+    float opening = segment.y;
+    float closing = segment.z;
+    float straight = segment.x - opening - closing;
     if (opening > 0.0) {
       if (left <= bend) return s + opening * left / bend;
       left -= bend;
@@ -669,9 +726,10 @@ vec3 spoutCentre(float s, out vec3 tangent) {
   float start = 0.0;
   tangent = vec3(0.0, 0.0, 1.0);
   for (int i = 0; i + 1 < routeCount; i++) {
-    vec3 a = route[i];
-    vec3 b = route[i + 1];
-    float span = distance(a, b);
+    vec3 a = routePoint(i);
+    vec3 b = routePoint(i + 1);
+    vec3 segment = routeSegment(i);
+    float span = segment.x;
     bool last = i + 2 >= routeCount;
     if (span < 1e-4 && !last) continue;
     vec3 along = (b - a) / max(span, 1e-4);
@@ -679,19 +737,19 @@ vec3 spoutCentre(float s, out vec3 tangent) {
       float into = s - start;
       tangent = along;
       if (i > 0) {
-        float w = spoutCorner(i);
+        float w = segment.y;
         if (into < w) {
-          vec3 before = normalize(a - route[i - 1]);
+          vec3 before = normalize(a - routePoint(i - 1));
           float u = 0.5 + 0.5 * into / w;
           tangent = normalize(mix(before, along, u));
           return mix(mix(a - before * w, a, u), mix(a, a + along * w, u), u);
         }
       }
       if (!last) {
-        float w = spoutCorner(i + 1);
+        float w = segment.z;
         float left = span - into;
         if (left < w) {
-          vec3 after = normalize(route[i + 2] - b);
+          vec3 after = normalize(routePoint(i + 2) - b);
           float u = 0.5 - 0.5 * left / w;
           tangent = normalize(mix(along, after, u));
           return mix(mix(b - along * w, b, u), mix(b, b + after * w, u), u);
@@ -701,7 +759,7 @@ vec3 spoutCentre(float s, out vec3 tangent) {
     }
     start += span;
   }
-  return route[0];
+  return routePoint(0);
 }
 
 mat3 spoutFrame(vec3 tangent) {

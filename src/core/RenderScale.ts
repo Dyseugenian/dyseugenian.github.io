@@ -26,19 +26,23 @@ class GpuTimer {
   }
 
   read(): number | null {
-    const query = this.pending[0];
-    if (!query || !this.gl.getQueryParameter(query, this.gl.QUERY_RESULT_AVAILABLE)) return null;
-    const nanoseconds = this.gl.getQueryParameter(query, this.gl.QUERY_RESULT) as number;
-    this.gl.deleteQuery(query);
-    this.pending.shift();
-    if (this.gl.getParameter(this.extension.GPU_DISJOINT_EXT)) return null;
+    let nanoseconds: number | null = null;
+    let read = 0;
+    for (const query of this.pending) {
+      if (!this.gl.getQueryParameter(query, this.gl.QUERY_RESULT_AVAILABLE)) break;
+      nanoseconds = this.gl.getQueryParameter(query, this.gl.QUERY_RESULT) as number;
+      this.gl.deleteQuery(query);
+      read++;
+    }
+    this.pending.splice(0, read);
+    if (nanoseconds === null || this.gl.getParameter(this.extension.GPU_DISJOINT_EXT)) return null;
     return nanoseconds / 1e6;
   }
 }
 
 export class RenderScale {
   scale = SCALE.max;
-  private timer: GpuTimer | null;
+  private timer: GpuTimer | null = null;
   private pinned = false;
   private frameMs = 0;
   private hold = 0;
@@ -46,8 +50,13 @@ export class RenderScale {
   private probing = false;
 
   constructor(gl: WebGL2RenderingContext) {
+    this.attach(gl);
+  }
+
+  attach(gl: WebGL2RenderingContext): void {
     const extension = gl.getExtension('EXT_disjoint_timer_query_webgl2') as TimerExtension | null;
     this.timer = extension ? new GpuTimer(gl, extension) : null;
+    this.frameMs = 0;
   }
 
   pin(scale: number): void {

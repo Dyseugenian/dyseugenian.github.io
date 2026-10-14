@@ -92,12 +92,19 @@ export function traceMeshes(
     let material = materials.get(kind);
     if (material === undefined) {
       const [vertexShader, fragmentShader, options] = SHADERS[kind];
+      const laidOut = PIPES.includes(kind)
+        ? {
+            uniforms: { ...uniforms, uPipeLayout: { value: null } },
+            defines: { ...options.defines, LAID_OUT: 1 },
+          }
+        : {};
       material = new RawShaderMaterial({
         glslVersion: GLSL3,
         vertexShader,
         fragmentShader,
         uniforms,
         ...options,
+        ...laidOut,
       });
       materials.set(kind, material);
     }

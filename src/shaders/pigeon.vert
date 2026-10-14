@@ -2,8 +2,6 @@ precision highp float;
 
 #include "chunks/hash.glsl"
 #include "chunks/rooms.glsl"
-#include "chunks/inset.glsl"
-#include "chunks/presence.glsl"
 
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
@@ -12,6 +10,11 @@ uniform float uTime;
 uniform float uTileHeight;
 uniform float uBay;
 uniform float uOuterX;
+
+#include "chunks/inset.glsl"
+#include "chunks/ducts.glsl"
+#include "chunks/spouts.glsl"
+#include "chunks/presence.glsl"
 
 in vec3 position;
 in vec3 normal;
@@ -136,7 +139,7 @@ Perch ledgeIn(vec2 room, float pick, float place) {
   float pier = step(-uOuterX + EDGE_WIDTH + 0.01, x - 2.8);
   float block = pier * (plantFloor(vec2(room.x, room.y - storey)) ? 0.0 : 1.0);
   float edgeSide = x - 1.4 - EDGE_WIDTH < -uOuterX + 0.01 ? -1.0 : x + 1.4 + EDGE_WIDTH > uOuterX - 0.01 ? 1.0 : 0.0;
-  float weights[7] = float[7](1.0 - plant, 1.2 * cooled, 0.3 * (1.0 - plant), 0.6 * block * (1.0 - blockless(tile)) * (blockRemoved(tile) ? 0.0 : 1.0), 0.8 * abs(edgeSide), plant, 0.6 * plant);
+  float weights[7] = float[7](1.0 - plant, 1.2 * cooled, 0.3 * (1.0 - plant), 0.6 * block * (1.0 - blockless(tile)) * (blockRemoved(tile) || stackOf(room.x, mod(room.y - storey, 8192.0)).present ? 0.0 : 1.0), 0.8 * abs(edgeSide), plant, 0.6 * plant);
   float total = 0.0;
   for (int i = 0; i < 7; i++) total += weights[i];
   float chosen = pick * total;
@@ -150,7 +153,12 @@ Perch ledgeIn(vec2 room, float pick, float place) {
   }
   float side = place < 0.5 ? -1.0 : 1.0;
   float along = fract(place * 2.0);
-  if (kind == 0) return Perch(vec3(mix(-1.1, 1.1, along), LEDGE_Y, LEDGE_Z), vec2(-1.1, 1.1));
+  if (kind == 0) {
+    vec4 mount = airConditionerMount(room);
+    vec2 range = cooled < 0.5 || mount.w != 0.0 ? vec2(-1.1, 1.1)
+      : side < 0.0 ? vec2(-1.1, mount.x - 0.6) : vec2(mount.x + 0.6, 1.1);
+    return Perch(vec3(mix(range.x, range.y, along), LEDGE_Y, LEDGE_Z), range);
+  }
   if (kind == 1) {
     vec4 mount = airConditionerMount(room);
     if (mount.w != 0.0) return Perch(vec3(mount.x, AC_TOP + mount.y, AC_Z + mount.z), vec2(mount.x));
@@ -164,7 +172,7 @@ Perch ledgeIn(vec2 room, float pick, float place) {
     vec2 rib = edgeSide * vec2(1.55, 3.7);
     return Perch(vec3(mix(rib.x, rib.y, along), RIB_TOP, 0.63), edgeSide > 0.0 ? rib : rib.yx);
   }
-  vec2 ledge = vec2(pier > 0.5 ? -2.7 : -1.3, 1.3);
+  vec2 ledge = vec2(pier > 0.5 && (kind == 5 || abs(room.x - 0.5) != DUCT_COLUMN) ? -2.7 : -1.3, 1.3);
   return Perch(vec3(mix(ledge.x, ledge.y, along), kind == 5 ? SILL_Y : 0.5 * uTileHeight, 0.53), ledge);
 }
 

@@ -17,8 +17,8 @@ import { TILE_ROWS } from './facade';
 import { ROOM_LAYER } from './layers';
 
 const COLUMNS = 16;
-const ROWS = 2 * TILE_ROWS.length + 4;
-const FIRST_ROOM = 2 * TILE_ROWS[0]! - 2;
+const ROWS = 2 * TILE_ROWS.length + 6;
+const FIRST_ROOM = 2 * TILE_ROWS[0]! - 4;
 const ROOM_SEEDS = 8192;
 
 export class RoomLight extends Mesh<PlaneGeometry, RawShaderMaterial> {

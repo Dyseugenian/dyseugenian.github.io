@@ -50,10 +50,12 @@ void main() {
 
   float mist = fbm(vec3(vWorld.x * 0.05, (vWorld.y + uClimb) * 0.04, uTime * 0.04));
   float fog = 1.0 - exp(-distance * uFogDensity * mix(0.5, 1.7, mist));
-  vec3 haze = skyColor(gl_FragCoord.xy, uResolution);
+  vec4 sky = skyAt(gl_FragCoord.xy, uResolution);
+  vec3 haze = skyClear(sky);
   vec3 origin = vWorld - vLocal;
   float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
   vec3 scatter = windowScatter(cameraPosition - origin, vLocal, vTile, origin, jitter) * washed
     * mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
-  outColor = vec4((mix(color, haze, fog) + SCATTER * scatter * (1.0 - 0.5 * fog)) * uExposure, 1.0);
+  outColor = vec4((mix(color, haze, fog) + SCATTER * scatter * (1.0 - 0.5 * fog)
+    + skyFlash(sky, fog)) * uExposure, 1.0);
 }

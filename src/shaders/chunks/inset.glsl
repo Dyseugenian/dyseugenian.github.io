@@ -18,6 +18,10 @@ float blockInset(vec2 tile) {
   return mix(HALF_PROTRUSION * outer, STUDDED_INSET, blockless(tile));
 }
 
+bool holedBlock(vec2 tile) {
+  return blockInset(tile) == 0.0 && mod(floor(abs(tile.x - 0.5)) + tile.y, 2.0) < 0.5;
+}
+
 const float STUD_BAND = 1.2;
 const float STUD_MISSING = 0.05;
 const float STUD_CHIPPED = 0.17;

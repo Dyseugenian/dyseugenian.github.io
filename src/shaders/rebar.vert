@@ -24,6 +24,7 @@ in vec3 aUp;
 in vec4 aPatch;
 in float aBar;
 in float aProtrudes;
+in float aRole;
 
 out vec3 vWorld;
 out vec3 vNormal;
@@ -35,6 +36,9 @@ out vec3 vLocal;
 flat out vec2 vTile;
 
 const int RINGS = 8;
+const float REGULAR = 1.0;
+const float SOLID = 8.0;
+const float UNBORED = 9.0;
 const float REACH = 20.0;
 const vec3 DOWN = vec3(0.0, -1.0, 0.0);
 
@@ -45,7 +49,12 @@ vec3 awayFrom(vec3 direction, vec3 normal) {
 void main() {
   gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
   vec2 tile = vec2(aTile.x, mod(aTile.y + uTilesClimbed, 4096.0));
-  if (aProtrudes > 0.5 && blockRemoved(tile)) return;
+  float storey = 2.0 * tile.y + mod(abs(tile.x), 2.0) + floor(aLow.y / (0.5 * uTileHeight) + 0.01);
+  bool plant = mod(storey, uPlantEvery) < 0.5;
+  bool studded = blockless(tile) > 0.5;
+  bool holed = holedBlock(tile);
+  if (aRole == REGULAR && plant || aRole == SOLID && (plant || holed || studded || blockRemoved(tile))
+    || aRole == UNBORED && (studded || holed && !plant)) return;
   vec2 seed = vec2(hash12(tile), hash12(tile + 1.7)) * 97.0;
   vec3 high = aHigh - vec3(0.0, 0.0, aProtrudes * blockInset(tile));
   vec2 low = vec2(dot(aLow, aRight), dot(aLow, aUp));

@@ -46,6 +46,7 @@ export class Logo extends Group {
   private pointerVelocity = new Vector2();
   private wasFollowing = false;
   private viewHalfSize = new Vector2();
+  private pupil = 0;
 
   constructor(private input: Input) {
     super();
@@ -72,22 +73,14 @@ export class Logo extends Group {
     this.ready = Promise.all([this.halo.loaded, this.eyes.loaded, this.wordmark.loaded]);
   }
 
-  fit(
-    width: number,
-    height: number,
-    viewHeight: number,
-    pixelRatio: number,
-    particles: number,
-  ): void {
+  fit(width: number, height: number, viewHeight: number, particles: number): void {
     const unitsPerPixel = viewHeight / height;
     const size = Math.min(LOGO_SIZE.width * width, LOGO_SIZE.height * height);
     const pupilY = LOGO_CENTER_Y * height + (PUPIL.y - 0.5) * size;
     this.position.set(0, (height / 2 - pupilY) * unitsPerPixel, 0);
     this.scale.setScalar(PUPIL.radius * size * unitsPerPixel);
     this.viewHalfSize.set((width / 2) * unitsPerPixel, viewHeight / 2);
-    this.wordmark.uniforms.uPixelSize.value =
-      PUPIL.radius * size * pixelRatio * this.wordmark.scale.x;
-    this.eyes.pixelSize.value = this.wordmark.uniforms.uPixelSize.value;
+    this.pupil = PUPIL.radius * size;
 
     const scale = this.scale.x;
     this.stars.scatter(
@@ -98,14 +91,19 @@ export class Logo extends Group {
       width * height,
     );
 
-    for (const specks of [this.stars, this.infall, this.halo, this.outline, this.ring]) {
-      specks.uniforms.uPixelRatio.value = pixelRatio;
-    }
     const coverage = Math.min((size / REFERENCE_SIZE) ** 2, MAX_COVERAGE);
     this.halo.setCount(Math.round(particles * coverage));
     this.outline.setCount(Math.round(OUTLINE_SPECKS * coverage));
     this.ring.setCount(Math.round(RING_SPECKS * coverage));
     this.infall.setCount(Math.round(INFALL_SPECKS * Math.sqrt(coverage)));
+  }
+
+  setPixelRatio(pixelRatio: number): void {
+    this.wordmark.uniforms.uPixelSize.value = this.pupil * pixelRatio * this.wordmark.scale.x;
+    this.eyes.pixelSize.value = this.wordmark.uniforms.uPixelSize.value;
+    for (const specks of [this.stars, this.infall, this.halo, this.outline, this.ring]) {
+      specks.uniforms.uPixelRatio.value = pixelRatio;
+    }
   }
 
   update(dt: number): void {
@@ -144,7 +142,7 @@ export class Logo extends Group {
     this.infall.update(motionDt);
     this.outline.update(motionDt, target, this.pointerVelocity);
     this.ring.update(motionDt, target, this.pointerVelocity);
-    this.eyes.update(dt, target);
+    this.eyes.update(motionDt, target);
     const { uniforms } = this.wordmark;
     const hovers = [
       advanceHover(uniforms.uTetris, uniforms.uTetrisTime, isOnGamedevRole, dt),

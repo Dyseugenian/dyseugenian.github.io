@@ -79,7 +79,11 @@ export class App {
     }
 
     canvas.addEventListener('webglcontextlost', () => setPageState('no-webgl', true));
-    canvas.addEventListener('webglcontextrestored', () => setPageState('no-webgl', false));
+    canvas.addEventListener('webglcontextrestored', async () => {
+      this.renderScale.attach(context);
+      await this.tower.restore(this.renderer);
+      setPageState('no-webgl', false);
+    });
 
     window.addEventListener('resize', () => this.resize());
     this.applyQuality();
@@ -115,7 +119,7 @@ export class App {
 
   pinScale(scale: number): void {
     this.renderScale.pin(scale);
-    this.fitTargets();
+    this.rescale();
   }
 
   setStageLive(live: boolean): void {
@@ -154,7 +158,7 @@ export class App {
   }
 
   private update({ dt, time }: Frame): void {
-    if (this.isTowerRevealed && this.renderScale.update(dt)) this.fitTargets();
+    if (this.isTowerRevealed && this.renderScale.update(dt)) this.rescale();
     this.renderScale.beginFrame();
     this.drawWarmUps();
     if (this.isTowerRevealed) {
@@ -202,21 +206,20 @@ export class App {
   private fitTargets(): void {
     const { innerWidth: width, innerHeight: height } = window;
     const { x, y } = this.renderer.getDrawingBufferSize(new Vector2());
-    const { scale } = this.renderScale;
-    this.target.setSize(Math.round(x * scale), Math.round(y * scale));
     this.film.setSize(x, y, this.renderer.getPixelRatio());
     this.roleText.setSize(x, y);
-    this.tower.fit(this.camera.aspect, this.target.width, this.target.height);
-
     const viewHeight =
       2 * this.camera.position.z * Math.tan(MathUtils.degToRad(this.camera.fov / 2));
-    this.logo.fit(
-      width,
-      height,
-      viewHeight,
-      this.renderer.getPixelRatio() * scale,
-      this.quality.settings.particles,
-    );
+    this.logo.fit(width, height, viewHeight, this.quality.settings.particles);
+    this.rescale();
+  }
+
+  private rescale(): void {
+    const { x, y } = this.renderer.getDrawingBufferSize(new Vector2());
+    const { scale } = this.renderScale;
+    this.target.setSize(Math.round(x * scale), Math.round(y * scale));
+    this.tower.fit(this.camera.aspect, this.target.width, this.target.height);
+    this.logo.setPixelRatio(this.renderer.getPixelRatio() * scale);
   }
 }
 

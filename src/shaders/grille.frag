@@ -87,10 +87,13 @@ void main() {
 
   float mist = fbm(vec3(vWorld.x * 0.05, (vWorld.y + uClimb) * 0.04, uTime * 0.04));
   float fog = 1.0 - exp(-far * uFogDensity * mix(0.3, 1.0, mist));
-  vec3 haze = skyColor(gl_FragCoord.xy, uResolution);
+  vec4 sky = skyAt(gl_FragCoord.xy, uResolution);
+  vec3 haze = skyClear(sky);
   color = mix(color, haze, fog);
   vec3 climbed = vec3(0.0, uClimb, 0.0);
-  color = mix(color, haze, 0.7 * clouds(cameraPosition + climbed, vWorld + climbed));
+  float veil = 0.7 * clouds(cameraPosition + climbed, vWorld + climbed);
+  color = mix(color, haze, veil);
+  color += skyFlash(sky, 1.0 - (1.0 - fog) * (1.0 - veil));
   vec3 origin = vWorld - vLocal;
   float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
   vec3 scatter = windowScatter(cameraPosition - origin, vLocal, vTile, origin, jitter) * washed
