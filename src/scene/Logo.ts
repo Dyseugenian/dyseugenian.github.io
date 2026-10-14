@@ -1,4 +1,4 @@
-import { Box2, Group, MathUtils, Vector2 } from 'three';
+import { Box2, Group, MathUtils, Vector2, type Vector4 } from 'three';
 import type { Input } from '../core/Input';
 import { Eyes } from './Eyes';
 import { Halo } from './Halo';
@@ -103,6 +103,16 @@ export class Logo extends Group {
       (box.left + box.width / 2 - this.viewSize.x / 2) * this.unitsPerPixel,
       (this.viewSize.y / 2 - box.top - PUPIL.y * box.height) * this.unitsPerPixel,
       0,
+    );
+  }
+
+  gazeOnScreen(gaze: Vector4): void {
+    const pixels = this.scale.x / this.unitsPerPixel;
+    gaze.set(
+      0.5 + this.position.x / this.unitsPerPixel / this.viewSize.x,
+      0.5 + (this.position.y / this.unitsPerPixel + SPHERE.y * pixels) / this.viewSize.y,
+      (SPHERE.radius * pixels) / this.viewSize.y,
+      this.visible ? this.shade.uniforms.uOpacity.value : 0,
     );
   }
 

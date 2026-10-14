@@ -17,6 +17,7 @@ precision highp sampler3D;
 
 uniform vec3 cameraPosition;
 uniform vec3 uSky;
+uniform vec3 uHaze;
 uniform float uExposure;
 uniform vec3 uConcrete;
 uniform vec3 uConcreteWarm;
@@ -523,7 +524,7 @@ vec3 interior(vec3 pane, vec3 ray, vec3 window, vec3 light, vec2 room, bool bare
   float illumination = (0.2 + 0.8 * max(dot(wall, toLamp / reach), 0.0)) / (0.6 + spread * reach * reach);
   float recess = mix(1.0, 0.35, smoothstep(0.0, ROOM.z, GLASS_Z - hit.z));
 
-  return albedo * occlusion * recess * (uHaze * 0.2 + light * illumination * ROOM_LIGHT);
+  return albedo * occlusion * recess * (uNight * 0.2 + light * illumination * ROOM_LIGHT);
 }
 
 vec3 bumped(vec3 normal, float height) {
@@ -735,7 +736,7 @@ vec4 newspaper(vec2 pane, vec2 room, float blur) {
 vec3 skyMirror(vec3 mirrored, float occlusion) {
   float moon = max(dot(mirrored, uLight), 0.0);
   vec3 reflection = mix(uSky * 1.5, uHaze * 2.6, smoothstep(-0.3, 0.7, mirrored.y))
-    + uRim * MOONLIGHT * (3.0 * pow(moon, 300.0) + 1.2 * pow(moon, 18.0));
+    + uMoon * MOONLIGHT * (3.0 * pow(moon, 300.0) + 1.2 * pow(moon, 18.0));
   return reflection * mix(0.4, 1.0, occlusion);
 }
 
@@ -857,7 +858,7 @@ vec3 glassBlockWall(vec2 pane, vec3 view, vec3 window, vec3 glow, vec2 room, vec
   vec3 scattered = BLOCK_SCATTER * light * mix(1.0, front.w, 0.5);
   vec3 through = scattered + (trapped ? diffuse * 1.5 : diffuse * front.w * back.w + behind + glow * LAMP_IMAGE * image);
   float sunk = clamp(-min(hollow.x, hollow.y) / 0.06, 0.0, 1.0);
-  vec3 sides = (diffuse * mix(1.0, front.w, 0.5) + 1.5 * scattered) * mix(mix(1.6, 0.7, sunk), 2.0, bevel) + uHaze * 0.2;
+  vec3 sides = (diffuse * mix(1.0, front.w, 0.5) + 1.5 * scattered) * mix(mix(1.6, 0.7, sunk), 2.0, bevel) + uNight * 0.2;
   vec3 transmitted = mix(through * mix(vec3(1.0), tint, 0.45), sides * tint, wall) * mix(1.0, 0.6, swapped);
 
   float dust = 0.2 + 0.35 * valueNoise(pane * 1.3 + room * 3.1) + 0.5 * exp(-(pane.y + GLASS_HALF.y) / 0.35);
@@ -1019,8 +1020,8 @@ void main() {
 
       vec3 transmitted = inside * (1.0 - fresnel) * (1.0 - 0.55 * min(dirt, 1.2)) * (1.0 - 0.5 * joint);
       color = transmitted + reflection * fresnel * mix(1.0, 0.4, lit)
-        + (uHaze * 0.12 + glow * 0.22) * dirt
-        + (uRim * 0.15 + glow * 0.15) * rim + uRim * 0.1 * joint;
+        + (uNight * 0.12 + glow * 0.22) * dirt
+        + (uMoon * 0.15 + glow * 0.15) * rim + uMoon * 0.1 * joint;
 
       float blur = fwidth(pane.x);
       if (papered(room)) {
@@ -1034,7 +1035,7 @@ void main() {
 
   float facing = 0.5 + 0.5 * normal.x * sign(vWorld.x);
   float side = exp(-max(uSideX - abs(vWorld.x), 0.0) / SIDE_FALLOFF);
-  color += uRim * SIDE_LIGHT * facing * side * surface.albedo / uConcrete * mix(0.5, 1.0, occlusion);
+  color += uMoon * SIDE_LIGHT * facing * side * surface.albedo / uConcrete * mix(0.5, 1.0, occlusion);
 
   float fog = 1.0 - exp(-distance * uFogDensity * mix(0.5, 1.7, low.mist));
   float hazing = fog * mix(1.0, 0.6, lit);

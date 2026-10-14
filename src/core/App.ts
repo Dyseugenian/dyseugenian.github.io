@@ -22,12 +22,12 @@ import { Film, beneathGrain } from '../post/Film';
 import { RoleText } from '../post/RoleText';
 import { Logo } from '../scene/Logo';
 import { Tower } from '../scene/Tower';
-import { LOW_LAYER, ROOM_LAYER, SKY_LAYER, TOWER_LAYER } from '../scene/layers';
+import { LOW_LAYER, MIST_LAYER, ROOM_LAYER, SKY_LAYER, TOWER_LAYER } from '../scene/layers';
 
 const MAX_DRAWING_PIXELS = 3840 * 2160;
 const TOWER_FADE_SECONDS = 2.5;
 const WARM_UP_MS = 4;
-const OFFSCREEN_LAYERS = [LOW_LAYER, ROOM_LAYER, SKY_LAYER];
+const OFFSCREEN_LAYERS = [LOW_LAYER, ROOM_LAYER, SKY_LAYER, MIST_LAYER];
 
 type Drawn = Mesh | Points | Line;
 type WarmUp = { objects: Drawn[]; camera: Camera; done: () => void };
@@ -195,6 +195,7 @@ export class App {
       this.logo.stars.uniforms.uOpacity.value = 1 - opacity;
       this.logo.stars.visible = opacity < 1;
       this.tower.update(dt);
+      this.logo.gazeOnScreen(this.tower.gaze);
       this.tower.renderOffscreen(this.renderer);
     }
     this.logo.update(dt);

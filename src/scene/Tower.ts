@@ -40,9 +40,10 @@ import { RoomLight } from './RoomLight';
 import { traceMeshes } from './traces';
 import { Backdrop } from './Backdrop';
 import { Sky } from './Sky';
-import { LOW_LAYER, ROOM_LAYER, SKY_LAYER } from './layers';
+import { LOW_LAYER, MIST_LAYER, ROOM_LAYER, SKY_LAYER } from './layers';
 import { Beacons, beaconSpot } from './Beacons';
 import { Drift, STILL } from './Drift';
+import { Mist } from './Mist';
 import { MAP_METERS, bakeConcreteMaps } from './concreteMaps';
 import { fbmTexture, noiseTexture } from './noise';
 import { Veil } from './Veil';
@@ -96,6 +97,8 @@ export class Tower extends Scene {
     uSky: { value: new Color(palette.sky).convertLinearToSRGB() },
     uHaze: { value: new Color(palette.haze).convertLinearToSRGB() },
     uRim: { value: new Color(palette.rim).convertLinearToSRGB() },
+    uNight: { value: new Color(palette.night).convertLinearToSRGB() },
+    uMoon: { value: new Color(palette.moon).convertLinearToSRGB() },
     uExposure: { value: EXPOSURE },
     uNoise: { value: noiseTexture() },
     uFbm: { value: new DataTexture() },
@@ -125,6 +128,8 @@ export class Tower extends Scene {
     ...this.roomUniforms,
   });
   readonly materialUniforms: Record<string, IUniform>;
+  readonly gaze: Vector4;
+  private mist: Mist;
   private rebar: Rebar;
   private presence = new Presence(this.facadeUniforms.uTilesClimbed);
   private pipeLayout: PipeLayout;
@@ -188,6 +193,8 @@ export class Tower extends Scene {
       uLowSize: { value: new Vector2(1, 1) },
       uDepthRange: { value: new Vector2(this.camera.near, this.camera.far) },
     };
+    this.mist = new Mist(this.materialUniforms);
+    this.gaze = this.mist.gaze;
     this.rebar = new Rebar(this.materialUniforms);
     this.pipeLayout = new PipeLayout(this.materialUniforms);
     this.building.add(
@@ -200,6 +207,8 @@ export class Tower extends Scene {
       this.roomLight,
       new Backdrop(this.materialUniforms),
       this.building,
+      this.mist,
+      this.mist.over,
       this.veil,
     );
   }
@@ -328,6 +337,7 @@ export class Tower extends Scene {
   offscreenTarget(object: Object3D): WebGLRenderTarget | null {
     if (object.layers.isEnabled(SKY_LAYER)) return this.sky.target;
     if (object.layers.isEnabled(ROOM_LAYER)) return this.roomLight.target;
+    if (object.layers.isEnabled(MIST_LAYER)) return this.mist.target;
     return object.layers.isEnabled(LOW_LAYER) ? this.low : null;
   }
 
@@ -357,6 +367,7 @@ export class Tower extends Scene {
     renderer.clear();
     renderer.render(this, this.lowCamera);
     renderer.setRenderTarget(target);
+    this.mist.render(renderer, this.camera);
   }
 
   rebase(): void {
@@ -375,6 +386,7 @@ export class Tower extends Scene {
     this.sky.fit(width, height);
     this.low.setSize(Math.ceil(width / 2), Math.ceil(height / 2));
     this.materialUniforms.uLowSize!.value.set(this.low.width, this.low.height);
+    this.mist.fit(this.low.width, this.low.height);
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
   }

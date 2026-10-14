@@ -37,6 +37,18 @@ const float GLOW_RADIUS = 40.0;
 const float GLOW_RANGE = 360.0;
 const float GLOW_SPLIT = 0.6;
 const float SPREAD_SOFTNESS = 0.35;
+const vec2 FOCUS = vec2(0.36, 1.0);
+const float BLUR_RADIUS = 5.0;
+const int BLUR_TAPS = 12;
+const float VIGNETTE = 0.4;
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+vec4 sceneAt(vec2 uv, vec2 spread) {
+  vec4 color = texture(uScene, uv);
+  color.r = texture(uScene, uv + spread).r;
+  color.b = texture(uScene, uv - spread).b;
+  return color;
+}
 
 float pullAt(vec2 pixel) {
   vec2 reach = (pixel - uPointer) / uReach;
@@ -74,11 +86,23 @@ void main() {
   vec2 spread = screen * dot(screen, screen) * uAberration * uPixelRatio / uResolution;
 
   vec2 sampleUv = pixel / uResolution + vWarp;
-  vec4 base = texture(uScene, sampleUv);
-  base.r = texture(uScene, sampleUv + spread).r;
-  base.b = texture(uScene, sampleUv - spread).b;
+  float edge = smoothstep(FOCUS.x, FOCUS.y, length(screen * vec2(uResolution.x / uResolution.y, 1.0)));
+  vec4 base = sceneAt(sampleUv, spread);
+  float radius = BLUR_RADIUS * uPixelRatio * edge * edge;
+  if (radius > 0.5) {
+    float turn = 6.2832 * ign(pixel + mod(frame, 64.0) * vec2(5.588, 3.17));
+    for (int i = 1; i < BLUR_TAPS; i++) {
+      float angle = float(i) * 2.39996 + turn;
+      float reach = sqrt(float(i) / float(BLUR_TAPS - 1)) * radius;
+      base += sceneAt(sampleUv + reach * vec2(cos(angle), sin(angle)) / uResolution, spread);
+    }
+    base /= float(BLUR_TAPS);
+  }
+  base.rgb *= 1.0 - VIGNETTE * edge * edge;
+  float luma = dot(base.rgb, LUMA);
 
-  float shade = (hash13(vec3(pixel, frame)) * 2.0 - 1.0) * uGrain;
+  float shade = (hash13(vec3(pixel, frame)) + hash13(vec3(pixel + 71.3, frame)) - 1.0) * 1.35 * uGrain
+    * mix(1.0, 0.45, smoothstep(0.3, 0.8, luma));
 
   vec3 tint = shade > 0.0 ? vec3(1.0) : vec3(0.0);
   float alpha = clamp(abs(shade) + (ign(pixel) - 0.5) / 255.0, 0.0, 1.0);

@@ -31,8 +31,6 @@ const float WIND_SPEED = 9.0;
 const float WAVE_SPEED = 5.0;
 const float SURGE = 1.6;
 const float SURGE_LAG = 0.8;
-const float STREET_LINKS = 3.0;
-const vec3 POLE_DRIFT = vec3(0.0, -0.8, -2.5);
 const float SLAP_EVERY = 11.0;
 const float SLAP_CHANCE = 0.45;
 const float SLAP_REACH = 0.45;
@@ -69,8 +67,6 @@ float gustTravel;
 vec3 flutterSway;
 float flutterRate;
 float flutterPhase;
-float links;
-vec3 onward;
 float slapKey;
 float size;
 float thickness;
@@ -98,22 +94,10 @@ float slapAt(float key) {
   return exp(-5.0 * (since - 0.12)) * abs(cos(15.0 * (since - 0.12)));
 }
 
-vec3 polePoint(Wire wire, float link) {
-  float past = max(link - 1.0, 0.0);
-  return link < 0.5 ? wire.from : wire.to + onward * past + POLE_DRIFT * past * past;
-}
-
 vec3 wirePoint(Wire wire, float t) {
   if (wire.shape == SPAN) {
-    float along = t * links;
-    float link = min(floor(along), links - 1.0);
-    float u = along - link;
-    vec3 start = polePoint(wire, link);
-    vec3 end = polePoint(wire, link + 1.0);
-    float stretch = length(end - start) / length(wire.to - wire.from);
-    float lag = gustDelay + gustTravel * stretch * (link + u);
-    return mix(start, end, u) - UP * 4.0 * wire.sag * stretch * u * (1.0 - u)
-      + swayAt(wire.sway, lag, 0.0) * stretch * sin(3.1416 * u);
+    return mix(wire.from, wire.to, t) - UP * 4.0 * wire.sag * t * (1.0 - t)
+      + swayAt(wire.sway, gustDelay + gustTravel * t, 0.0) * sin(3.1416 * t);
   }
   if (wire.shape == DANGLE) {
     vec3 point = mix(wire.from, wire.to, t) + swayAt(wire.sway, gustDelay + gustTravel * t, 0.4) * t * t;
@@ -243,9 +227,6 @@ void blockLead(vec3 from, float front, float lane, float base) {
 
 Wire streetSpan(vec3 from, vec3 reach, vec2 bend) {
   float sag = (bend.x < 0.6 ? mix(0.1, 0.16, bend.y) : mix(0.04, 0.07, bend.y)) * length(reach);
-  vec3 aim = vec3(hash12(reach.xz * 3.1), hash12(reach.yz * 5.7), hash12(reach.xy * 2.3));
-  links = STREET_LINKS;
-  onward = vec3(sign(reach.x) * mix(16.0, 28.0, aim.x), mix(-2.0, 1.0, aim.y), -mix(1.0, 6.0, aim.z));
   gustTravel = length(reach) / WAVE_SPEED;
   flutterSway = vec3(0.15, 0.0, 0.0);
   return Wire(SPAN, from, from + reach, sag, 0.0, vec3(0.0, 0.0, 0.5));
@@ -363,8 +344,6 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
   slackTo = 1.0;
   slackBow = vec3(0.0);
   for (int i = 0; i < 8; i++) fastener[i] = vec4(0.0);
-  links = 1.0;
-  onward = vec3(0.0);
   flutterSway = vec3(0.0);
   if (plantFloor(room)) return false;
   float x = room.x * uBay;

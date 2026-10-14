@@ -1,7 +1,7 @@
 uniform float uClimb;
 uniform float uTileHeight;
-uniform vec3 uHaze;
-uniform vec3 uRim;
+uniform vec3 uNight;
+uniform vec3 uMoon;
 uniform vec3 uLight;
 uniform vec3 uBeaconColor;
 uniform float uBeacon;
@@ -24,8 +24,8 @@ float lit(vec3 shading, vec3 toLight, float wrap) {
 vec3 nightLight(vec3 shading, vec3 world, float occlusion, float wrap) {
   float skyLight = mix(0.12, 0.9, shading.y * 0.5 + 0.5);
   float key = lit(shading, uLight, wrap);
-  vec3 light = uHaze * NIGHT_SKY * skyLight * occlusion
-    + uRim * MOONLIGHT * key * mix(0.3, 1.0, occlusion);
+  vec3 light = uNight * NIGHT_SKY * skyLight * occlusion
+    + uMoon * MOONLIGHT * key * mix(0.3, 1.0, occlusion);
   float spacing = 4.0 * uTileHeight;
   float beaconY = floor((world.y + uClimb - uBeaconSpot.y) / spacing + 0.5) * spacing + uBeaconSpot.y - uClimb;
   vec3 toBeacon = vec3(sign(world.x) * uBeaconSpot.x, beaconY, uBeaconSpot.z) - world;
