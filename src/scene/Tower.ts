@@ -21,6 +21,7 @@ import {
   Vector4,
   type WebGLRenderer,
   WebGLRenderTarget,
+  ZeroFactor,
 } from 'three';
 import vertexShader from '../shaders/facade.vert';
 import fragmentShader from '../shaders/facade.frag';
@@ -270,7 +271,22 @@ export class Tower extends Scene {
     this.rebar.fill(rebar);
     const traced = traceMeshes(traces, this.materialUniforms);
     for (const mesh of traced) {
-      this.presence.watch(mesh);
+      const { material } = mesh;
+      const multiplied = material.blendDst === ZeroFactor;
+      this.presence.watch(
+        mesh,
+        multiplied
+          ? {
+              material: new RawShaderMaterial({
+                glslVersion: GLSL3,
+                vertexShader: material.vertexShader,
+                fragmentShader: material.fragmentShader,
+                uniforms: material.uniforms,
+              }),
+              vertex: [],
+            }
+          : undefined,
+      );
       if (mesh.material.defines.LAID_OUT) this.pipeLayout.lay(mesh);
     }
     this.building.add(...traced);

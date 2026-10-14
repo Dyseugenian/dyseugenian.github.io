@@ -1,6 +1,6 @@
 import {
   BoxGeometry,
-  type BufferGeometry,
+  BufferGeometry,
   CylinderGeometry,
   Float32BufferAttribute,
   PlaneGeometry,
@@ -44,6 +44,7 @@ import reach from './reach.json';
 const BLOCKLESS_COLUMNS = [0, 1];
 const DUCT_COLUMNS = [-2, 3];
 const GRILLE_COLUMNS = [-1, 0, 1];
+const LADDER_COLUMNS = [-1, 2];
 const DETAIL_ROWS = { full: 5, reduced: 11 };
 const REBAR_ROWS = { below: 1, above: 3 };
 const TRACE_ROWS = { below: 1, above: 8 };
@@ -56,6 +57,8 @@ const SEEN_ROWS = {
   motes: 4,
   spouts: 7,
   ducts: 12,
+  rungs: 8,
+  rungStains: 3,
 };
 
 const PUFFS = 16;
@@ -71,6 +74,13 @@ const SPOUT_PARTS = [0, 1, 2, 2, 3, 4, 5, 6, 7, 8];
 const DUCT_RINGS = 36;
 const GRILLE_BARS = 63;
 const BOARDS = 14;
+const RUNGS = 12;
+const RUNG_ROWS = { near: 3 };
+const RUNG_SIDES = { near: 8, far: 4 };
+const RUNG_KNOTS = {
+  near: [0, 0, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75, 4, 5, 5],
+  far: [0, 0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 5],
+};
 
 const PATCH = 0.6;
 const LIFT = 0.02;
@@ -456,6 +466,25 @@ function ductFittingShape() {
   return shape;
 }
 
+function rungShape(sides: number, knots: number[]): BufferGeometry {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const columns = sides + 1;
+  knots.forEach((knot, ring) => {
+    const tip = ring === 0 || ring === knots.length - 1 ? 1 : 0;
+    for (let side = 0; side < columns; side++) positions.push(side / sides, knot, tip);
+  });
+  for (let ring = 0; ring < knots.length - 1; ring++) {
+    for (let side = 0; side < sides; side++) {
+      const a = ring * columns + side;
+      indices.push(a, a + 1, a + columns, a + 1, a + 1 + columns, a + columns);
+    }
+  }
+  return new BufferGeometry()
+    .setAttribute('position', new Float32BufferAttribute(positions, 3))
+    .setIndex(indices);
+}
+
 export type TraceLayout = {
   kind: TraceKind;
   shape: BufferGeometry;
@@ -504,6 +533,21 @@ export function traceLayouts(): TraceLayout[] {
       2,
     ),
     layout('ductFittings', ductFittingShape(), DUCT_COLUMNS, below(TILE_ROWS, SEEN_ROWS.ducts), 3),
+    layout(
+      'rungs',
+      rungShape(RUNG_SIDES.near, RUNG_KNOTS.near),
+      LADDER_COLUMNS,
+      below(TILE_ROWS, RUNG_ROWS.near),
+      RUNGS,
+    ),
+    layout(
+      'rungs',
+      rungShape(RUNG_SIDES.far, RUNG_KNOTS.far),
+      LADDER_COLUMNS,
+      TILE_ROWS.filter((row) => row >= RUNG_ROWS.near && row < SEEN_ROWS.rungs),
+      RUNGS,
+    ),
+    layout('rungStains', quad, LADDER_COLUMNS, below(TILE_ROWS, SEEN_ROWS.rungStains), 2 * RUNGS),
     layout('vapour', quad, TRACE_COLUMNS, traceRows, PUFFS),
     layout('leak', quad, TRACE_COLUMNS, traceRows, LEAK_PIECES),
     layout('motes', quad, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.motes), MOTES),

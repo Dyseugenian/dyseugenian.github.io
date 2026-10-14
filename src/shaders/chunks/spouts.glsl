@@ -180,6 +180,9 @@ Stack stackOf(float column, float storey) {
     else high = min(high, first + uPlantEvery - duct.reach - 2.0);
   }
   if (necked(column, low)) low += 1.0;
+  for (float near = low - 1.0; near <= high + 1.0; near++) {
+    if (ladderBeside(column, near)) return stack;
+  }
   if (storey < low || storey > high || high < low) return stack;
   stack.present = true;
   stack.side = hash12(key + 3.0) < 0.5 ? -1.0 : 1.0;
@@ -210,15 +213,16 @@ float nodeAt(float pier, float storey, Stack stack) {
 float runMode(float node, Stack stack, bool beyond, float side, float recess, float storey) {
   float pier = recess + max(side, 0.0);
   bool studded = blockless(vec2(pier, 0.0)) > 0.5;
+  bool ladder = ladderBeside(pier, storey);
   if (node == PLAIN && beyond && studded) return seamFree(pier, storey) ? SEAM : WALL_END;
-  if (node == PLAIN && beyond) return CONNECT;
+  if (node == PLAIN && beyond) return ladder ? WALL_END : CONNECT;
   if (node == THROUGH && beyond) return WALL_END;
   if (node == CRANK && beyond) return CRANKED;
   if (node == TEE || node == CRANK) return TEED;
   if (node == FEED && stack.feed == -side) return FED;
   float pick = hash12(vec2(2.0 * recess + side, storey) + 941.0);
   if (studded || (node != BREAK && node != PLAIN && node != THROUGH)) return pick < 0.55 ? WALL_END : OPEN_END;
-  if (node == BREAK && beyond && side > 0.0) return pick < 0.55 ? WALL_END : OPEN_END;
+  if (ladder || node == BREAK && beyond && side > 0.0) return pick < 0.55 ? WALL_END : OPEN_END;
   float drop = necked(pier, storey) ? FRONT_WALL : FRONT_DROP;
   return pick < 0.3 ? WALL_END : pick < 0.5 ? OPEN_END : pick < 0.75 ? FRONT_WALL : drop;
 }
@@ -419,6 +423,7 @@ Spout roomSpout(vec2 room, vec2 tile, float storey, float base) {
   bool sideFree = wallFree(room, side);
   bool bothFree = wallFree(room, 1.0) && wallFree(room, -1.0);
   bool grille = hash12(room + 229.0) > 0.55;
+  bool ladder = ladderBeside(tile.x, room.y);
   float y = base + GAP_MIDDLE;
   float face = PIER_MIDDLE + side * PIER_HALF;
   spout.drips = hash12(room + 504.0);
@@ -430,7 +435,7 @@ Spout roomSpout(vec2 room, vec2 tile, float storey, float base) {
   float front = spout.radius + mix(FLUSH, 0.06, pick.y);
   float back = -mix(0.4, 0.8, pick.y);
 
-  if (kind < 0.36 && kind >= 0.22 && sideFree) {
+  if (kind < 0.36 && kind >= 0.22 && sideFree && !ladder) {
     float top = y + mix(0.0, 0.6, pick.z);
     float low = top - mix(0.35, 0.7, pick.w);
     float across = face - side * mix(0.35, 0.6, pick.x);
@@ -470,7 +475,7 @@ Spout roomSpout(vec2 room, vec2 tile, float storey, float base) {
     spout.points[1] = vec3(turn, run, UNDER_LEDGE);
     spout.points[2] = vec3(turn, run, -mix(0.2, 0.7, pick.w));
     spout.count = 3;
-  } else if (kind < 0.89 && kind >= 0.78 && bothFree) {
+  } else if (kind < 0.89 && kind >= 0.78 && bothFree && !ladder) {
     float level = y + mix(-0.4, 1.0, pick.z);
     float right = PIER_MIDDLE + PIER_HALF;
     float left = PIER_MIDDLE - PIER_HALF;
@@ -493,6 +498,8 @@ Spout roomSpout(vec2 room, vec2 tile, float storey, float base) {
     spout.points[3] = vec3(face - side * WALL_DEPTH, high, back);
     spout.count = 4;
     spout.sink = WALL_DEPTH;
+  } else if (ladder) {
+    return emptySpout();
   } else {
     float reach = mix(0.5, 0.7, pick.x);
     spout.radius = mix(0.19, 0.22, pick.x);

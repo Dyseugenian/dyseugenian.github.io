@@ -2,6 +2,7 @@ import {
   AdditiveBlending,
   CustomBlending,
   DoubleSide,
+  DstColorFactor,
   GLSL3,
   type InstancedBufferGeometry,
   Mesh,
@@ -10,6 +11,7 @@ import {
   RawShaderMaterial,
   type IUniform,
   type ShaderMaterialParameters,
+  ZeroFactor,
 } from 'three';
 import vapourVertex from '../shaders/vapour.vert';
 import vapourFragment from '../shaders/vapour.frag';
@@ -33,6 +35,10 @@ import grilleVertex from '../shaders/grille.vert';
 import grilleFragment from '../shaders/grille.frag';
 import boardVertex from '../shaders/board.vert';
 import boardFragment from '../shaders/board.frag';
+import rungVertex from '../shaders/rung.vert';
+import rungFragment from '../shaders/rung.frag';
+import rungStainVertex from '../shaders/rung-stain.vert';
+import rungStainFragment from '../shaders/rung-stain.frag';
 import { unpackGeometry } from './facade';
 import type { TraceGeometry } from './towerGeometry';
 
@@ -60,7 +66,9 @@ export type TraceKind =
   | 'ducts'
   | 'ductFittings'
   | 'grilles'
-  | 'boards';
+  | 'boards'
+  | 'rungs'
+  | 'rungStains';
 
 const PIPES: TraceKind[] = ['spouts', 'stacks', 'runs'];
 const AIRBORNE: TraceKind[] = ['vapour', 'motes'];
@@ -82,6 +90,12 @@ export const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameter
   ductFittings: [ductFittingVertex, ductFragment, {}],
   grilles: [grilleVertex, grilleFragment, {}],
   boards: [boardVertex, boardFragment, {}],
+  rungs: [rungVertex, rungFragment, {}],
+  rungStains: [
+    rungStainVertex,
+    rungStainFragment,
+    { ...LAYERED, blendSrc: DstColorFactor, blendDst: ZeroFactor },
+  ],
 };
 
 export function traceMeshes(

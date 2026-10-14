@@ -260,7 +260,8 @@ Wire branch(vec2 room, vec3 from, vec3 pick, vec2 bend) {
 vec3 runClip(vec2 pier, float x, float joint, float second) {
   float shift = hash12(pier + 721.0 + 7.0 * second);
   float depth = hash12(pier + 723.0 + 7.0 * second);
-  return vec3(x + mix(-0.5, 0.5, shift), joint, 0.03 + 0.06 * second + 0.03 * depth);
+  float along = ladderBeside(pier.x, pier.y) ? mix(-0.08, -0.02, shift) + 0.1 * second : mix(-0.5, 0.5, shift);
+  return vec3(x + along, joint, 0.03 + 0.06 * second + 0.03 * depth);
 }
 
 bool clearWindow(vec2 room) {
@@ -389,15 +390,16 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
   float side = storey < 0.5 ? 1.0 : -1.0;
   float bareX = storey < 0.5 ? uBay + PIER_MIDDLE : PIER_MIDDLE;
   bool barePier = storey < 0.5 ? rightPier : leftPier;
+  float pier = storey < 0.5 ? room.x + 1.0 : room.x;
+  bool ladder = ladderBeside(pier, room.y);
   bool clear = clearWindow(room);
 
   if (index < 1.5) {
     if (!barePier || !clear || chance > 0.105) return false;
-    float pier = storey < 0.5 ? room.x + 1.0 : room.x;
     if (index < 0.5 ? plantFloor(room + vec2(0.0, 1.0)) || jointDucted(pier, room.y) : ducted(vec2(pier, room.y), 0.0)) {
       return false;
     }
-    vec3 from = vec3(bareX - side * mix(0.35, 0.55, more.y), base + (3.0 - index) * COURSE, STANDOFF);
+    vec3 from = vec3(bareX - side * mix(ladder ? 0.4 : 0.35, 0.55, more.y), base + (3.0 - index) * COURSE, STANDOFF);
     pierLead(from, side, index, base);
     fasten(0, from, OUT, STANDOFF, ANCHOR);
     wire = branch(room, from, pick, bend);
@@ -423,7 +425,7 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
     size = mix(0.2, 0.9, size);
     if (index < 10.5) {
       vec2 neighbour = room + vec2(side, 0.0);
-      if (!barePier || chance > 0.1 || !clearWindow(neighbour)) return false;
+      if (!barePier || ladder || chance > 0.1 || !clearWindow(neighbour)) return false;
       link(side, base, mix(0.15, 0.5, pick.x), vec3(0.02 * flutter, 0.0, 0.04 + 0.08 * (gust + 0.4)));
       return true;
     }
@@ -462,6 +464,8 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
   vec2 run = vec2(group, room.y);
   float first = max(group * RUN_BAYS - shift, -lastBay);
   float last = min(group * RUN_BAYS - shift + RUN_BAYS - 1.0, lastBay);
+  if (ladderBeside(first, room.y)) first += 1.0;
+  if (ladderBeside(last + 1.0, room.y)) last -= 1.0;
   if (hash12(run + 703.0) > RUN_CHANCE || last <= first || room.x < first || room.x > last) return false;
   if (plantFloor(room + vec2(0.0, 1.0))) return false;
 
@@ -497,6 +501,7 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
     vec3 to = runClip(room + vec2(1.0, 0.0), uBay + PIER_MIDDLE, joint, second);
     float slack = hash12(room + 713.0 + second);
     float sag = slack > 0.85 ? mix(0.9, 1.2, pick.z) : mix(0.15, 0.7, slack * slack);
+    if (ladderBeside(room.x, room.y) || ladderBeside(room.x + 1.0, room.y)) sag = min(sag, 0.4);
     flutterSway = vec3(0.02, 0.0, 0.02) * (0.3 + sag);
     wire = Wire(SPAN, from, to, sag, 0.0, vec3(0.0, 0.0, 0.25) * (0.3 + sag));
     fasten(0, from, OUT, from.z, CLIP);
@@ -546,7 +551,7 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
     leadShare = 1.0;
     return true;
   }
-  if (chance > 0.6) return false;
+  if (chance > 0.6 || ladder) return false;
   float drop = mix(0.5, 1.4, pick.x);
   vec3 to = clip + vec3(side * mix(-0.1, 0.1, pick.y), -drop, mix(0.0, 0.2, pick.z));
   gustTravel = 0.6;
