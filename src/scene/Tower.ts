@@ -69,6 +69,7 @@ export const PITCH = Math.atan(1 / (VIEW.vanish * Math.tan(MathUtils.degToRad(VI
 const CLIMB_SPEED = 0.9;
 export const SWAY = { pitch: 0.12, shift: 1 };
 const SPOT = { reach: 8, y: -4, z: 3 };
+const SPOT_POOL = new Vector3(0, 11, -SPOT.z);
 const REDUCED_MOTION_SPEED = 0.1;
 const TILE_SEEDS = 4096;
 const EXPOSURE = 0.42;
@@ -146,6 +147,7 @@ export class Tower extends Scene {
   private baking = bakeTower();
   private veil = new Veil(beneathGrain(palette.bg));
   private lift = 0;
+  private pool = new Vector3();
   private swayPitch = new Spring(4, 5);
   private aim = new Spring(9, 6);
   private shift = new Spring(9, 6);
@@ -350,6 +352,11 @@ export class Tower extends Scene {
     ]);
     this.uniforms.uSurface.value = surface;
     this.pipesClimbed = -1;
+  }
+
+  spotOnScreen(focus: Vector2): void {
+    this.pool.copy(this.facadeUniforms.uSpot.value).add(SPOT_POOL).project(this.camera);
+    focus.set(0.5 + 0.5 * this.pool.x, 0.5 + 0.5 * this.pool.y);
   }
 
   renderOffscreen(renderer: WebGLRenderer): void {

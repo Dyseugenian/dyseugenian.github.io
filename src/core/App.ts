@@ -196,6 +196,7 @@ export class App {
       this.logo.stars.visible = opacity < 1;
       this.tower.update(dt);
       this.logo.gazeOnScreen(this.tower.gaze);
+      this.tower.spotOnScreen(this.film.focus);
       this.tower.renderOffscreen(this.renderer);
     }
     this.logo.update(dt);

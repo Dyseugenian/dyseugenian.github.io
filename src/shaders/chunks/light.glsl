@@ -9,7 +9,7 @@ uniform vec3 uBeaconSpot;
 uniform vec3 uSpot;
 uniform vec3 uSpotColor;
 
-const float NIGHT_SKY = 2.3;
+const float NIGHT_SKY = 2.0;
 const float MOONLIGHT = 0.9;
 const float BEACON_LIGHT = 3.0;
 const vec3 SPOT_AIM = vec3(0.0, 0.99, -0.14);

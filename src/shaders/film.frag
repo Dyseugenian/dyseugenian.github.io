@@ -9,6 +9,7 @@ uniform vec2 uResolution;
 uniform float uPixelRatio;
 uniform float uGrain;
 uniform float uAberration;
+uniform vec2 uFocus;
 uniform sampler2D uRoles;
 uniform sampler2D uRoleGlow;
 uniform vec4 uRolesRect;
@@ -41,7 +42,6 @@ const vec2 FOCUS = vec2(0.36, 1.0);
 const float BLUR_RADIUS = 5.0;
 const int BLUR_TAPS = 12;
 const float VIGNETTE = 0.4;
-const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
 vec4 sceneAt(vec2 uv, vec2 spread) {
   vec4 color = texture(uScene, uv);
@@ -86,7 +86,7 @@ void main() {
   vec2 spread = screen * dot(screen, screen) * uAberration * uPixelRatio / uResolution;
 
   vec2 sampleUv = pixel / uResolution + vWarp;
-  float edge = smoothstep(FOCUS.x, FOCUS.y, length(screen * vec2(uResolution.x / uResolution.y, 1.0)));
+  float edge = smoothstep(FOCUS.x, FOCUS.y, length((pixel / uResolution - uFocus) * vec2(uResolution.x / uResolution.y, 1.0)));
   vec4 base = sceneAt(sampleUv, spread);
   float radius = BLUR_RADIUS * uPixelRatio * edge * edge;
   if (radius > 0.5) {
@@ -99,10 +99,8 @@ void main() {
     base /= float(BLUR_TAPS);
   }
   base.rgb *= 1.0 - VIGNETTE * edge * edge;
-  float luma = dot(base.rgb, LUMA);
 
-  float shade = (hash13(vec3(pixel, frame)) + hash13(vec3(pixel + 71.3, frame)) - 1.0) * 1.35 * uGrain
-    * mix(1.0, 0.45, smoothstep(0.3, 0.8, luma));
+  float shade = (hash13(vec3(pixel, frame)) * 2.0 - 1.0) * uGrain;
 
   vec3 tint = shade > 0.0 ? vec3(1.0) : vec3(0.0);
   float alpha = clamp(abs(shade) + (ign(pixel) - 0.5) / 255.0, 0.0, 1.0);
