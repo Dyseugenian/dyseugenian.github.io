@@ -59,6 +59,7 @@ const SEEN_ROWS = {
   ducts: 12,
   rungs: 8,
   rungStains: 3,
+  letters: 8,
 };
 
 const PUFFS = 16;
@@ -75,6 +76,7 @@ const DUCT_RINGS = 36;
 const GRILLE_BARS = 63;
 const BOARDS = 14;
 const RUNGS = 12;
+const LETTERS = 20;
 const RUNG_ROWS = { near: 3 };
 const RUNG_SIDES = { near: 8, far: 4 };
 const RUNG_KNOTS = {
@@ -548,6 +550,7 @@ export function traceLayouts(): TraceLayout[] {
       RUNGS,
     ),
     layout('rungStains', quad, LADDER_COLUMNS, below(TILE_ROWS, SEEN_ROWS.rungStains), 2 * RUNGS),
+    layout('letters', quad, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.letters), LETTERS),
     layout('vapour', quad, TRACE_COLUMNS, traceRows, PUFFS),
     layout('leak', quad, TRACE_COLUMNS, traceRows, LEAK_PIECES),
     layout('motes', quad, TRACE_COLUMNS, below(traceRows, SEEN_ROWS.motes), MOTES),

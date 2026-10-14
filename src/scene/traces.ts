@@ -11,6 +11,7 @@ import {
   RawShaderMaterial,
   type IUniform,
   type ShaderMaterialParameters,
+  SrcColorFactor,
   ZeroFactor,
 } from 'three';
 import vapourVertex from '../shaders/vapour.vert';
@@ -39,6 +40,8 @@ import rungVertex from '../shaders/rung.vert';
 import rungFragment from '../shaders/rung.frag';
 import rungStainVertex from '../shaders/rung-stain.vert';
 import rungStainFragment from '../shaders/rung-stain.frag';
+import letterVertex from '../shaders/letter.vert';
+import letterFragment from '../shaders/letter.frag';
 import { unpackGeometry } from './facade';
 import type { TraceGeometry } from './towerGeometry';
 
@@ -68,7 +71,8 @@ export type TraceKind =
   | 'grilles'
   | 'boards'
   | 'rungs'
-  | 'rungStains';
+  | 'rungStains'
+  | 'letters';
 
 const PIPES: TraceKind[] = ['spouts', 'stacks', 'runs'];
 const AIRBORNE: TraceKind[] = ['vapour', 'motes'];
@@ -95,6 +99,11 @@ export const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameter
     rungStainVertex,
     rungStainFragment,
     { ...LAYERED, blendSrc: DstColorFactor, blendDst: ZeroFactor },
+  ],
+  letters: [
+    letterVertex,
+    letterFragment,
+    { ...LAYERED, blendSrc: DstColorFactor, blendDst: SrcColorFactor },
   ],
 };
 

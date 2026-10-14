@@ -21,7 +21,7 @@ import {
   Vector4,
   type WebGLRenderer,
   WebGLRenderTarget,
-  ZeroFactor,
+  DstColorFactor,
 } from 'three';
 import vertexShader from '../shaders/facade.vert';
 import fragmentShader from '../shaders/facade.frag';
@@ -272,7 +272,7 @@ export class Tower extends Scene {
     const traced = traceMeshes(traces, this.materialUniforms);
     for (const mesh of traced) {
       const { material } = mesh;
-      const multiplied = material.blendDst === ZeroFactor;
+      const multiplied = material.blendSrc === DstColorFactor;
       this.presence.watch(
         mesh,
         multiplied
