@@ -45,6 +45,7 @@ export class RenderScale {
   private timer: GpuTimer | null = null;
   private pinned = false;
   private frameMs = 0;
+  private refreshMs = Infinity;
   private hold = 0;
   private probeWait = PROBE_SECONDS;
   private probing = false;
@@ -72,14 +73,16 @@ export class RenderScale {
     if (!this.pinned) this.timer?.end();
   }
 
-  update(dt: number): boolean {
-    if (this.pinned) return false;
-    const sample = this.timer ? this.timer.read() : dt * 1000;
+  update(dt: number, active: boolean): boolean {
+    this.refreshMs = Math.min(this.refreshMs, dt * 1000);
+    if (this.pinned || !active) return false;
+    const frameBudget = Math.max(FRAME_BUDGET_MS, this.refreshMs);
+    const sample = this.timer ? this.timer.read() : Math.min(dt * 1000, 2 * frameBudget);
     if (sample === null) return false;
     this.frameMs = this.frameMs === 0 ? sample : this.frameMs + (sample - this.frameMs) * SMOOTHING;
     this.hold -= dt;
     if (this.hold > 0) return false;
-    const budget = this.timer ? GPU_BUDGET_MS : FRAME_BUDGET_MS;
+    const budget = this.timer ? GPU_BUDGET_MS : frameBudget;
     if (this.frameMs > budget * 1.15 && this.scale > SCALE.min) {
       if (this.probing) this.probeWait *= 2;
       this.probing = false;

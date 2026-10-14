@@ -8,8 +8,6 @@ import { SprayCircle } from './SprayCircle';
 import { Stars } from './Stars';
 import { Wordmark } from './Wordmark';
 
-const LOGO_SIZE = { width: 0.88, height: 0.72 };
-const LOGO_CENTER_Y = 0.38;
 const PUPIL = { y: 445 / 1024, radius: 140 / 1024 };
 const SPHERE = { y: 0.096, radius: 1.7, flow: 0.05 };
 const RING = { radius: 2.6, drop: 0.514, flow: 0.035 };
@@ -46,6 +44,8 @@ export class Logo extends Group {
   private pointerVelocity = new Vector2();
   private wasFollowing = false;
   private viewHalfSize = new Vector2();
+  private viewSize = new Vector2();
+  private unitsPerPixel = 1;
   private pupil = 0;
 
   constructor(private input: Input) {
@@ -73,14 +73,14 @@ export class Logo extends Group {
     this.ready = Promise.all([this.halo.loaded, this.eyes.loaded, this.wordmark.loaded]);
   }
 
-  fit(width: number, height: number, viewHeight: number, particles: number): void {
-    const unitsPerPixel = viewHeight / height;
-    const size = Math.min(LOGO_SIZE.width * width, LOGO_SIZE.height * height);
-    const pupilY = LOGO_CENTER_Y * height + (PUPIL.y - 0.5) * size;
-    this.position.set(0, (height / 2 - pupilY) * unitsPerPixel, 0);
+  fit(width: number, height: number, viewHeight: number, box: DOMRect, particles: number): void {
+    const unitsPerPixel = (this.unitsPerPixel = viewHeight / height);
+    const size = box.width;
+    this.viewSize.set(width, height);
     this.scale.setScalar(PUPIL.radius * size * unitsPerPixel);
     this.viewHalfSize.set((width / 2) * unitsPerPixel, viewHeight / 2);
     this.pupil = PUPIL.radius * size;
+    this.place(box);
 
     const scale = this.scale.x;
     this.stars.scatter(
@@ -96,6 +96,14 @@ export class Logo extends Group {
     this.outline.setCount(Math.round(OUTLINE_SPECKS * coverage));
     this.ring.setCount(Math.round(RING_SPECKS * coverage));
     this.infall.setCount(Math.round(INFALL_SPECKS * Math.sqrt(coverage)));
+  }
+
+  place(box: DOMRect): void {
+    this.position.set(
+      (box.left + box.width / 2 - this.viewSize.x / 2) * this.unitsPerPixel,
+      (this.viewSize.y / 2 - box.top - PUPIL.y * box.height) * this.unitsPerPixel,
+      0,
+    );
   }
 
   setPixelRatio(pixelRatio: number): void {

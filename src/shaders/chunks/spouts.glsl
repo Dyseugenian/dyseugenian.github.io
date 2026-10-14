@@ -1,3 +1,5 @@
+#include "collectors.glsl"
+
 const float PIER_MIDDLE = -2.1;
 const float PIER_HALF = 0.7;
 const float RECESS_HALF = 1.4;
@@ -16,7 +18,6 @@ const float STACK_CHANCE = 0.35;
 const float STACK_OFFSET = 0.28;
 const float FEED_CHANCE = 0.9;
 const float FEED_DROP = 0.2;
-const float RUN_CHANCE = 0.3;
 const float RUN_SPAN = 3.0;
 const float RUN_BREAK = 0.3;
 const float RUN_THROUGH = 0.3;
@@ -24,11 +25,11 @@ const float RUN_FALL = 0.01;
 const float RUN_DEPTH = 0.14;
 const float TEE_CHANCE = 0.5;
 const float CRANK_CLEAR = 0.04;
-const float HIGH_UNIT = 1.2;
 const float BEND_WEIGHT = 0.5;
 const float MISMATCH = 0.12;
 const float SUPPORT_LOW = 0.35;
 const float SUPPORT_SPAN = 1.0;
+const float UNDER_COLLECTOR = 3.0;
 const vec3 FRAME_HINT = vec3(0.31, 0.83, 0.47);
 const int PIPE_POINTS = 14;
 const int REACH_POINTS = 7;
@@ -137,14 +138,12 @@ bool seamFree(float pier, float storey) {
   return wallFree(room, 1.0) && wallFree(room, -1.0);
 }
 
-float pipeMaterial(float storey) {
-  return hash12(vec2(mod(floor(storey / uPlantEvery), 8192.0 / uPlantEvery), 0.0) + 971.0);
+float wallTop(vec2 room, float side, float base) {
+  return runIn(room.x + min(side, 0.0), room.y) ? base + UNDER_COLLECTOR : 1e3;
 }
 
-bool runClear(vec2 recess) {
-  if (!airConditioned(recess)) return true;
-  vec4 mount = airConditionerMount(recess);
-  return mount.w == 0.0 || mount.y < HIGH_UNIT;
+float pipeMaterial(float storey) {
+  return hash12(vec2(mod(floor(storey / uPlantEvery), 8192.0 / uPlantEvery), 0.0) + 971.0);
 }
 
 float runFall(float storey) {
@@ -153,12 +152,6 @@ float runFall(float storey) {
 
 float runDrop(float storey, float x) {
   return runFall(storey) * x + RUN_FALL * 3.5 * uBay;
-}
-
-bool runIn(float recess, float storey) {
-  if (abs(recess) > 3.5 || plantFloor(vec2(0.0, storey)) || plantFloor(vec2(0.0, storey + 1.0))) return false;
-  vec2 room = vec2(recess, storey);
-  return runClear(room) && hash12(room + 921.0) < RUN_CHANCE;
 }
 
 Stack stackOf(float column, float storey) {
@@ -393,6 +386,7 @@ Spout branchAt(vec2 room, float base, Stack stack) {
   float back = -mix(0.4, 0.8, pick.y);
   float level = base + mix(1.7, 2.6, pick.z);
   float drop = pick.w < 0.5 ? mix(0.3, 0.7, pick.w * 2.0) : 0.0;
+  drop = min(drop, max(wallTop(room, side, base) - spout.radius - level, 0.0));
   front = stack.radius + FLUSH;
   vec3 join = vec3(stack.x, level, front);
   spout.points[0] = vec3(face - side * WALL_DEPTH, level + drop, back);
@@ -492,7 +486,7 @@ Spout roomSpout(vec2 room, vec2 tile, float storey, float base) {
     spout.sink = WALL_DEPTH;
   } else if (kind >= 0.89 && sideFree) {
     float low = y + mix(-0.5, 0.2, pick.z);
-    float high = min(low + mix(1.0, 1.8, pick.w), base + 3.0);
+    float high = min(low + mix(1.0, 1.8, pick.w), min(base + 3.0, wallTop(room, side, base) - spout.radius));
     spout.points[0] = vec3(face - side * WALL_DEPTH, low, back);
     spout.points[1] = vec3(off, low, back);
     spout.points[2] = vec3(off, high, back);

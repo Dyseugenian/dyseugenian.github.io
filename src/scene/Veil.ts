@@ -24,6 +24,6 @@ export class Veil extends Mesh<PlaneGeometry, RawShaderMaterial> {
     );
     this.uniforms = uniforms;
     this.frustumCulled = false;
-    this.renderOrder = 3;
+    this.renderOrder = 4;
   }
 }

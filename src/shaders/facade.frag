@@ -239,7 +239,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
       + exp(-toHigh.y / 0.12)) + (level ? smoothstep(0.3, 0.7, fbm(q * 5.0 + 41.0)) : 0.0);
     float joint = (1.0 - smoothstep(0.0, 0.05, vLocal.z)) * (1.0 - abs(normal.z));
     albedo = mix(albedo, uGrime, mix(0.5, 1.2, hash12(seed + 5.0)) * min(0.6 * hooded + 0.6 * joint, 0.85));
-  } else if (normal.z > 0.5 && all(lessThan(abs(vec2(vMin.x, vMax.x) - PIER_SPAN), vec2(0.01)))) {
+  } else if (normal.z > 0.5 && blockless(vTile) < 0.5 && all(lessThan(abs(vec2(vMin.x, vMax.x) - PIER_SPAN), vec2(0.01)))) {
     float above = vLocal.y - BLOCK_RISE.y;
     float below = mod(BLOCK_RISE.x - vLocal.y, uTileHeight);
     float owner = step(BLOCK_RISE.y, vLocal.y);

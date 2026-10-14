@@ -6,7 +6,7 @@
 }
 
 :root {
-  --logo-size: min(88vw, 72svh);
+  --logo-size: max(min(88vw, 72svh, 124svh - 2 * var(--overlay-content) - 6rem), min(88vw, 48svh));
   --logo-bottom: calc(38svh + var(--logo-size) / 2);
   --overlay-content: 7.5rem;
   font-size: clamp(100%, calc(var(--logo-size) * 0.0235), 225%);
@@ -66,8 +66,16 @@ body {
   touch-action: none;
 }
 
+.logo-box {
+  position: absolute;
+  top: calc(38svh - var(--logo-size) / 2);
+  left: calc(50% - var(--logo-size) / 2);
+  width: var(--logo-size);
+  height: var(--logo-size);
+}
+
 .no-webgl .logo-area {
-  display: none;
+  visibility: hidden;
 }
 
 .overlay {

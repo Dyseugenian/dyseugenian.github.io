@@ -5,6 +5,7 @@ export class Input {
   isOnLink = false;
   private roles = document.querySelectorAll<HTMLButtonElement>('.tagline button');
   private lastPointerType = '';
+  private viewSize = { width: innerWidth, height: innerHeight };
   readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   constructor() {
@@ -46,6 +47,10 @@ export class Input {
     });
   }
 
+  fit(width: number, height: number): void {
+    this.viewSize = { width, height };
+  }
+
   get isOnSoftwareRole(): boolean {
     return this.activeRole === 'software-role';
   }
@@ -64,8 +69,8 @@ export class Input {
   }
 
   private track(event: PointerEvent): void {
-    this.pointer.x = (event.clientX / innerWidth) * 2 - 1;
-    this.pointer.y = 1 - (event.clientY / innerHeight) * 2;
+    this.pointer.x = (event.clientX / this.viewSize.width) * 2 - 1;
+    this.pointer.y = 1 - (event.clientY / this.viewSize.height) * 2;
     this.isPointerInside = true;
   }
 }

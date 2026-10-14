@@ -88,7 +88,7 @@ void main() {
   float depth = 1.0 - smoothstep(14.0, 40.0, distance);
   vec3 scatter = vec3(0.0);
   if (depth > 0.0) {
-    float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
+    float jitter = ign(gl_FragCoord.xy + mod(floor(uTime * 24.0), 4096.0) * vec2(5.588, 3.17));
     scatter = windowScatter(cameraPosition - origin, vLocal, tile, origin, jitter) * depth
       * mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
   }

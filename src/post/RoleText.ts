@@ -24,6 +24,8 @@ export class RoleText {
   private roles = [...this.tagline.querySelectorAll<HTMLElement>('button')];
   private canHover = matchMedia('(hover: hover)').matches;
   private scale = 1;
+  private viewHeight = innerHeight;
+  private bufferSize = new Vector2();
   private padding = 0;
   private pointer = new Vector2();
   private spreadClock = new Vector3();
@@ -57,8 +59,10 @@ export class RoleText {
     document.fonts.ready.then(() => this.draw());
   }
 
-  setSize(width: number, height: number): void {
-    this.scale = width / innerWidth;
+  setSize(width: number, height: number, viewWidth: number, viewHeight: number): void {
+    this.scale = width / viewWidth;
+    this.viewHeight = viewHeight;
+    this.bufferSize.set(width, height);
     const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
     this.uniforms.uReach.value.set(REACH.x, REACH.y).multiplyScalar(rem * this.scale);
     this.uniforms.uPointer.value.set(width, height).multiplyScalar(0.5);
@@ -71,7 +75,7 @@ export class RoleText {
     const box = this.tagline.getBoundingClientRect();
     uniforms.uRolesRect.value.set(
       Math.round(box.left * scale) - padding,
-      Math.round((innerHeight - box.bottom) * scale) - padding,
+      Math.round((this.viewHeight - box.bottom) * scale) - padding,
       this.canvas.width,
       this.canvas.height,
     );
@@ -80,10 +84,10 @@ export class RoleText {
     const present = input.isPointerInside && !input.reducedMotion;
     uniforms.uPresence.value += ((present ? 1 : 0) - uniforms.uPresence.value) * follow;
     if (present) {
-      this.pointer.set(
-        ((input.pointer.x + 1) / 2) * innerWidth * scale,
-        ((input.pointer.y + 1) / 2) * innerHeight * scale,
-      );
+      this.pointer
+        .set(input.pointer.x + 1, input.pointer.y + 1)
+        .multiply(this.bufferSize)
+        .multiplyScalar(0.5);
       uniforms.uPointer.value.lerp(this.pointer, follow);
       uniforms.uGlowPoint.value.lerp(this.pointer, 1 - Math.exp(-GLOW_FOLLOW_RATE * dt));
     }

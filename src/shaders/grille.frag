@@ -95,7 +95,7 @@ void main() {
   color = mix(color, haze, veil);
   color += skyFlash(sky, 1.0 - (1.0 - fog) * (1.0 - veil));
   vec3 origin = vWorld - vLocal;
-  float jitter = ign(gl_FragCoord.xy + floor(uTime * 24.0) * vec2(5.588, 3.17));
+  float jitter = ign(gl_FragCoord.xy + mod(floor(uTime * 24.0), 4096.0) * vec2(5.588, 3.17));
   vec3 scatter = windowScatter(cameraPosition - origin, vLocal, vTile, origin, jitter) * washed
     * mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
   outColor = vec4((color + 0.5 * SCATTER * scatter * (1.0 - 0.5 * fog)) * uExposure, 1.0);

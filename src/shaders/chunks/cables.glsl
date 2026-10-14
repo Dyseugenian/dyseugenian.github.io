@@ -3,6 +3,7 @@
 #include "windows.glsl"
 #include "inset.glsl"
 #include "ducts.glsl"
+#include "collectors.glsl"
 
 const float SPAN = 0.0;
 const float DANGLE = 1.0;
@@ -36,6 +37,10 @@ const float SLAP_EVERY = 11.0;
 const float SLAP_CHANCE = 0.45;
 const float SLAP_REACH = 0.45;
 const float WALL_GAP = 0.012;
+const float PIER_HALF = 0.7;
+const vec2 STUD_HALF = vec2(0.66, 0.56);
+const float STUD_HEIGHT = 0.218;
+const float SPOUT_CHANCE = 0.65;
 const vec3 UP = vec3(0.0, 1.0, 0.0);
 const vec3 OUT = vec3(0.0, 0.0, 1.0);
 
@@ -70,6 +75,7 @@ float slapKey;
 float size;
 float thickness;
 float seed;
+vec2 cableTile;
 
 float gustAt(float lag) {
   return valueNoise(vec2((uTime - lag) * GUST_RATE, gustRow)) - 0.4;
@@ -121,8 +127,35 @@ vec3 wirePoint(Wire wire, float t) {
   return point + wire.sway * (wire.from.y - point.y) / (2.0 * wire.to.y);
 }
 
+float pierFace(vec2 at) {
+  float pier = cableTile.x + floor((at.x - PIER_MIDDLE) / uBay + 0.5);
+  float across = at.x - (pier - cableTile.x) * uBay - PIER_MIDDLE;
+  if (abs(across) > PIER_HALF) return -1e3;
+  if (blockless(vec2(pier, 0.0)) < 0.5) return 0.0;
+  float lifted = at.y + 0.5 * uTileHeight * (mod(abs(cableTile.x), 2.0) - mod(abs(pier), 2.0));
+  float rows = floor(lifted / uTileHeight);
+  vec2 tile = vec2(pier, mod(cableTile.y + rows, 4096.0));
+  float y = lifted - rows * uTileHeight;
+  float storey = 2.0 * tile.y + mod(abs(pier), 2.0) + floor(y / (0.5 * uTileHeight));
+  if (mod(storey, uPlantEvery) < 0.5 || studDamage(tile, y) < STUD_MISSING) return 0.0;
+  vec2 slope = 1.0 - abs(vec2(across, mod(y, STUD_BAND) - 0.5 * STUD_BAND)) / STUD_HALF;
+  return STUD_HEIGHT * max(min(slope.x, slope.y), 0.0);
+}
+
+float wireRadius(float size) {
+  if (size < 0.3) return mix(0.0025, 0.003, size / 0.3);
+  if (size < 0.85) return mix(0.005, 0.009, (size - 0.3) / 0.55);
+  return mix(0.0125, 0.015, (size - 0.85) / 0.15);
+}
+
+vec3 clearOfWall(vec3 point) {
+  float face = pierFace(point.xy);
+  if (point.z < face - 0.3) return point;
+  return vec3(point.xy, max(point.z, face + wireRadius(size) * thickness));
+}
+
 vec3 cableAt(float t) {
-  if (t >= leadShare && leadShare < 1.0) return wirePoint(wire, (t - leadShare) / (1.0 - leadShare));
+  if (t >= leadShare && leadShare < 1.0) return clearOfWall(wirePoint(wire, (t - leadShare) / (1.0 - leadShare)));
   float u = (1.0 - t / leadShare) * LEGS;
   int leg = min(int(u), 7);
   vec3 point = mix(lead[leg], lead[leg + 1], u - float(leg));
@@ -146,18 +179,18 @@ vec3 cableAt(float t) {
   float pinned = clamp(min(run, span - run) / 0.12, 0.0, 1.0);
   vec2 kink = vec2(valueNoise(vec2(run * 2.6, crook.x * 37.0 + key)), valueNoise(vec2(run * 3.4, crook.y * 41.0 + key)))
     - 0.5;
-  return point + fall * span * mix(0.04, 0.12, crook.x) * arch + across * span * 0.08 * bend
+  return clearOfWall(point + fall * span * mix(0.04, 0.12, crook.x) * arch + across * span * 0.08 * bend
     + face * min(0.03, span * 0.02) * crook.w * arch
-    + (across * 0.07 * kink.x + fall * 0.05 * kink.y + face * 0.025 * abs(kink.y)) * pinned;
-}
-
-float wireRadius(float size) {
-  if (size < 0.3) return mix(0.0025, 0.003, size / 0.3);
-  if (size < 0.85) return mix(0.005, 0.009, (size - 0.3) / 0.55);
-  return mix(0.0125, 0.015, (size - 0.85) / 0.15);
+    + (across * 0.07 * kink.x + fall * 0.05 * kink.y + face * 0.025 * abs(kink.y)) * pinned);
 }
 
 void fasten(int slot, vec3 point, vec3 face, float depth, float kind) {
+  float relief = pierFace(point.xy);
+  if (face.z > 0.5 && relief > 0.0) {
+    float front = max(point.z, relief + WALL_GAP);
+    depth += front - point.z - relief;
+    point.z = front;
+  }
   fastener[slot] = vec4(point, kind);
   fastenerFace[slot] = vec4(face, depth);
 }
@@ -315,8 +348,14 @@ void hanger(float x, float shift, float base, float storeys, vec3 bow) {
   fasten(7, lead[7], UP, 0.02, CLIP);
 }
 
+bool pipedLedge(vec2 room) {
+  float kind = hash12(room + 509.0);
+  return hash12(room + 507.0) < SPOUT_CHANCE && kind >= 0.52 && kind < 0.78 && hash12(room + 229.0) <= 0.55;
+}
+
 bool layCable(vec2 room, vec2 tile, float storey, float index) {
   leadShare = 0.0;
+  cableTile = tile;
   crookKey = room * 1.37 + index * 7.1;
   for (int i = 0; i < 8; i++) leadFace[i] = OUT;
   slackFrom = 0.0;
@@ -393,10 +432,12 @@ bool layCable(vec2 room, vec2 tile, float storey, float index) {
       float wallSide = more.x < 0.5 ? -1.0 : 1.0;
       if (wallSide < 0.0 ? !leftPier : !rightPier) return false;
       float storeys = 1.0 + floor(4.0 * pick.x);
+      if (runIn(room.x, room.y)) return false;
       for (int i = 1; i <= 4; i++) {
         if (float(i) > storeys) break;
         vec2 above = vec2(room.x, mod(room.y + float(i), 8192.0));
         if (plantFloor(above) || airConditioned(above) && airConditionerMount(above).w == wallSide) return false;
+        if (pipedLedge(above) || float(i) < storeys && runIn(room.x, above.y)) return false;
       }
       if (!clearWindow(vec2(room.x, mod(room.y + storeys, 8192.0)))) return false;
       riser(wallSide, base, storeys);

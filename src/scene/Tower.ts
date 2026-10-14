@@ -73,6 +73,8 @@ const EXPOSURE = 0.42;
 const UP = new Vector3(0, 1, 0);
 const BACKLIGHTS = [new Vector3(-1, 1.1, -0.15), new Vector3(1, 1.1, -0.15)] as const;
 const BEACON_PERIOD = 2.4;
+const TIME_WRAP = 1200 * BEACON_PERIOD;
+const CLOCK_LIMIT = 2 ** 15;
 const COMPILES_AT_ONCE = 2;
 const VOLUMES: Record<Occlusion, { min: Vector3; size: Vector3 }> = {
   tiles: { min: OCCLUSION_MIN, size: OCCLUSION_SIZE },
@@ -314,7 +316,13 @@ export class Tower extends Scene {
   }
 
   async restore(renderer: WebGLRenderer): Promise<void> {
-    this.uniforms.uSurface.value = await bakeConcreteMaps(renderer);
+    const [surface] = await Promise.all([
+      bakeConcreteMaps(renderer),
+      compileInTurns(renderer, this, this.camera),
+      this.presence.compile(renderer),
+      this.pipeLayout.compile(renderer),
+    ]);
+    this.uniforms.uSurface.value = surface;
     this.pipesClimbed = -1;
   }
 
@@ -333,6 +341,12 @@ export class Tower extends Scene {
     renderer.clear();
     renderer.render(this, this.lowCamera);
     renderer.setRenderTarget(target);
+  }
+
+  rebase(): void {
+    this.uniforms.uTime.value %= TIME_WRAP;
+    this.facadeUniforms.uClimb.value =
+      this.facadeUniforms.uTilesClimbed.value * TILE_HEIGHT + this.lift;
   }
 
   setOpacity(opacity: number): void {
@@ -370,6 +384,11 @@ export class Tower extends Scene {
       this.turnRoll(uTilesClimbed.value);
     }
     this.building.position.y = -this.lift;
+    if (
+      this.uniforms.uTime.value > CLOCK_LIMIT ||
+      Math.abs(this.facadeUniforms.uClimb.value) > CLOCK_LIMIT
+    )
+      this.rebase();
 
     const phase = (this.uniforms.uTime.value / BEACON_PERIOD) % 1;
     this.facadeUniforms.uBeacon.value =

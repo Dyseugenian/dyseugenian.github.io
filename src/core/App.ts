@@ -54,8 +54,10 @@ export class App {
   private view = new ArrayCamera([this.tower.camera, this.camera]);
   private renderScale: RenderScale;
   private isTowerRevealed = false;
+  private isRestoring = false;
   private towerFade = 0;
   private background = beneathGrain(palette.bg);
+  private logoBox = document.querySelector<HTMLElement>('.logo-box')!;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -78,14 +80,31 @@ export class App {
       this.roleText.uniforms.uRolesOpacity.value = 0;
     }
 
-    canvas.addEventListener('webglcontextlost', () => setPageState('no-webgl', true));
+    canvas.addEventListener('webglcontextlost', () => {
+      this.isRestoring = true;
+      setPageState('no-webgl', true);
+    });
     canvas.addEventListener('webglcontextrestored', async () => {
       this.renderScale.attach(context);
-      await this.tower.restore(this.renderer);
+      await this.renderer.compileAsync(this.film, this.camera);
+      await this.renderer.compileAsync(this.logo, this.camera, this.scene);
+      await this.warmUp(this.logo, this.camera);
+      if (this.isTowerRevealed) {
+        await this.tower.restore(this.renderer);
+        await this.warmUpTower();
+      }
+      this.isRestoring = false;
       setPageState('no-webgl', false);
     });
 
-    window.addEventListener('resize', () => this.resize());
+    new ResizeObserver(() => this.resize()).observe(canvas);
+    this.watchPixelRatio();
+    window.addEventListener('scroll', () => this.logo.place(this.logoBox.getBoundingClientRect()), {
+      passive: true,
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.tower.rebase();
+    });
     this.applyQuality();
     if (onlyBuilding) this.tower.fly(new FreeFly(canvas));
   }
@@ -107,9 +126,13 @@ export class App {
         object.layers.set(TOWER_LAYER);
       }
     });
+    await this.warmUpTower();
+  }
+
+  private warmUpTower(): Promise<void> {
     const camera = this.tower.camera.clone();
     for (const layer of OFFSCREEN_LAYERS) camera.layers.enable(layer);
-    await this.warmUp(this.tower, camera);
+    return this.warmUp(this.tower, camera);
   }
 
   revealTower(): void {
@@ -158,7 +181,11 @@ export class App {
   }
 
   private update({ dt, time }: Frame): void {
-    if (this.isTowerRevealed && this.renderScale.update(dt)) this.rescale();
+    if (this.isRestoring) {
+      this.drawWarmUps();
+      return;
+    }
+    if (this.renderScale.update(dt, this.isTowerRevealed)) this.rescale();
     this.renderScale.beginFrame();
     this.drawWarmUps();
     if (this.isTowerRevealed) {
@@ -186,8 +213,19 @@ export class App {
     this.resize();
   }
 
+  private watchPixelRatio(): void {
+    matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener(
+      'change',
+      () => {
+        this.resize();
+        this.watchPixelRatio();
+      },
+      { once: true },
+    );
+  }
+
   private resize(): void {
-    const { innerWidth: width, innerHeight: height, devicePixelRatio } = window;
+    const { clientWidth: width, clientHeight: height } = this.renderer.domElement;
     this.renderer.setPixelRatio(
       Math.min(
         devicePixelRatio,
@@ -200,17 +238,19 @@ export class App {
     this.camera.updateProjectionMatrix();
     this.view.copy(this.camera);
     this.view.layers.enable(TOWER_LAYER);
-    this.fitTargets();
-  }
-
-  private fitTargets(): void {
-    const { innerWidth: width, innerHeight: height } = window;
+    this.input.fit(width, height);
     const { x, y } = this.renderer.getDrawingBufferSize(new Vector2());
     this.film.setSize(x, y, this.renderer.getPixelRatio());
-    this.roleText.setSize(x, y);
+    this.roleText.setSize(x, y, width, height);
     const viewHeight =
       2 * this.camera.position.z * Math.tan(MathUtils.degToRad(this.camera.fov / 2));
-    this.logo.fit(width, height, viewHeight, this.quality.settings.particles);
+    this.logo.fit(
+      width,
+      height,
+      viewHeight,
+      this.logoBox.getBoundingClientRect(),
+      this.quality.settings.particles,
+    );
     this.rescale();
   }
 

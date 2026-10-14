@@ -415,12 +415,12 @@ export function tileParts(detail: Detail): Part[] {
       regular(part(CONCRETE, [-1.2, 1.2], [sill, glassBottom], [-3.1, -1.3])),
     );
     const { front, louvre, louvreSpacing } = PLANT_FLOOR;
-    for (const [bottom, height] of [
-      [y, sill],
-      [glassTop, top],
+    for (const [bottom, height, back] of [
+      [y, sill, -1.8],
+      [glassTop, top, -2.5],
     ] as const) {
       parts.push(
-        plant(part(CONCRETE, [-1.4, 1.4], [bottom, height], [-2.5, front])),
+        plant(part(CONCRETE, [-1.4, 1.4], [bottom, height], [back, front])),
         plant(part(CONCRETE, [-2.8, -1.4], [bottom, height], [-0.5, front])),
       );
     }

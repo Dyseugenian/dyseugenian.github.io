@@ -11,7 +11,7 @@ float valueNoise(vec3 p) {
   vec3 cell = floor(p);
   vec3 f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
-  vec2 slices = textureLod(uNoise, (cell.xy + NOISE_SLICE * cell.z + f.xy + 0.5) / NOISE_SIZE, 0.0).rg;
+  vec2 slices = textureLod(uNoise, (mod(cell.xy + NOISE_SLICE * mod(cell.z, NOISE_SIZE), NOISE_SIZE) + f.xy + 0.5) / NOISE_SIZE, 0.0).rg;
   return mix(slices.r, slices.g, f.z);
 }
 
@@ -30,7 +30,7 @@ float valueNoise(vec2 p) {
   vec2 cell = floor(p);
   vec2 f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
-  return textureLod(uNoise, (cell + f + 0.5) / NOISE_SIZE, 0.0).r;
+  return textureLod(uNoise, (mod(cell, NOISE_SIZE) + f + 0.5) / NOISE_SIZE, 0.0).r;
 }
 
 float fbm(vec2 p) {

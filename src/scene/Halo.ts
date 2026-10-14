@@ -106,12 +106,10 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
   setCount(count: number): void {
     const current = this.geometry;
     if (count > current.getAttribute('position').count) {
-      this.geometry = createSpecks(count);
-      for (const name of ['position', 'aDuration', 'aLook']) {
-        (this.geometry.getAttribute(name).array as Float32Array).set(
-          current.getAttribute(name).array,
-        );
-      }
+      this.geometry = createSpecks(
+        Math.max(count, current.getAttribute('position').count * 2),
+        current,
+      );
       current.dispose();
     }
     this.geometry.setDrawRange(0, count);
@@ -147,15 +145,24 @@ export class Halo extends Points<BufferGeometry, RawShaderMaterial> {
   }
 }
 
-function createSpecks(count: number): BufferGeometry {
+function createSpecks(count: number, kept?: BufferGeometry): BufferGeometry {
   const orbit = new Float32Array(count * 3);
   const duration = new Float32Array(count);
   const look = new Float32Array(count * 3);
+  if (kept) {
+    orbit.set(kept.getAttribute('position').array);
+    duration.set(kept.getAttribute('aDuration').array);
+    look.set(kept.getAttribute('aLook').array);
+  }
 
-  for (let i = 0; i < count; i++) {
-    orbit.set([Math.random(), Math.random() * Math.PI * 2, Math.random()], i * 3);
+  for (let i = kept?.getAttribute('position').count ?? 0; i < count; i++) {
+    orbit[i * 3] = Math.random();
+    orbit[i * 3 + 1] = Math.random() * Math.PI * 2;
+    orbit[i * 3 + 2] = Math.random();
     duration[i] = 30 + Math.random() * 40;
-    look.set([randomSize(), Math.random(), Math.random()], i * 3);
+    look[i * 3] = randomSize();
+    look[i * 3 + 1] = Math.random();
+    look[i * 3 + 2] = Math.random();
   }
 
   return new BufferGeometry()

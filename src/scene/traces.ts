@@ -63,6 +63,7 @@ export type TraceKind =
   | 'boards';
 
 const PIPES: TraceKind[] = ['spouts', 'stacks', 'runs'];
+const AIRBORNE: TraceKind[] = ['vapour', 'motes'];
 
 export const SHADERS: Record<TraceKind, [string, string, ShaderMaterialParameters]> = {
   vapour: [vapourVertex, vapourFragment, LAYERED],
@@ -110,7 +111,7 @@ export function traceMeshes(
     }
     const mesh = new Mesh(unpackGeometry(geometry), material);
     mesh.frustumCulled = false;
-    mesh.renderOrder = PIPES.includes(kind) ? 1 : 2;
+    mesh.renderOrder = PIPES.includes(kind) ? 1 : AIRBORNE.includes(kind) ? 3 : 2;
     return mesh;
   });
 }
