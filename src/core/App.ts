@@ -1,5 +1,4 @@
 import {
-  ArrayCamera,
   type Camera,
   type Line,
   MathUtils,
@@ -17,6 +16,7 @@ import { Loop, type Frame } from './Loop';
 import { RenderScale } from './RenderScale';
 import { palette } from './palette';
 import { Bloom } from '../post/Bloom';
+import { EdgeBlur } from '../post/EdgeBlur';
 import { Film, beneathGrain } from '../post/Film';
 import { RoleText } from '../post/RoleText';
 import { Logo } from '../scene/Logo';
@@ -43,15 +43,16 @@ export class App {
   private camera = new PerspectiveCamera(22, 1, 0.1, 100);
   private loop = new Loop((frame) => this.update(frame));
   private target = new WebGLRenderTarget(1, 1, { samples: 2, resolveDepthBuffer: false });
+  private towerTarget = new WebGLRenderTarget(1, 1, { samples: 2, resolveDepthBuffer: false });
   private warmUpTarget = new WebGLRenderTarget(1, 1);
   private warmUps: WarmUp[] = [];
   private input = new Input();
   private roleText = new RoleText(this.input);
+  private edgeBlur = new EdgeBlur(this.towerTarget.texture);
   private bloom = new Bloom(this.target.texture);
   private film = new Film(this.target.texture, this.bloom.texture, this.roleText.uniforms);
   readonly logo = new Logo(this.input);
   tower: Tower | null = null;
-  private view = new ArrayCamera([this.camera]);
   private renderScale: RenderScale;
   private isStageLive = false;
   private isTowerRevealed = false;
@@ -77,6 +78,7 @@ export class App {
     });
     canvas.addEventListener('webglcontextrestored', async () => {
       this.renderScale.attach(context);
+      await this.renderer.compileAsync(this.edgeBlur, this.camera);
       await this.renderer.compileAsync(this.film, this.camera);
       await this.renderer.compileAsync(this.logo, this.camera, this.scene);
       await this.warmUp(this.logo, this.camera);
@@ -100,6 +102,7 @@ export class App {
   }
 
   async start(): Promise<void> {
+    await this.renderer.compileAsync(this.edgeBlur, this.camera);
     await this.renderer.compileAsync(this.bloom.down, this.camera);
     await this.renderer.compileAsync(this.bloom.up, this.camera);
     await this.renderer.compileAsync(this.film, this.camera);
@@ -117,7 +120,6 @@ export class App {
     tower.camera.layers.set(TOWER_LAYER);
     tower.visible = this.isStageLive;
     tower.fit(this.camera.aspect, this.target.width, this.target.height);
-    this.view.cameras.unshift(tower.camera);
     this.tower = tower;
     return tower;
   }
@@ -195,18 +197,27 @@ export class App {
       this.tower.setOpacity(opacity);
       this.logo.stars.uniforms.uOpacity.value = 1 - opacity;
       this.logo.stars.visible = opacity < 1;
+      this.logo.towerOpacity = opacity;
       this.tower.update(dt);
       this.logo.gazeOnScreen(this.tower.gaze);
-      this.tower.spotOnScreen(this.film.focus);
+      this.tower.spotOnScreen(this.edgeBlur.focus);
       this.tower.renderOffscreen(this.renderer);
     }
     this.logo.update(dt);
     this.roleText.update(dt);
     this.film.update(time);
-    this.renderer.setRenderTarget(this.target);
+    const tower = this.isTowerRevealed ? this.tower : null;
+    this.renderer.setRenderTarget(tower ? this.towerTarget : this.target);
     this.renderer.setClearColor(this.background);
     this.renderer.clear();
-    this.renderer.render(this.scene, this.view);
+    if (tower) {
+      this.edgeBlur.update(time);
+      this.renderer.render(this.scene, tower.camera);
+      this.renderer.setRenderTarget(this.target);
+      this.renderer.render(this.edgeBlur, this.camera);
+      this.renderer.clearDepth();
+    }
+    this.renderer.render(this.scene, this.camera);
     this.bloom.render(this.renderer, this.camera);
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.film, this.camera);
@@ -232,8 +243,6 @@ export class App {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
-    this.view.copy(this.camera);
-    this.view.layers.enable(TOWER_LAYER);
     this.input.fit(width, height);
     const { x, y } = this.renderer.getDrawingBufferSize(new Vector2());
     this.film.setSize(x, y, this.renderer.getPixelRatio());
@@ -248,6 +257,12 @@ export class App {
     const { x, y } = this.renderer.getDrawingBufferSize(new Vector2());
     const { scale } = this.renderScale;
     this.target.setSize(Math.round(x * scale), Math.round(y * scale));
+    this.towerTarget.setSize(this.target.width, this.target.height);
+    this.edgeBlur.setSize(
+      this.target.width,
+      this.target.height,
+      this.renderer.getPixelRatio() * scale,
+    );
     this.bloom.setSize(this.target.width, this.target.height);
     this.tower?.fit(this.camera.aspect, this.target.width, this.target.height);
     this.logo.setPixelRatio(this.renderer.getPixelRatio() * scale);

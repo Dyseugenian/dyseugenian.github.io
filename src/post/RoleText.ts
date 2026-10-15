@@ -96,7 +96,7 @@ export class RoleText {
     const linkDimmed = this.canHover && input.isOnLink;
     uniforms.uRolesOpacity.value = approach(
       uniforms.uRolesOpacity.value,
-      linkDimmed ? LINK_DIM : 1,
+      input.isUiHidden ? 0 : linkDimmed ? LINK_DIM : 1,
       fade,
     );
     this.roles.forEach((role, i) => {

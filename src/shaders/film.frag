@@ -10,7 +10,6 @@ uniform vec2 uResolution;
 uniform float uPixelRatio;
 uniform float uGrain;
 uniform float uAberration;
-uniform vec2 uFocus;
 uniform sampler2D uRoles;
 uniform sampler2D uRoleGlow;
 uniform vec4 uRolesRect;
@@ -39,9 +38,6 @@ const float GLOW_RADIUS = 40.0;
 const float GLOW_RANGE = 360.0;
 const float GLOW_SPLIT = 0.6;
 const float SPREAD_SOFTNESS = 0.35;
-const vec2 FOCUS = vec2(0.36, 1.0);
-const float BLUR_RADIUS = 2.0;
-const int BLUR_TAPS = 12;
 const float BLOOM = 0.11;
 
 vec4 sceneAt(vec2 uv, vec2 spread) {
@@ -87,18 +83,7 @@ void main() {
   vec2 spread = screen * dot(screen, screen) * uAberration * uPixelRatio / uResolution;
 
   vec2 sampleUv = pixel / uResolution + vWarp;
-  float edge = smoothstep(FOCUS.x, FOCUS.y, length((pixel / uResolution - uFocus) * vec2(uResolution.x / uResolution.y, 1.0)));
   vec4 base = sceneAt(sampleUv, spread);
-  float radius = BLUR_RADIUS * uPixelRatio * edge * edge;
-  if (radius > 0.5) {
-    float turn = 6.2832 * ign(pixel + mod(frame, 64.0) * vec2(5.588, 3.17));
-    for (int i = 1; i < BLUR_TAPS; i++) {
-      float angle = float(i) * 2.39996 + turn;
-      float reach = sqrt(float(i) / float(BLUR_TAPS - 1)) * radius;
-      base += sceneAt(sampleUv + reach * vec2(cos(angle), sin(angle)) / uResolution, spread);
-    }
-    base /= float(BLUR_TAPS);
-  }
   base.rgb += BLOOM * texture(uBloom, sampleUv).rgb;
 
   float shade = (hash13(vec3(pixel, frame)) * 2.0 - 1.0) * uGrain;

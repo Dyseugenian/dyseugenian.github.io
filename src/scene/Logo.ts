@@ -47,6 +47,7 @@ export class Logo extends Group {
   private viewSize = new Vector2();
   private unitsPerPixel = 1;
   private pupil = 0;
+  towerOpacity = 0;
 
   constructor(private input: Input) {
     super();
@@ -112,7 +113,7 @@ export class Logo extends Group {
       0.5 + this.position.x / this.unitsPerPixel / this.viewSize.x,
       0.5 + (this.position.y / this.unitsPerPixel + SPHERE.y * pixels) / this.viewSize.y,
       (SPHERE.radius * pixels) / this.viewSize.y,
-      this.visible ? this.shade.uniforms.uOpacity.value : 0,
+      this.visible && this.shade.visible ? this.shade.uniforms.uOpacity.value : 0,
     );
   }
 
@@ -132,7 +133,11 @@ export class Logo extends Group {
       isOnGamedevRole,
       isOnMotionRole,
       reducedMotion,
+      isUiHidden,
     } = this.input;
+    for (const part of this.children) {
+      if (part !== this.stars) part.visible = !isUiHidden;
+    }
     const motionDt = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
     const follow = isPointerInside && !reducedMotion;
 
@@ -168,9 +173,11 @@ export class Logo extends Group {
       advanceHover(uniforms.uMotion, uniforms.uMotionTime, isOnMotionRole, dt),
     ];
     const planetFade = PLANET_FADE * Math.max(...hovers.map((hover) => hover.amount));
-    for (const part of [this.shade, this.halo, this.infall, this.outline, this.ring, this.eyes]) {
+    for (const part of [this.halo, this.infall, this.outline, this.ring, this.eyes]) {
       part.uniforms.uOpacity.value = 1 - planetFade;
     }
+    this.shade.uniforms.uOpacity.value = (1 - planetFade) * this.towerOpacity;
+    this.shade.visible &&= this.towerOpacity > 0;
     const end = uniforms.uTetrisEnd.value;
     uniforms.uDustHidden.value = Math.max(
       ...hovers.map(

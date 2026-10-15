@@ -3,7 +3,9 @@ export class Input {
   isPointerInside = false;
   activeRole: string | null = null;
   isOnLink = false;
+  isUiHidden = false;
   private roles = document.querySelectorAll<HTMLButtonElement>('.tagline button');
+  private uiSwitch = document.querySelector<HTMLButtonElement>('.ui-switch')!;
   private lastPointerType = '';
   private viewSize = { width: innerWidth, height: innerHeight };
   readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -29,6 +31,7 @@ export class Input {
         this.isOnLink = false;
       });
     }
+    this.uiSwitch.addEventListener('click', () => this.setUiHidden(!this.isUiHidden));
     window.addEventListener('pointermove', (event) => this.track(event));
     window.addEventListener('pointerdown', (event) => {
       this.lastPointerType = event.pointerType;
@@ -66,6 +69,16 @@ export class Input {
   private setActiveRole(id: string | null): void {
     this.activeRole = id;
     for (const role of this.roles) role.setAttribute('aria-pressed', String(role.id === id));
+  }
+
+  private setUiHidden(hidden: boolean): void {
+    this.isUiHidden = hidden;
+    this.uiSwitch.textContent = hidden ? 'show ui' : 'hide ui';
+    document.documentElement.classList.toggle('ui-hidden', hidden);
+    if (hidden) {
+      this.setActiveRole(null);
+      this.isOnLink = false;
+    }
   }
 
   private track(event: PointerEvent): void {

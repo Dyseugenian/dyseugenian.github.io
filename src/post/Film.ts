@@ -13,7 +13,7 @@ import {
 import vertexShader from '../shaders/film.vert';
 import fragmentShader from '../shaders/film.frag';
 
-const FILM_FPS = 24;
+export const FILM_FPS = 24;
 const GRAIN = 0.08;
 const WARP_GRID = { columns: 160, rows: 90 };
 
@@ -25,7 +25,6 @@ export function beneathGrain(color: string): Color {
 }
 
 export class Film extends Mesh<BufferGeometry, RawShaderMaterial> {
-  readonly focus: Vector2;
   private uniforms;
 
   constructor(scene: Texture, bloom: Texture, roleUniforms: Record<string, IUniform>) {
@@ -40,7 +39,6 @@ export class Film extends Mesh<BufferGeometry, RawShaderMaterial> {
       uGrain: { value: GRAIN },
       uWarp: { value: 3 },
       uAberration: { value: 6 },
-      uFocus: { value: new Vector2(0.5, 0.5) },
     };
     const material = new RawShaderMaterial({
       glslVersion: GLSL3,
@@ -54,7 +52,6 @@ export class Film extends Mesh<BufferGeometry, RawShaderMaterial> {
 
     super(new PlaneGeometry(2, 2, WARP_GRID.columns, WARP_GRID.rows), material);
     this.uniforms = uniforms;
-    this.focus = uniforms.uFocus.value;
     this.frustumCulled = false;
   }
 
