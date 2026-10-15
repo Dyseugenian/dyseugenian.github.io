@@ -311,3 +311,33 @@ body {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+.tower-switch {
+  display: none;
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  top: max(12px, env(safe-area-inset-top));
+  color: var(--cream);
+  font-size: 0.875rem;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  opacity: 0.5;
+  transition:
+    opacity 0.2s ease-out,
+    color 0.12s;
+}
+
+.stage-live:not(.no-webgl) .tower-switch {
+  display: block;
+}
+
+.tower-switch:hover,
+.tower-switch:focus-visible {
+  color: var(--ochre-bright);
+  opacity: 1;
+}
+
+.tower-switch:focus-visible {
+  outline: 2px solid var(--ochre-hi);
+  outline-offset: 4px;
+}

@@ -247,7 +247,8 @@ function collect(seen: Uint8Array, sources: Source[], kinds: TraceKind[]): Reach
 }
 
 export async function measureReach(app: App): Promise<void> {
-  const { renderer, tower } = app;
+  const { renderer } = app;
+  const tower = app.tower!;
   const uniforms = tower.materialUniforms;
   const force = { value: 0 };
   const sources: Source[] = [];

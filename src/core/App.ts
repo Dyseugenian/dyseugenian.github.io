@@ -22,7 +22,7 @@ import { Bloom } from '../post/Bloom';
 import { Film, beneathGrain } from '../post/Film';
 import { RoleText } from '../post/RoleText';
 import { Logo } from '../scene/Logo';
-import { Tower } from '../scene/Tower';
+import type { Tower } from '../scene/Tower';
 import { LOW_LAYER, MIST_LAYER, ROOM_LAYER, SKY_LAYER, TOWER_LAYER } from '../scene/layers';
 
 const MAX_DRAWING_PIXELS = 3840 * 2160;
@@ -52,9 +52,10 @@ export class App {
   private bloom = new Bloom(this.target.texture);
   private film = new Film(this.target.texture, this.bloom.texture, this.roleText.uniforms);
   readonly logo = new Logo(this.input);
-  readonly tower = new Tower(this.input);
-  private view = new ArrayCamera([this.tower.camera, this.camera]);
+  tower: Tower | null = null;
+  private view = new ArrayCamera([this.camera]);
   private renderScale: RenderScale;
+  private isStageLive = false;
   private isTowerRevealed = false;
   private isRestoring = false;
   private towerFade = 0;
@@ -73,9 +74,7 @@ export class App {
 
     this.camera.position.z = 10;
     this.camera.updateMatrixWorld();
-    this.tower.camera.layers.set(TOWER_LAYER);
     this.logo.visible = false;
-    this.tower.visible = false;
     this.scene.add(this.logo);
     if (onlyBuilding) {
       setPageState('building', true);
@@ -91,9 +90,9 @@ export class App {
       await this.renderer.compileAsync(this.film, this.camera);
       await this.renderer.compileAsync(this.logo, this.camera, this.scene);
       await this.warmUp(this.logo, this.camera);
-      if (this.isTowerRevealed) {
+      if (this.tower && this.isTowerRevealed) {
         await this.tower.restore(this.renderer);
-        await this.warmUpTower();
+        await this.warmUpTower(this.tower);
       }
       this.isRestoring = false;
       setPageState('no-webgl', false);
@@ -105,10 +104,9 @@ export class App {
       passive: true,
     });
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) this.tower.rebase();
+      if (document.hidden) this.tower?.rebase();
     });
     this.applyQuality();
-    if (onlyBuilding) this.tower.fly(new FreeFly(canvas));
   }
 
   async start(): Promise<void> {
@@ -123,25 +121,37 @@ export class App {
     await this.warmUp(this.scene, this.camera);
   }
 
-  async loadTower(): Promise<void> {
-    await this.tower.load(this.renderer);
-    this.tower.traverse((object) => {
+  async makeTower(): Promise<Tower> {
+    const { Tower } = await import('../scene/Tower');
+    const tower = new Tower(this.input);
+    tower.camera.layers.set(TOWER_LAYER);
+    tower.visible = this.isStageLive;
+    tower.fit(this.camera.aspect, this.target.width, this.target.height);
+    if (this.onlyBuilding) tower.fly(new FreeFly(this.renderer.domElement));
+    this.view.cameras.unshift(tower.camera);
+    this.tower = tower;
+    return tower;
+  }
+
+  async loadTower(tower: Tower): Promise<void> {
+    await tower.load(this.renderer);
+    tower.traverse((object) => {
       if (!OFFSCREEN_LAYERS.some((layer) => object.layers.isEnabled(layer))) {
         object.layers.set(TOWER_LAYER);
       }
     });
-    await this.warmUpTower();
+    await this.warmUpTower(tower);
   }
 
-  private warmUpTower(): Promise<void> {
-    const camera = this.tower.camera.clone();
+  private warmUpTower(tower: Tower): Promise<void> {
+    const camera = tower.camera.clone();
     for (const layer of OFFSCREEN_LAYERS) camera.layers.enable(layer);
-    return this.warmUp(this.tower, camera);
+    return this.warmUp(tower, camera);
   }
 
-  revealTower(): void {
+  revealTower(tower: Tower): void {
     this.isTowerRevealed = true;
-    this.scene.add(this.tower);
+    this.scene.add(tower);
   }
 
   pinScale(scale: number): void {
@@ -151,8 +161,9 @@ export class App {
 
   setStageLive(live: boolean): void {
     setPageState('stage-live', live);
+    this.isStageLive = live;
     this.logo.visible = live && !this.onlyBuilding;
-    this.tower.visible = live;
+    if (this.tower) this.tower.visible = live;
   }
 
   private warmUp(root: Object3D, camera: Camera): Promise<void> {
@@ -178,7 +189,7 @@ export class App {
         object.geometry.computeBoundingSphere();
       }
       object.frustumCulled = false;
-      this.renderer.setRenderTarget(this.tower.offscreenTarget(object) ?? this.warmUpTarget);
+      this.renderer.setRenderTarget(this.tower?.offscreenTarget(object) ?? this.warmUpTarget);
       this.renderer.render(object, warmUp.camera);
       object.frustumCulled = frustumCulled;
     }
@@ -192,7 +203,7 @@ export class App {
     if (this.renderScale.update(dt, this.isTowerRevealed)) this.rescale();
     this.renderScale.beginFrame();
     this.drawWarmUps();
-    if (this.isTowerRevealed) {
+    if (this.tower && this.isTowerRevealed) {
       this.towerFade = Math.min(this.towerFade + dt / TOWER_FADE_SECONDS, 1);
       const opacity = MathUtils.smootherstep(this.towerFade, 0, 1);
       this.tower.setOpacity(opacity);
@@ -266,7 +277,7 @@ export class App {
     const { scale } = this.renderScale;
     this.target.setSize(Math.round(x * scale), Math.round(y * scale));
     this.bloom.setSize(this.target.width, this.target.height);
-    this.tower.fit(this.camera.aspect, this.target.width, this.target.height);
+    this.tower?.fit(this.camera.aspect, this.target.width, this.target.height);
     this.logo.setPixelRatio(this.renderer.getPixelRatio() * scale);
   }
 }
