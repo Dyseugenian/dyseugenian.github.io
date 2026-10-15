@@ -1,6 +1,7 @@
 export const palette = {
   bg: '#1b1c1d',
   sky: '#0a1222',
+  skyLow: '#25426b',
   haze: '#1f2b3e',
   concrete: '#868f8c',
   concreteWarm: '#7a6e60',

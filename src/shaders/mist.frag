@@ -13,6 +13,7 @@ uniform mat4 uClipToView;
 uniform vec4 uGaze;
 uniform vec3 uOchre;
 uniform vec3 uHaze;
+uniform vec3 uSkyLow;
 uniform vec3 uRim;
 
 out vec4 outColor;
@@ -39,9 +40,9 @@ float mistDensity(vec3 p) {
   return MIST_DENSITY * mix(0.08, 1.0, banks) * (0.04 + 2.0 * wisps * wisps);
 }
 
-vec3 mistLight(vec3 p, vec3 direction, float gaze) {
+vec3 mistLight(vec3 p, vec3 direction, float gaze, float height) {
   float forward = 0.5 + 0.5 * dot(direction, uLight);
-  vec3 light = uHaze * MIST_AMBIENT + uRim * MIST_MOON * (0.4 + forward * forward * 1.6);
+  vec3 light = mix(uSkyLow, uHaze * 0.6, height) * MIST_AMBIENT + uRim * MIST_MOON * (0.4 + forward * forward * 1.6);
   vec3 toSpot = uSpot - p;
   float spotReach = length(toSpot);
   float cone = smoothstep(SPOT_CONE.x, SPOT_CONE.y, dot(-toSpot / spotReach, normalize(SPOT_AIM)));
@@ -78,7 +79,7 @@ void main() {
     float far = MIST_RANGE.x * pow(reach / MIST_RANGE.x, (float(i) + 1.0 - 0.5 * jitter) / float(STEPS));
     vec3 p = uViewer + direction * far;
     float absorbed = 1.0 - exp(-mistDensity(p) * (far - near));
-    light += clear * absorbed * mistLight(p, direction, gaze);
+    light += clear * absorbed * mistLight(p, direction, gaze, uv.y);
     clear *= 1.0 - absorbed;
     near = far;
   }

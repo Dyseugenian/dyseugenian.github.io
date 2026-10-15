@@ -96,6 +96,7 @@ export class Tower extends Scene {
     uVanish: { value: new Vector2() },
     uBacklights: { value: new Vector4() },
     uSky: { value: new Color(palette.sky).convertLinearToSRGB() },
+    uSkyLow: { value: new Color(palette.skyLow).convertLinearToSRGB() },
     uHaze: { value: new Color(palette.haze).convertLinearToSRGB() },
     uRim: { value: new Color(palette.rim).convertLinearToSRGB() },
     uNight: { value: new Color(palette.night).convertLinearToSRGB() },

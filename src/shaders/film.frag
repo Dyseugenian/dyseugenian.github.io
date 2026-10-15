@@ -39,9 +39,8 @@ const float GLOW_RANGE = 360.0;
 const float GLOW_SPLIT = 0.6;
 const float SPREAD_SOFTNESS = 0.35;
 const vec2 FOCUS = vec2(0.36, 1.0);
-const float BLUR_RADIUS = 5.0;
+const float BLUR_RADIUS = 2.0;
 const int BLUR_TAPS = 12;
-const float VIGNETTE = 0.4;
 
 vec4 sceneAt(vec2 uv, vec2 spread) {
   vec4 color = texture(uScene, uv);
@@ -98,7 +97,6 @@ void main() {
     }
     base /= float(BLUR_TAPS);
   }
-  base.rgb *= 1.0 - VIGNETTE * edge * edge;
 
   float shade = (hash13(vec3(pixel, frame)) * 2.0 - 1.0) * uGrain;
 
