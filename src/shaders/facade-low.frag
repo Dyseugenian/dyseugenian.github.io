@@ -89,8 +89,7 @@ void main() {
   vec3 scatter = vec3(0.0);
   if (depth > 0.0) {
     float jitter = ign(gl_FragCoord.xy + mod(floor(uTime * 24.0), 4096.0) * vec2(5.588, 3.17));
-    scatter = windowScatter(cameraPosition - origin, vLocal, tile, origin, jitter) * depth
-      * mix(0.6, 1.4, hash12(gl_FragCoord.xy + fract(uTime) * 61.0));
+    scatter = windowScatter(cameraPosition - origin, vLocal, tile, origin, jitter) * depth;
   }
   float mist = fbm(vec3(vWorld.x * 0.05, building.y * 0.04, uTime * 0.04));
   vec3 climbed = vec3(0.0, uClimb, 0.0);
