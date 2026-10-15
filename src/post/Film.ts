@@ -28,10 +28,11 @@ export class Film extends Mesh<BufferGeometry, RawShaderMaterial> {
   readonly focus: Vector2;
   private uniforms;
 
-  constructor(scene: Texture, roleUniforms: Record<string, IUniform>) {
+  constructor(scene: Texture, bloom: Texture, roleUniforms: Record<string, IUniform>) {
     const uniforms = {
       ...roleUniforms,
       uScene: { value: scene },
+      uBloom: { value: bloom },
       uTime: { value: 0 },
       uFps: { value: FILM_FPS },
       uResolution: { value: new Vector2(1, 1) },

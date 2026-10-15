@@ -3,6 +3,7 @@ precision highp float;
 #include "chunks/noise.glsl"
 
 uniform sampler2D uScene;
+uniform sampler2D uBloom;
 uniform float uTime;
 uniform float uFps;
 uniform vec2 uResolution;
@@ -41,6 +42,7 @@ const float SPREAD_SOFTNESS = 0.35;
 const vec2 FOCUS = vec2(0.36, 1.0);
 const float BLUR_RADIUS = 2.0;
 const int BLUR_TAPS = 12;
+const float BLOOM = 0.11;
 
 vec4 sceneAt(vec2 uv, vec2 spread) {
   vec4 color = texture(uScene, uv);
@@ -97,6 +99,7 @@ void main() {
     }
     base /= float(BLUR_TAPS);
   }
+  base.rgb += BLOOM * texture(uBloom, sampleUv).rgb;
 
   float shade = (hash13(vec3(pixel, frame)) * 2.0 - 1.0) * uGrain;
 

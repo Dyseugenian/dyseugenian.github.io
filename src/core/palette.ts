@@ -1,5 +1,5 @@
 export const palette = {
-  bg: '#1b1c1d',
+  bg: '#0e0f10',
   sky: '#0a1222',
   skyLow: '#25426b',
   haze: '#1f2b3e',

@@ -18,6 +18,7 @@ import { Loop, type Frame } from './Loop';
 import { Quality } from './Quality';
 import { RenderScale } from './RenderScale';
 import { palette } from './palette';
+import { Bloom } from '../post/Bloom';
 import { Film, beneathGrain } from '../post/Film';
 import { RoleText } from '../post/RoleText';
 import { Logo } from '../scene/Logo';
@@ -48,7 +49,8 @@ export class App {
   private warmUps: WarmUp[] = [];
   private input = new Input();
   private roleText = new RoleText(this.input);
-  private film = new Film(this.target.texture, this.roleText.uniforms);
+  private bloom = new Bloom(this.target.texture);
+  private film = new Film(this.target.texture, this.bloom.texture, this.roleText.uniforms);
   readonly logo = new Logo(this.input);
   readonly tower = new Tower(this.input);
   private view = new ArrayCamera([this.tower.camera, this.camera]);
@@ -110,6 +112,8 @@ export class App {
   }
 
   async start(): Promise<void> {
+    await this.renderer.compileAsync(this.bloom.down, this.camera);
+    await this.renderer.compileAsync(this.bloom.up, this.camera);
     await this.renderer.compileAsync(this.film, this.camera);
     this.loop.start();
   }
@@ -206,6 +210,7 @@ export class App {
     this.renderer.setClearColor(this.background);
     this.renderer.clear();
     this.renderer.render(this.scene, this.view);
+    this.bloom.render(this.renderer, this.camera);
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.film, this.camera);
     this.renderScale.endFrame();
@@ -260,6 +265,7 @@ export class App {
     const { x, y } = this.renderer.getDrawingBufferSize(new Vector2());
     const { scale } = this.renderScale;
     this.target.setSize(Math.round(x * scale), Math.round(y * scale));
+    this.bloom.setSize(this.target.width, this.target.height);
     this.tower.fit(this.camera.aspect, this.target.width, this.target.height);
     this.logo.setPixelRatio(this.renderer.getPixelRatio() * scale);
   }
