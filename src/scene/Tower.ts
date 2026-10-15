@@ -28,7 +28,6 @@ import fragmentShader from '../shaders/facade.frag';
 import depthShader from '../shaders/facade-depth.frag';
 import censusShader from '../shaders/facade-census.frag';
 import lowShader from '../shaders/facade-low.frag';
-import type { FreeFly } from '../core/FreeFly';
 import type { Input } from '../core/Input';
 import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
@@ -136,7 +135,7 @@ export class Tower extends Scene {
   private presence = new Presence(this.facadeUniforms.uTilesClimbed);
   private pipeLayout: PipeLayout;
   private pipesClimbed = -1;
-  private facadeMeshes: Mesh<InstancedBufferGeometry>[] = [];
+  private gatedMeshes: Mesh<InstancedBufferGeometry>[] = [];
   private ahead: Roll | null = null;
   private renderer!: WebGLRenderer;
   private occlusion: Record<Occlusion, { value: Data3DTexture }> = {
@@ -155,7 +154,6 @@ export class Tower extends Scene {
   private drift = new Drift();
   private spot = new Spring(4, 4);
   private projected = new Vector3();
-  private flight: FreeFly | null = null;
 
   constructor(private input: Input) {
     super();
@@ -268,7 +266,7 @@ export class Tower extends Scene {
       lowDepth.layers.set(LOW_LAYER);
       const passes = [lowDepth, low, new Mesh(geometry, depthMaterial), mesh];
       for (const pass of passes) pass.frustumCulled = false;
-      this.facadeMeshes.push(...passes);
+      this.gatedMeshes.push(...passes);
       this.building.add(...passes);
       if (census) {
         this.presence.watch(mesh, {
@@ -301,13 +299,14 @@ export class Tower extends Scene {
       );
       if (mesh.material.defines.LAID_OUT) this.pipeLayout.lay(mesh);
     }
+    this.gatedMeshes.push(...traced);
     this.building.add(...traced);
   }
 
   private applyRoll(roll: Roll): void {
     this.presence.apply(roll);
     this.pipesClimbed = -1;
-    for (const mesh of this.facadeMeshes) mesh.visible = mesh.geometry.instanceCount > 0;
+    for (const mesh of this.gatedMeshes) mesh.visible = mesh.geometry.instanceCount > 0;
   }
 
   private facadeMaterial(surface: number, occlusion: Occlusion): RawShaderMaterial {
@@ -399,16 +398,11 @@ export class Tower extends Scene {
     this.camera.updateProjectionMatrix();
   }
 
-  fly(flight: FreeFly): void {
-    this.flight = flight;
-    flight.pitch = PITCH;
-  }
-
   update(dt: number): void {
     const { reducedMotion } = this.input;
     const step = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
     this.uniforms.uTime.value += step;
-    const climb = this.flight ? this.flyCamera(dt, this.flight) : this.followPointer(dt) * step;
+    const climb = this.followPointer(dt) * step;
     this.facadeUniforms.uClimb.value += climb;
     this.lift += climb;
     const { uTilesClimbed } = this.facadeUniforms;
@@ -455,17 +449,6 @@ export class Tower extends Scene {
       const current = this.facadeUniforms.uTilesClimbed.value;
       if (roll.tilesClimbed === (current + 1) % TILE_SEEDS) this.ahead = roll;
     });
-  }
-
-  private flyCamera(dt: number, flight: FreeFly): number {
-    const moved = flight.update(dt);
-    this.camera.position.x += moved.x;
-    this.camera.position.z += moved.z;
-    this.camera.rotation.set(flight.pitch, flight.yaw, 0, 'YXZ');
-    this.camera.fov = VIEW.fov;
-    this.camera.updateProjectionMatrix();
-    this.camera.updateMatrixWorld();
-    return moved.y;
   }
 
   private followPointer(dt: number): number {

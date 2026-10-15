@@ -7,7 +7,6 @@ const context = canvas?.getContext('webgl2', {
 });
 
 const query = new URLSearchParams(location.search);
-const onlyBuilding = query.has('building');
 const flat = query.has('2d');
 
 if (flat) {
@@ -18,23 +17,17 @@ if (flat) {
 
 if (canvas && context) {
   try {
-    const app = new App(canvas, context, onlyBuilding);
+    const app = new App(canvas, context);
     const towerMade = flat ? null : app.makeTower();
-    const scale = Number(query.get('scale'));
-    if (scale > 0) app.pinScale(scale);
     await app.start();
 
-    if (query.has('debug')) {
-      const { mountDebugPanel } = await import('./debug/panel');
-      mountDebugPanel(app);
-    }
     if (query.has('reach')) {
       await towerMade;
       const { measureReach } = await import('./debug/reach');
       await measureReach(app);
     }
 
-    if (!onlyBuilding) await app.logo.ready;
+    await app.logo.ready;
     const logoCompiled = app.compile();
     const towerLoaded = towerMade?.then(async (tower) => {
       await app.loadTower(tower);

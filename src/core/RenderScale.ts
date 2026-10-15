@@ -43,7 +43,6 @@ class GpuTimer {
 export class RenderScale {
   scale = SCALE.max;
   private timer: GpuTimer | null = null;
-  private pinned = false;
   private frameMs = 0;
   private refreshMs = Infinity;
   private hold = 0;
@@ -60,22 +59,17 @@ export class RenderScale {
     this.frameMs = 0;
   }
 
-  pin(scale: number): void {
-    this.scale = Math.min(Math.max(scale, SCALE.min), SCALE.max);
-    this.pinned = true;
-  }
-
   beginFrame(): void {
-    if (!this.pinned) this.timer?.begin();
+    this.timer?.begin();
   }
 
   endFrame(): void {
-    if (!this.pinned) this.timer?.end();
+    this.timer?.end();
   }
 
   update(dt: number, active: boolean): boolean {
     this.refreshMs = Math.min(this.refreshMs, dt * 1000);
-    if (this.pinned || !active) return false;
+    if (!active) return false;
     const frameBudget = Math.max(FRAME_BUDGET_MS, this.refreshMs);
     const sample = this.timer ? this.timer.read() : Math.min(dt * 1000, 2 * frameBudget);
     if (sample === null) return false;

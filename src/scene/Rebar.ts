@@ -31,7 +31,8 @@ export type Patch = {
   up: number[];
   bounds: number[];
 };
-export type RebarBlocks = { groups: { patches: Patch[]; columns: number[] }[]; rows: number[] };
+export type RebarBlock = { list: number; column: number; row: number };
+export type RebarBlocks = { lists: Patch[][]; blocks: RebarBlock[] };
 
 function tube(): BufferGeometry {
   const positions: number[] = [];
@@ -108,7 +109,7 @@ const ATTRIBUTES = [
   ['aRole', 1],
 ] as const;
 
-type Block = { group: number; column: number; row: number; patches: Patch[] };
+type Block = RebarBlock & { patches: Patch[] };
 
 export class Rebar extends Mesh<InstancedBufferGeometry, RawShaderMaterial> {
   private blocks: Block[] = [];
@@ -132,12 +133,8 @@ export class Rebar extends Mesh<InstancedBufferGeometry, RawShaderMaterial> {
     this.frustumCulled = false;
   }
 
-  fill({ groups, rows }: RebarBlocks): void {
-    groups.forEach(({ patches, columns }, group) => {
-      for (const column of columns) {
-        for (const row of rows) this.blocks.push({ group, column, row, patches });
-      }
-    });
+  fill({ lists, blocks }: RebarBlocks): void {
+    this.blocks = blocks.map((block) => ({ ...block, patches: lists[block.list]! }));
     const capacity = this.blocks.reduce((sum, { patches }) => sum + patches.length * BARS, 0);
     for (const [name, size] of ATTRIBUTES) {
       const attribute = new InstancedBufferAttribute(new Float32Array(capacity * size), size);
@@ -153,9 +150,9 @@ export class Rebar extends Mesh<InstancedBufferGeometry, RawShaderMaterial> {
     );
     const sticking = new Map<number, number[]>();
     let count = 0;
-    for (const { group, column, row, patches } of this.blocks) {
+    for (const { list, column, row, patches } of this.blocks) {
       const tileRow = (row + tilesClimbed + TILE_SEEDS) % TILE_SEEDS;
-      const key = (group * 16 + column + 8) * TILE_SEEDS + tileRow;
+      const key = (list * 16 + column + 8) * TILE_SEEDS + tileRow;
       const bars = this.sticking.get(key) ?? stickingBars(patches, column, tileRow);
       sticking.set(key, bars);
       for (const bar of bars) {

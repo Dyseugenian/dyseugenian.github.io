@@ -37,7 +37,7 @@ import {
 } from './facade';
 import type { OcclusionBake } from './occlusion';
 import { pigeonGeometry } from './pigeon';
-import type { Patch, RebarBlocks } from './Rebar';
+import type { Patch, RebarBlock, RebarBlocks } from './Rebar';
 import type { TraceKind } from './traces';
 import reach from './reach.json';
 
@@ -46,7 +46,7 @@ const DUCT_COLUMNS = [-2, 3];
 const GRILLE_COLUMNS = [-1, 0, 1];
 const LADDER_COLUMNS = [-1, 2];
 const DETAIL_ROWS = { full: 5, reduced: 11 };
-const REBAR_ROWS = { below: 1, above: 3 };
+const REBAR_ROWS = { below: 1, above: 3, margin: 1 };
 const TRACE_ROWS = { below: 1, above: 8 };
 const CABLE_ROWS = { below: 2, near: 8, above: 16 };
 const CABLE_SEGMENTS = { near: 128, far: 24 };
@@ -128,27 +128,35 @@ export function towerGeometry(): {
   const concrete = (list: Part[]) =>
     occluders(list).filter((part) => surfaceOf(part) === SURFACES.concrete);
   const around = occluders(surroundings(parts));
-  const rebarGroups = [
-    { parts: concrete(parts), around, columns: BLOCKED_COLUMNS },
+  const rebarGroups: RebarGroup[] = [
+    { parts: concrete(parts), around, columns: BLOCKED_COLUMNS, band: 'fixed' },
     {
       parts: concrete(blockless),
       around: occluders(surroundings(blockless)),
       columns: BLOCKLESS_COLUMNS,
+      band: 'fixed',
     },
-    { parts: concrete(windows), around, columns: [COLUMNS.left] },
-    { parts: leftEdge.parts, around: occluders(leftEdge.around), columns: [COLUMNS.left] },
-    { parts: rightEdge.parts, around: occluders(rightEdge.around), columns: [COLUMNS.right + 1] },
+    { parts: concrete(windows), around, columns: [COLUMNS.left], band: 'fixed' },
+    {
+      parts: leftEdge.parts,
+      around: occluders(leftEdge.around),
+      columns: [COLUMNS.left],
+      band: 'left',
+    },
+    {
+      parts: rightEdge.parts,
+      around: occluders(rightEdge.around),
+      columns: [COLUMNS.right + 1],
+      band: 'right',
+    },
   ];
   return {
     geometry: {
       facade: partBands().flatMap(bandMeshes),
-      rebar: {
-        groups: rebarGroups.map(({ parts, around, columns }) => ({
-          patches: parts.flatMap((part) => exposedPatches(part, around)),
-          columns,
-        })),
-        rows: TILE_ROWS.filter((row) => row >= -REBAR_ROWS.below && row < REBAR_ROWS.above),
-      },
+      rebar: rebarBlocks(
+        rebarGroups,
+        TILE_ROWS.filter((row) => row >= -REBAR_ROWS.below && row < REBAR_ROWS.above),
+      ),
       traces: traceGeometries(),
     },
     occlusion: {
@@ -362,6 +370,50 @@ function traceTiles(kind: TraceKind, columns: number[], rows: number[]): Tile[] 
     ]),
   );
   return spanTiles(spans, columns, rows);
+}
+
+type RebarGroup = {
+  parts: Part[];
+  around: Part[];
+  columns: number[];
+  band: 'fixed' | 'left' | 'right';
+};
+
+function rebarBlocks(groups: RebarGroup[], rows: number[]): RebarBlocks {
+  const lists: Patch[][] = [];
+  const listed = new Map<string, number>();
+  const blocks: RebarBlock[] = [];
+  groups.forEach(({ parts, around, columns, band }, group) => {
+    const table = REACH.parts[band]!;
+    const patches = parts.flatMap((part) => {
+      const faces = table[partKey(part)];
+      if (faces === undefined) throw new Error('Unmeasured part ' + band + ' ' + partKey(part));
+      const shows = (column: number, row: number) =>
+        Object.values(faces).some((spans) => {
+          const span = spans[column];
+          return (
+            span !== undefined &&
+            row >= span[0]! - REBAR_ROWS.margin &&
+            row <= span[1]! + REBAR_ROWS.margin
+          );
+        });
+      return exposedPatches(part, around).map((patch) => ({ patch, shows }));
+    });
+    for (const column of columns) {
+      for (const row of rows) {
+        const seen = patches.flatMap(({ shows }, index) => (shows(column, row) ? [index] : []));
+        if (seen.length === 0) continue;
+        const key = group + ':' + seen.join(',');
+        let list = listed.get(key);
+        if (list === undefined) {
+          list = lists.push(seen.map((index) => patches[index]!.patch)) - 1;
+          listed.set(key, list);
+        }
+        blocks.push({ list, column, row });
+      }
+    }
+  });
+  return { lists, blocks };
 }
 
 function faceFrame(normal: Vector3): [Vector3, Vector3] {

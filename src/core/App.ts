@@ -12,10 +12,8 @@ import {
   WebGLRenderTarget,
   WebGLRenderer,
 } from 'three';
-import { FreeFly } from './FreeFly';
 import { Input } from './Input';
 import { Loop, type Frame } from './Loop';
-import { Quality } from './Quality';
 import { RenderScale } from './RenderScale';
 import { palette } from './palette';
 import { Bloom } from '../post/Bloom';
@@ -28,6 +26,8 @@ import { LOW_LAYER, MIST_LAYER, ROOM_LAYER, SKY_LAYER, TOWER_LAYER } from '../sc
 const MAX_DRAWING_PIXELS = 3840 * 2160;
 const TOWER_FADE_SECONDS = 2.5;
 const WARM_UP_MS = 4;
+const MAX_PIXEL_RATIO = 2;
+const HALO_PARTICLES = 120_000;
 const OFFSCREEN_LAYERS = [LOW_LAYER, ROOM_LAYER, SKY_LAYER, MIST_LAYER];
 
 type Drawn = Mesh | Points | Line;
@@ -38,8 +38,6 @@ function isDrawn(object: Object3D): object is Drawn {
 }
 
 export class App {
-  readonly quality = new Quality(() => this.applyQuality());
-
   readonly renderer: WebGLRenderer;
   private scene = new Scene();
   private camera = new PerspectiveCamera(22, 1, 0.1, 100);
@@ -62,11 +60,7 @@ export class App {
   private background = beneathGrain(palette.bg);
   private logoBox = document.querySelector<HTMLElement>('.logo-box')!;
 
-  constructor(
-    canvas: HTMLCanvasElement,
-    context: WebGL2RenderingContext,
-    private onlyBuilding = false,
-  ) {
+  constructor(canvas: HTMLCanvasElement, context: WebGL2RenderingContext) {
     this.renderer = new WebGLRenderer({ canvas, context });
     this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
     this.renderer.autoClear = false;
@@ -76,10 +70,6 @@ export class App {
     this.camera.updateMatrixWorld();
     this.logo.visible = false;
     this.scene.add(this.logo);
-    if (onlyBuilding) {
-      setPageState('building', true);
-      this.roleText.uniforms.uRolesOpacity.value = 0;
-    }
 
     canvas.addEventListener('webglcontextlost', () => {
       this.isRestoring = true;
@@ -106,7 +96,7 @@ export class App {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.tower?.rebase();
     });
-    this.applyQuality();
+    this.resize();
   }
 
   async start(): Promise<void> {
@@ -127,7 +117,6 @@ export class App {
     tower.camera.layers.set(TOWER_LAYER);
     tower.visible = this.isStageLive;
     tower.fit(this.camera.aspect, this.target.width, this.target.height);
-    if (this.onlyBuilding) tower.fly(new FreeFly(this.renderer.domElement));
     this.view.cameras.unshift(tower.camera);
     this.tower = tower;
     return tower;
@@ -154,15 +143,10 @@ export class App {
     this.scene.add(tower);
   }
 
-  pinScale(scale: number): void {
-    this.renderScale.pin(scale);
-    this.rescale();
-  }
-
   setStageLive(live: boolean): void {
     setPageState('stage-live', live);
     this.isStageLive = live;
-    this.logo.visible = live && !this.onlyBuilding;
+    this.logo.visible = live;
     if (this.tower) this.tower.visible = live;
   }
 
@@ -184,14 +168,16 @@ export class App {
         warmUp.done();
         continue;
       }
-      const { frustumCulled } = object;
+      const { frustumCulled, visible } = object;
       if (frustumCulled && object.geometry.boundingSphere === null) {
         object.geometry.computeBoundingSphere();
       }
       object.frustumCulled = false;
+      object.visible = true;
       this.renderer.setRenderTarget(this.tower?.offscreenTarget(object) ?? this.warmUpTarget);
       this.renderer.render(object, warmUp.camera);
       object.frustumCulled = frustumCulled;
+      object.visible = visible;
     }
   }
 
@@ -215,7 +201,7 @@ export class App {
       this.tower.renderOffscreen(this.renderer);
     }
     this.logo.update(dt);
-    if (!this.onlyBuilding) this.roleText.update(dt);
+    this.roleText.update(dt);
     this.film.update(time);
     this.renderer.setRenderTarget(this.target);
     this.renderer.setClearColor(this.background);
@@ -225,10 +211,6 @@ export class App {
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.film, this.camera);
     this.renderScale.endFrame();
-  }
-
-  private applyQuality(): void {
-    this.resize();
   }
 
   private watchPixelRatio(): void {
@@ -245,11 +227,7 @@ export class App {
   private resize(): void {
     const { clientWidth: width, clientHeight: height } = this.renderer.domElement;
     this.renderer.setPixelRatio(
-      Math.min(
-        devicePixelRatio,
-        this.quality.settings.maxPixelRatio,
-        Math.sqrt(MAX_DRAWING_PIXELS / (width * height)),
-      ),
+      Math.min(devicePixelRatio, MAX_PIXEL_RATIO, Math.sqrt(MAX_DRAWING_PIXELS / (width * height))),
     );
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
@@ -262,13 +240,7 @@ export class App {
     this.roleText.setSize(x, y, width, height);
     const viewHeight =
       2 * this.camera.position.z * Math.tan(MathUtils.degToRad(this.camera.fov / 2));
-    this.logo.fit(
-      width,
-      height,
-      viewHeight,
-      this.logoBox.getBoundingClientRect(),
-      this.quality.settings.particles,
-    );
+    this.logo.fit(width, height, viewHeight, this.logoBox.getBoundingClientRect(), HALO_PARTICLES);
     this.rescale();
   }
 
@@ -282,6 +254,6 @@ export class App {
   }
 }
 
-export function setPageState(name: 'no-webgl' | 'stage-live' | 'building', on: boolean): void {
+export function setPageState(name: 'no-webgl' | 'stage-live', on: boolean): void {
   document.documentElement.classList.toggle(name, on);
 }

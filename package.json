@@ -18,11 +18,8 @@
     "three": "^0.186.1"
   },
   "devDependencies": {
-    "@tweakpane/core": "^2.0.5",
-    "@tweakpane/plugin-essentials": "^0.2.1",
     "@types/three": "^0.186.0",
     "prettier": "^3.9.9",
-    "tweakpane": "^4.0.5",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
     "vite-plugin-glsl": "^1.6.1"
