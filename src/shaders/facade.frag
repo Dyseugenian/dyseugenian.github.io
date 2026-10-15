@@ -326,7 +326,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
         float bleed = exp(-beside * REBAR_RADIUS / 0.015) * lower;
         albedo = mix(albedo, uRust * 0.4, 0.45 * bleed * (1.0 - bar));
         albedo *= 1.0 - 0.45 * exp(-beside / 0.5) * lower * (1.0 - bar);
-        vec3 scale = uRust * mix(0.3, 0.85, valueNoise(p * 60.0 + spot.key)) * mix(0.55, 1.1, top);
+        vec3 scale = mix(uGrime * 1.6, uRust, mix(0.25, 0.65, valueNoise(p * 60.0 + spot.key))) * mix(0.5, 0.95, top);
         albedo = mix(albedo, scale * (1.0 + 0.15 * max(ribbed.x * alongU, ribbed.y * alongV)), bar);
         height += bar * (0.6 + REBAR_RADIUS / BUMP * top);
         if (upright > 0.5) {
@@ -969,7 +969,7 @@ void main() {
     occlusion *= mix(1.0, 0.55, smoothstep(0.0, 0.12, sunk));
     float toBar = toRebar(hit, vMin, vMax) / REBAR_RADIUS;
     float bar = broken == 1 ? 1.0 - smoothstep(1.0, 1.5, toBar) : 0.0;
-    surface.albedo = mix(surface.albedo, uRust * mix(0.45, 1.0, aggregate) * mix(0.45, 1.1, sqrt(max(1.0 - toBar * toBar, 0.0))), bar);
+    surface.albedo = mix(surface.albedo, mix(uGrime * 1.6, uRust, mix(0.25, 0.65, aggregate)) * mix(0.45, 0.95, sqrt(max(1.0 - toBar * toBar, 0.0))), bar);
   }
   surface.albedo *= (1.0 + 0.3 * (1.0 - smoothstep(0.0, 0.015, margin)) * step(0.0, margin)) * exp(-sunk / 0.6);
   vec3 light = nightLight(shading, vWorld, occlusion, 0.0);

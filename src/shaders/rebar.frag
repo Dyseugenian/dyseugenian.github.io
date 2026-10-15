@@ -40,7 +40,7 @@ void main() {
   float ridge = detail * max(rebarRibs(vAlong, slant) * (1.0 - spine), spine);
 
   float scale = valueNoise(vec3(vAlong * 80.0, ring * 1.4 + vKey + 5.0));
-  vec3 steel = uRust * mix(0.8, 1.3, flakes) * mix(0.75, 1.15, scale) * mix(0.85, 1.15, ridge);
+  vec3 steel = mix(uGrime * 1.6, uRust, mix(0.25, 0.65, flakes)) * mix(0.6, 0.9, scale) * mix(0.85, 1.15, ridge);
   steel = mix(steel, uGrime * 1.6, 0.2 * hash12(vec2(vKey, 3.0)));
   float facing = abs(dot(normal, normalize(cameraPosition - vWorld)));
   float distance = length(vWorld - cameraPosition);
