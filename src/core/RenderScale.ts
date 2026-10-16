@@ -1,4 +1,4 @@
-const SCALE = { min: 0.6, max: 1, step: 0.05 };
+const SCALE = { min: 1, max: 1, step: 0.05 };
 const GPU_BUDGET_MS = 14;
 const FRAME_BUDGET_MS = 1000 / 60;
 const SETTLE_SECONDS = 1.5;

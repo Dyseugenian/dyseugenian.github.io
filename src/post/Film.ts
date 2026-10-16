@@ -14,7 +14,7 @@ import vertexShader from '../shaders/film.vert';
 import fragmentShader from '../shaders/film.frag';
 
 export const FILM_FPS = 24;
-const GRAIN = 0.08;
+const GRAIN = 0;
 const WARP_GRID = { columns: 160, rows: 90 };
 
 export function beneathGrain(color: string): Color {
