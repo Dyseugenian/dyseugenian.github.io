@@ -1,5 +1,6 @@
 precision highp float;
 
+uniform float uOpacity;
 uniform sampler2D uLetters;
 uniform sampler2D uHealsAt;
 uniform float uTime;
@@ -18,5 +19,5 @@ void main() {
   bool inside = all(greaterThanEqual(cell, ivec2(0))) && all(lessThan(cell, size));
   bool intact = uTime >= texelFetch(uHealsAt, cell, 0).r;
   if (inside && intact && texelFetch(uLetters, cell, 0).r > 0.5) discard;
-  outColor = vec4(vColor, vAlpha);
+  outColor = vec4(vColor, vAlpha * uOpacity);
 }

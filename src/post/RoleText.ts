@@ -30,6 +30,7 @@ export class RoleText {
   private pointer = new Vector2();
   private spreadClock = new Vector3();
   private fadeClock = new Vector3();
+  private linkOpacity = 1;
 
   readonly uniforms = {
     uRoles: { value: this.texture },
@@ -94,11 +95,8 @@ export class RoleText {
 
     const fade = dt / DIM_DURATION;
     const linkDimmed = this.canHover && input.isOnLink;
-    uniforms.uRolesOpacity.value = approach(
-      uniforms.uRolesOpacity.value,
-      input.isUiHidden ? 0 : linkDimmed ? LINK_DIM : 1,
-      fade,
-    );
+    this.linkOpacity = approach(this.linkOpacity, linkDimmed ? LINK_DIM : 1, fade);
+    uniforms.uRolesOpacity.value = this.linkOpacity * input.uiOpacity;
     this.roles.forEach((role, i) => {
       const dimmed = this.canHover && input.activeRole !== null && input.activeRole !== role.id;
       stepToward(uniforms.uRoleOpacity.value, i, dimmed ? DIM : 1, fade);

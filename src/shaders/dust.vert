@@ -10,6 +10,7 @@ uniform vec3 uBackground;
 uniform float uWander;
 uniform float uFall;
 uniform float uDustHidden;
+uniform float uOpacity;
 
 in vec3 position;
 in vec3 color;
@@ -32,5 +33,5 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(point, 0.0, 1.0);
   gl_PointSize = max(uPixelSize, 1.0);
   vColor = max(color - uBackground, 0.0);
-  vAlpha = fade * min(uPixelSize * uPixelSize, 1.0) * (1.0 - 0.8 * uDustHidden);
+  vAlpha = fade * min(uPixelSize * uPixelSize, 1.0) * (1.0 - 0.8 * uDustHidden) * uOpacity;
 }

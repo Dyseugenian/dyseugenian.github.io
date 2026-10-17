@@ -203,6 +203,7 @@ export class App {
       this.tower.spotOnScreen(this.edgeBlur.focus);
       this.tower.renderOffscreen(this.renderer);
     }
+    this.input.update(dt);
     this.logo.update(dt);
     this.roleText.update(dt);
     this.film.update(time);

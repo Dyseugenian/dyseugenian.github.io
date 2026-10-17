@@ -133,10 +133,10 @@ export class Logo extends Group {
       isOnGamedevRole,
       isOnMotionRole,
       reducedMotion,
-      isUiHidden,
+      uiOpacity,
     } = this.input;
     for (const part of this.children) {
-      if (part !== this.stars) part.visible = !isUiHidden;
+      if (part !== this.stars) part.visible = uiOpacity > 0;
     }
     const motionDt = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
     const follow = isPointerInside && !reducedMotion;
@@ -174,9 +174,10 @@ export class Logo extends Group {
     ];
     const planetFade = PLANET_FADE * Math.max(...hovers.map((hover) => hover.amount));
     for (const part of [this.halo, this.infall, this.outline, this.ring, this.eyes]) {
-      part.uniforms.uOpacity.value = 1 - planetFade;
+      part.uniforms.uOpacity.value = (1 - planetFade) * uiOpacity;
     }
-    this.shade.uniforms.uOpacity.value = (1 - planetFade) * this.towerOpacity;
+    this.shade.uniforms.uOpacity.value = (1 - planetFade) * this.towerOpacity * uiOpacity;
+    this.wordmark.uniforms.uOpacity.value = uiOpacity;
     this.shade.visible &&= this.towerOpacity > 0;
     const end = uniforms.uTetrisEnd.value;
     uniforms.uDustHidden.value = Math.max(

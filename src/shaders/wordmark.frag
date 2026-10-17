@@ -2,6 +2,7 @@ precision highp float;
 
 uniform float uPixelSize;
 uniform vec3 uBackground;
+uniform float uOpacity;
 
 in vec3 vColor;
 
@@ -14,5 +15,5 @@ float pixelCoverage() {
 }
 
 void main() {
-  outColor = vec4(max((vColor - uBackground) * SIGN, 0.0), pixelCoverage());
+  outColor = vec4(max((vColor - uBackground) * SIGN, 0.0), pixelCoverage() * uOpacity);
 }

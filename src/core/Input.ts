@@ -1,9 +1,16 @@
+import { MathUtils } from 'three';
+
+const UI_FADE = 1;
+
 export class Input {
   readonly pointer = { x: 0, y: 0 };
   isPointerInside = false;
   activeRole: string | null = null;
   isOnLink = false;
   isUiHidden = false;
+  uiOpacity = 1;
+  private uiFadeFrom = 1;
+  private uiFadeTime = UI_FADE;
   private roles = document.querySelectorAll<HTMLButtonElement>('.tagline button');
   private uiSwitch = document.querySelector<HTMLButtonElement>('.ui-switch')!;
   private lastPointerType = '';
@@ -54,6 +61,13 @@ export class Input {
     this.viewSize = { width, height };
   }
 
+  update(dt: number): void {
+    this.uiFadeTime = Math.min(this.uiFadeTime + dt, UI_FADE);
+    const t = this.uiFadeTime / UI_FADE;
+    const eased = this.isUiHidden ? 1 - (1 - t) ** 3 : t * t * (3 - 2 * t);
+    this.uiOpacity = MathUtils.lerp(this.uiFadeFrom, this.isUiHidden ? 0 : 1, eased);
+  }
+
   get isOnSoftwareRole(): boolean {
     return this.activeRole === 'software-role';
   }
@@ -73,6 +87,8 @@ export class Input {
 
   private setUiHidden(hidden: boolean): void {
     this.isUiHidden = hidden;
+    this.uiFadeFrom = this.uiOpacity;
+    this.uiFadeTime = 0;
     this.uiSwitch.textContent = hidden ? 'show ui' : 'hide ui';
     document.documentElement.classList.toggle('ui-hidden', hidden);
     if (hidden) {

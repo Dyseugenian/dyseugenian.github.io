@@ -36,6 +36,7 @@ const SWIPE = { spacing: 14, reach: 12, minSpeed: 120 };
 export class Wordmark extends Group {
   readonly uniforms = {
     uPixelSize: { value: 1 },
+    uOpacity: { value: 1 },
     uTime: { value: 0 },
     uBackground: { value: beneathGrain(palette.bg) },
     uTetris: { value: 0 },

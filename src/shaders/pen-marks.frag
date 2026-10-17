@@ -1,5 +1,6 @@
 precision highp float;
 
+uniform float uOpacity;
 uniform vec3 uOchre;
 uniform vec3 uCream;
 uniform vec3 uBackground;
@@ -18,10 +19,10 @@ void main() {
   if (vKind == 0) {
     float edge = max(abs(offset.x), abs(offset.y));
     vec3 color = edge > vSize * 0.5 - border || vFilled > 0.5 ? uOchre : uBackground;
-    outColor = vec4(color, vAlpha);
+    outColor = vec4(color, vAlpha * uOpacity);
     return;
   }
   float radius = length(offset);
   if (radius > vSize * 0.5) discard;
-  outColor = vec4(uCream, vAlpha);
+  outColor = vec4(uCream, vAlpha * uOpacity);
 }
