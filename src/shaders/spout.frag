@@ -32,8 +32,6 @@ flat in vec2 vEnds;
 flat in float vSeed;
 flat in float vPattern;
 
-uniform float uPresence;
-
 out vec4 outColor;
 
 const float IRON = 0.55;
@@ -53,10 +51,6 @@ vec3 bumped(vec3 normal, float height) {
 }
 
 void main() {
-  if (uPresence > 0.5) {
-    outColor = vec4(1.0);
-    return;
-  }
   vec3 normal = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);
   float inside = !gl_FrontFacing || (vPart == 1.0 && vRadial < 1.0) ? 1.0 : 0.0;
   vec3 toCamera = normalize(cameraPosition - vWorld);

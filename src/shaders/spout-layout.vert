@@ -10,6 +10,7 @@ uniform float uLayoutRows;
 #include "chunks/inset.glsl"
 #include "chunks/ducts.glsl"
 #include "chunks/spouts.glsl"
+#include "chunks/presence.glsl"
 
 in vec2 aTile;
 in float aStorey;
@@ -18,6 +19,13 @@ flat out vec4 vTexel;
 
 void main() {
   Spout spout = pipeAt(aTile, aStorey);
+  if (uPresence > 0.5) {
+    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+    if (spout.count < 2) return;
+    vTexel = vec4(1.0);
+    markPresent();
+    return;
+  }
   follow(spout);
   int texel = gl_VertexID;
   if (texel < PIPE_POINTS) {

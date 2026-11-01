@@ -27,13 +27,15 @@ flat in vec2 vTile;
 flat in vec3 vMin;
 flat in vec3 vMax;
 
-layout(location = 0) out vec4 outLayer;
-layout(location = 1) out vec4 outAir;
-layout(location = 2) out vec4 outShape;
-layout(location = 3) out vec4 outMask;
+out uvec4 outLow;
 
 const bool CONCRETE = SURFACE == 0;
 const bool FITTINGS = SURFACE == 2;
+
+uint packBytes(vec4 value) {
+  uvec4 bytes = uvec4(round(clamp(value, 0.0, 1.0) * 255.0));
+  return bytes.x | bytes.y << 8 | bytes.z << 16 | bytes.w << 24;
+}
 
 bool clothCut(vec2 tile) {
   if (abs(vKind - 3.0) < 0.5 && vMax.y - vMin.y >= 0.04) {
@@ -116,8 +118,9 @@ void main() {
       mendedNear(p, 3.0 * footprint) ? 1.0 : 0.0,
       chipsNear(normal, cameraPosition - origin, seed, footprint) ? 1.0 : 0.0);
   }
-  outLayer = vec4(sqrt(clamp(layer.rgb / 1.2, 0.0, 1.0)), layer.a / 1.1);
-  outAir = vec4(sqrt(clamp(scatter / 4.0, 0.0, 1.0)), mist);
-  outShape = vec4(normal.xy * 0.5 + 0.5, cloud, 0.0);
-  outMask = mask;
+  outLow = uvec4(
+    packBytes(vec4(sqrt(clamp(layer.rgb / 1.2, 0.0, 1.0)), layer.a / 1.1)),
+    packBytes(vec4(sqrt(clamp(scatter / 4.0, 0.0, 1.0)), mist)),
+    packBytes(vec4(normal.xy * 0.5 + 0.5, cloud, 0.0)),
+    packBytes(mask));
 }

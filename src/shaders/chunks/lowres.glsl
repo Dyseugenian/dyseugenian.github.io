@@ -1,7 +1,4 @@
-uniform sampler2D uLowLayer;
-uniform sampler2D uLowAir;
-uniform sampler2D uLowShape;
-uniform sampler2D uLowMask;
+uniform highp usampler2D uLow;
 uniform sampler2D uLowDepth;
 uniform vec2 uLowSize;
 uniform vec2 uResolution;
@@ -14,6 +11,10 @@ struct Low {
   float cloud;
   vec4 mask;
 };
+
+vec4 unpackBytes(uint bytes) {
+  return vec4(uvec4(bytes, bytes >> 8, bytes >> 16, bytes >> 24) & 0xFFu) / 255.0;
+}
 
 float viewDepth(float z) {
   float ndc = 2.0 * z - 1.0;
@@ -40,18 +41,19 @@ Low sampleLow(vec3 normal) {
     ivec2 texel = ivec2(clamp(base + corner, vec2(0.0), uLowSize - 1.0));
     float bilinear = mix(1.0 - f.x, f.x, corner.x) * mix(1.0 - f.y, f.y, corner.y);
     float lowDepth = viewDepth(texelFetch(uLowDepth, texel, 0).r);
-    vec4 tapShape = texelFetch(uLowShape, texel, 0);
+    uvec4 tap = texelFetch(uLow, texel, 0);
+    vec4 tapShape = unpackBytes(tap.z);
     vec2 across = tapShape.xy * 2.0 - 1.0;
     vec3 lowNormal = vec3(across, sqrt(max(1.0 - dot(across, across), 0.0)));
     float alike = exp(-abs(lowDepth - depth) / (0.02 * depth)) * smoothstep(0.6, 0.95, dot(lowNormal, normal));
-    vec4 tapLayer = texelFetch(uLowLayer, texel, 0);
-    vec4 tapAir = texelFetch(uLowAir, texel, 0);
+    vec4 tapLayer = unpackBytes(tap.x);
+    vec4 tapAir = unpackBytes(tap.y);
     float weight = bilinear * alike;
     layer += tapLayer * weight;
     air += tapAir * weight;
     shape += tapShape * weight;
     total += weight;
-    mask = max(mask, texelFetch(uLowMask, texel, 0));
+    mask = max(mask, unpackBytes(tap.w));
     if (alike > best) {
       best = alike;
       bestLayer = tapLayer;

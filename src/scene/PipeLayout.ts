@@ -31,8 +31,22 @@ export class PipeLayout {
 
   constructor(private uniforms: Record<string, IUniform>) {}
 
-  lay({ geometry, material }: Mesh<InstancedBufferGeometry, RawShaderMaterial>): void {
+  layout({ defines }: RawShaderMaterial): RawShaderMaterial {
+    return new RawShaderMaterial({
+      glslVersion: GLSL3,
+      vertexShader,
+      fragmentShader,
+      defines: { ...defines, LAID_OUT: false },
+      uniforms: { ...this.uniforms, uLayoutRows: { value: 0 } },
+    });
+  }
+
+  lay(
+    { geometry, material }: Mesh<InstancedBufferGeometry, RawShaderMaterial>,
+    layout: RawShaderMaterial,
+  ): void {
     const rows = geometry.getAttribute('aTile').count;
+    layout.uniforms.uLayoutRows!.value = rows;
     const target = new WebGLRenderTarget(TEXELS, rows, {
       depthBuffer: false,
       type: FloatType,
@@ -43,16 +57,7 @@ export class PipeLayout {
     slots.setAttribute('position', new Float32BufferAttribute(new Float32Array(TEXELS * 3), 3));
     slots.setAttribute('aTile', geometry.getAttribute('aTile'));
     slots.setAttribute('aStorey', geometry.getAttribute('aStorey'));
-    const points = new Points(
-      slots,
-      new RawShaderMaterial({
-        glslVersion: GLSL3,
-        vertexShader,
-        fragmentShader,
-        defines: { ...material.defines, LAID_OUT: false },
-        uniforms: { ...this.uniforms, uLayoutRows: { value: rows } },
-      }),
-    );
+    const points = new Points(slots, layout);
     points.frustumCulled = false;
     material.uniforms.uPipeLayout!.value = target.texture;
     this.scene.add(points);

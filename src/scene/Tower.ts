@@ -10,13 +10,16 @@ import {
   type IUniform,
   MathUtils,
   Mesh,
+  NearestFilter,
   type Object3D,
   PerspectiveCamera,
   RawShaderMaterial,
+  RGBAIntegerFormat,
   Scene,
   type ShaderMaterial,
   Vector2,
   Texture,
+  UnsignedIntType,
   Vector3,
   Vector4,
   type WebGLRenderer,
@@ -87,7 +90,13 @@ const VOLUMES: Record<Occlusion, { min: Vector3; size: Vector3 }> = {
 
 export class Tower extends Scene {
   readonly camera = new PerspectiveCamera(VIEW.fov, 1, 0.1, 400);
-  readonly low = new WebGLRenderTarget(1, 1, { count: 4, depthTexture: new DepthTexture(1, 1) });
+  readonly low = new WebGLRenderTarget(1, 1, {
+    type: UnsignedIntType,
+    format: RGBAIntegerFormat,
+    minFilter: NearestFilter,
+    magFilter: NearestFilter,
+    depthTexture: new DepthTexture(1, 1),
+  });
   private lowCamera = new PerspectiveCamera();
   private uniforms = {
     uTime: { value: 0 },
@@ -186,10 +195,7 @@ export class Tower extends Scene {
       uLight: { value: new Vector3(-0.45, 0.7, 0.55).normalize() },
       uFogDensity: { value: 0.022 },
       uSkyMap: { value: this.sky.target.texture },
-      uLowLayer: { value: this.low.textures[0] },
-      uLowAir: { value: this.low.textures[1] },
-      uLowShape: { value: this.low.textures[2] },
-      uLowMask: { value: this.low.textures[3] },
+      uLow: { value: this.low.texture },
       uLowDepth: { value: this.low.depthTexture },
       uLowSize: { value: new Vector2(1, 1) },
       uDepthRange: { value: new Vector2(this.camera.near, this.camera.far) },
@@ -238,13 +244,17 @@ export class Tower extends Scene {
   private build({ facade, rebar, traces }: TowerGeometry): void {
     const materials = new Map<string, RawShaderMaterial>();
     const lowMaterials = new Map<number, RawShaderMaterial>();
-    const depthMaterial = new RawShaderMaterial({
-      glslVersion: GLSL3,
-      vertexShader,
-      fragmentShader: depthShader,
-      uniforms: this.materialUniforms,
-      colorWrite: false,
-    });
+    const depthMaterial = (output: string) =>
+      new RawShaderMaterial({
+        glslVersion: GLSL3,
+        vertexShader,
+        fragmentShader: depthShader,
+        defines: { OUTPUT: output },
+        uniforms: this.materialUniforms,
+        colorWrite: false,
+      });
+    const lowDepthMaterial = depthMaterial('uvec4');
+    const screenDepthMaterial = depthMaterial('vec4');
     const censusMaterial = new RawShaderMaterial({
       glslVersion: GLSL3,
       vertexShader,
@@ -260,11 +270,11 @@ export class Tower extends Scene {
       const geometry = unpackGeometry(baked);
       const mesh = new Mesh(geometry, material);
       const low = new Mesh(geometry, lowMaterial);
-      const lowDepth = new Mesh(geometry, depthMaterial);
+      const lowDepth = new Mesh(geometry, lowDepthMaterial);
       mesh.renderOrder = low.renderOrder = 1;
       low.layers.set(LOW_LAYER);
       lowDepth.layers.set(LOW_LAYER);
-      const passes = [lowDepth, low, new Mesh(geometry, depthMaterial), mesh];
+      const passes = [lowDepth, low, new Mesh(geometry, screenDepthMaterial), mesh];
       for (const pass of passes) pass.frustumCulled = false;
       this.gatedMeshes.push(...passes);
       this.building.add(...passes);
@@ -282,22 +292,25 @@ export class Tower extends Scene {
     const traced = traceMeshes(traces, this.materialUniforms);
     for (const mesh of traced) {
       const { material } = mesh;
+      const layout = material.defines.LAID_OUT ? this.pipeLayout.layout(material) : null;
       const multiplied = material.blendSrc === DstColorFactor;
       this.presence.watch(
         mesh,
-        multiplied
-          ? {
-              material: new RawShaderMaterial({
-                glslVersion: GLSL3,
-                vertexShader: material.vertexShader,
-                fragmentShader: material.fragmentShader,
-                uniforms: material.uniforms,
-              }),
-              vertex: [],
-            }
-          : undefined,
+        layout
+          ? { material: layout, vertex: [] }
+          : multiplied
+            ? {
+                material: new RawShaderMaterial({
+                  glslVersion: GLSL3,
+                  vertexShader: material.vertexShader,
+                  fragmentShader: material.fragmentShader,
+                  uniforms: material.uniforms,
+                }),
+                vertex: [],
+              }
+            : undefined,
       );
-      if (mesh.material.defines.LAID_OUT) this.pipeLayout.lay(mesh);
+      if (layout) this.pipeLayout.lay(mesh, layout);
     }
     this.gatedMeshes.push(...traced);
     this.building.add(...traced);

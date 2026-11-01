@@ -12,7 +12,6 @@ uniform float uOuterX;
 #include "chunks/inset.glsl"
 #include "chunks/ducts.glsl"
 #include "chunks/spouts.glsl"
-#include "chunks/presence.glsl"
 
 in vec3 position;
 in vec3 normal;
@@ -49,19 +48,16 @@ void hide() {
 
 Spout spoutOfInstance() {
 #ifdef LAID_OUT
-  if (uPresence < 0.5) return laidSpout();
-#endif
+  return laidSpout();
+#else
   return pipeAt(aTile, aStorey);
+#endif
 }
 
 void main() {
   Spout spout = spoutOfInstance();
   if (spout.count < 2) {
     hide();
-    return;
-  }
-  if (uPresence > 0.5) {
-    markPresent();
     return;
   }
   follow(spout);
