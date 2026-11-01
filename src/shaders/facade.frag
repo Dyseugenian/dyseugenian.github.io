@@ -67,6 +67,7 @@ const float POPCORN_SCALE = 0.23;
 const float DRIP_SPACING = 0.9;
 const float PIT_SPACING = 0.12;
 const float SPECK_SPACING = 0.35;
+const vec2 SPECK_RADIUS = vec2(0.008, 0.06);
 const float STUD_HEIGHT = 0.218;
 const vec3 STUD_HALF = vec3(0.66, 0.56, 0.218);
 const float STUD_X = -2.1;
@@ -144,7 +145,7 @@ float speck(vec2 wall, float footprint, out float pale) {
   pale = step(0.75, hash12(cell + 127.0));
   if (hash12(cell + 103.0) > 0.58 * density) return 0.0;
   vec2 center = (cell + 0.25 + 0.5 * vec2(hash12(cell + 107.0), hash12(cell + 109.0))) * SPECK_SPACING;
-  float radius = mix(0.008, 0.06, pow(hash12(cell + 113.0), 2.0));
+  float radius = mix(SPECK_RADIUS.x, SPECK_RADIUS.y, pow(hash12(cell + 113.0), 2.0));
   float ragged = mix(0.8, 1.2, valueNoise(wall * 60.0 + cell));
   return (1.0 - smoothstep(radius * 0.5, radius + footprint, length(wall - center) * ragged))
     * resolved(0.3 / radius, footprint);
@@ -251,7 +252,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
       + (plantFloor(roomOf(vTile, 0.0)) ? 0.0 : 0.6) * step(0.0, above) * exp(-above / 0.15);
     albedo = mix(albedo, uGrime, min(0.5 * wash, 0.7));
   }
-  if (footprint < 0.02) {
+  if (footprint < 2.0 * SPECK_RADIUS.y) {
     float pale;
     float flecked = speck(wall, footprint, pale);
     albedo = mix(albedo, pale > 0.5 ? uSalt : uGrime, 0.6 * flecked);
