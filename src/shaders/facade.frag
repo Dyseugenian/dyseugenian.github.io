@@ -548,8 +548,7 @@ vec3 bumped(vec3 normal, float height) {
   float det = dot(dpdx, r1);
   vec3 gradient = sign(det) * (dFdx(height) * r1 + dFdy(height) * r2);
   float slope = length(gradient) / abs(det);
-  gradient *= 1.0 - smoothstep(0.15, 0.4, slope);
-  return normalize(abs(det) * normal - gradient);
+  return slope < 0.4 ? normalize(abs(det) * normal - gradient * (1.0 - smoothstep(0.15, 0.4, slope))) : normal;
 }
 
 const int SHEETS = 7;
