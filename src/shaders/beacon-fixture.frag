@@ -1,4 +1,5 @@
 precision highp float;
+precision highp int;
 
 uniform vec3 uGrime;
 uniform vec3 uMoon;

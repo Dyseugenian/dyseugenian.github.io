@@ -1,4 +1,5 @@
 precision highp float;
+precision highp int;
 precision highp sampler3D;
 
 #include "chunks/noise-texture.glsl"

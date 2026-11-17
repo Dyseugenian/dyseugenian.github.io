@@ -1,4 +1,5 @@
 precision highp float;
+precision highp int;
 
 uniform float uOpacity;
 uniform float uMotionTime;

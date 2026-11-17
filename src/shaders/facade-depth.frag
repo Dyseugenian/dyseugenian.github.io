@@ -1,4 +1,5 @@
 precision highp float;
+precision highp int;
 
 in float vKind;
 

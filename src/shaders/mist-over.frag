@@ -1,4 +1,5 @@
 precision highp float;
+precision highp int;
 
 uniform sampler2D uMist;
 uniform vec2 uResolution;

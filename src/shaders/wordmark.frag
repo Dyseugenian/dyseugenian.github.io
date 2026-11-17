@@ -1,4 +1,5 @@
 precision highp float;
+precision highp int;
 
 uniform float uPixelSize;
 uniform vec3 uBackground;

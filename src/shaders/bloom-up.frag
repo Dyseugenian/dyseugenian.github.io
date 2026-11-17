@@ -1,4 +1,5 @@
 precision highp float;
+precision highp int;
 
 uniform sampler2D uSource;
 uniform vec2 uTexel;

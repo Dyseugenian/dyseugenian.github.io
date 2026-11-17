@@ -1,4 +1,5 @@
 precision highp float;
+precision highp int;
 
 uniform vec3 uBeaconColor;
 uniform float uBeacon;
