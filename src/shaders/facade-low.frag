@@ -90,8 +90,7 @@ void main() {
   float depth = 1.0 - smoothstep(14.0, 40.0, distance);
   vec3 scatter = vec3(0.0);
   if (depth > 0.0) {
-    float jitter = ign(gl_FragCoord.xy + mod(floor(uTime * 24.0), 4096.0) * vec2(5.588, 3.17));
-    scatter = windowScatter(cameraPosition - origin, vLocal, tile, origin, jitter) * depth;
+    scatter = windowScatter(cameraPosition - origin, vLocal, tile, origin) * depth;
   }
   float mist = fbm(vec3(vWorld.x * 0.05, building.y * 0.04, uTime * 0.04));
   vec3 climbed = vec3(0.0, uClimb, 0.0);
@@ -112,11 +111,12 @@ void main() {
     vec3 risen = vWorld + climbed;
     vec2 wall = vec2(dot(risen, frame[0]), dot(risen, frame[1])) + dot(risen, normal) * vec2(1.37, 0.71);
     layer = stains(wall, upright, weathering, footprint);
-    mask = vec4(
-      spallsNear(p, upright, footprint) ? 1.0 : 0.0,
-      cracksNear(p, fromLow, fromLow + toHigh, upright, footprint) ? 1.0 : 0.0,
-      mendedNear(p, 3.0 * footprint) ? 1.0 : 0.0,
-      chipsNear(normal, cameraPosition - origin, seed, footprint) ? 1.0 : 0.0);
+    mask.x = spallsNear(p, upright, footprint) ? 1.0 : 0.0;
+    mask.z = mendedNear(p, 3.0 * footprint) ? 1.0 : 0.0;
+#ifndef DRAFT
+    mask.y = cracksNear(p, fromLow, fromLow + toHigh, upright, footprint) ? 1.0 : 0.0;
+    mask.w = chipsNear(normal, cameraPosition - origin, seed, footprint) ? 1.0 : 0.0;
+#endif
   }
   outLow = uvec4(
     packBytes(vec4(sqrt(clamp(layer.rgb / 1.2, 0.0, 1.0)), layer.a / 1.1)),

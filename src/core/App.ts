@@ -7,6 +7,7 @@ import {
   PerspectiveCamera,
   type Points,
   Scene,
+  type ShaderMaterial,
   Vector2,
   WebGLRenderTarget,
   WebGLRenderer,
@@ -26,6 +27,7 @@ import { LOW_LAYER, MIST_LAYER, ROOM_LAYER, SKY_LAYER, TOWER_LAYER } from '../sc
 const MAX_DRAWING_PIXELS = 3840 * 2160;
 const TOWER_FADE_SECONDS = 2.5;
 const WARM_UP_MS = 4;
+const HEAVY_SHADER = 30_000;
 const MAX_PIXEL_RATIO = 2;
 const HALO_PARTICLES = 120_000;
 const OFFSCREEN_LAYERS = [LOW_LAYER, ROOM_LAYER, SKY_LAYER, MIST_LAYER];
@@ -46,6 +48,8 @@ export class App {
   private towerTarget = new WebGLRenderTarget(1, 1, { samples: 2, resolveDepthBuffer: false });
   private warmUpTarget = new WebGLRenderTarget(1, 1);
   private warmUps: WarmUp[] = [];
+  private drawnPrograms = new WeakSet<object>();
+  private firstDraw: WebGLSync | null = null;
   private input = new Input();
   private roleText = new RoleText(this.input);
   private edgeBlur = new EdgeBlur(this.towerTarget.texture);
@@ -74,6 +78,7 @@ export class App {
 
     canvas.addEventListener('webglcontextlost', () => {
       this.isRestoring = true;
+      this.firstDraw = null;
       setPageState('no-webgl', true);
     });
     canvas.addEventListener('webglcontextrestored', async () => {
@@ -119,7 +124,7 @@ export class App {
     const tower = new Tower(this.input);
     tower.camera.layers.set(TOWER_LAYER);
     tower.visible = this.isStageLive;
-    tower.fit(this.camera.aspect, this.target.width, this.target.height);
+    tower.fit(this.camera.aspect, this.towerTarget.width, this.towerTarget.height);
     this.tower = tower;
     return tower;
   }
@@ -143,6 +148,7 @@ export class App {
   revealTower(tower: Tower): void {
     this.isTowerRevealed = true;
     this.scene.add(tower);
+    void tower.finish();
   }
 
   setStageLive(live: boolean): void {
@@ -161,6 +167,12 @@ export class App {
   }
 
   private drawWarmUps(): void {
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    if (this.firstDraw) {
+      if (gl.clientWaitSync(this.firstDraw, 0, 0) === gl.TIMEOUT_EXPIRED) return;
+      gl.deleteSync(this.firstDraw);
+      this.firstDraw = null;
+    }
     const deadline = performance.now() + WARM_UP_MS;
     while (this.warmUps.length > 0 && performance.now() < deadline) {
       const warmUp = this.warmUps[0]!;
@@ -180,6 +192,17 @@ export class App {
       this.renderer.render(object, warmUp.camera);
       object.frustumCulled = frustumCulled;
       object.visible = visible;
+      const { currentProgram } = this.renderer.properties.get(object.material) as {
+        currentProgram?: object;
+      };
+      if (currentProgram === undefined || this.drawnPrograms.has(currentProgram)) continue;
+      this.drawnPrograms.add(currentProgram);
+      const { vertexShader, fragmentShader } = object.material as ShaderMaterial;
+      if (vertexShader.length + fragmentShader.length > HEAVY_SHADER) {
+        this.firstDraw = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+        gl.flush();
+        return;
+      }
     }
   }
 
@@ -245,6 +268,7 @@ export class App {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.input.fit(width, height);
+    this.renderScale.reconsider();
     const { x, y } = this.renderer.getDrawingBufferSize(new Vector2());
     this.film.setSize(x, y, this.renderer.getPixelRatio());
     this.roleText.setSize(x, y, width, height);
@@ -257,16 +281,12 @@ export class App {
   private rescale(): void {
     const { x, y } = this.renderer.getDrawingBufferSize(new Vector2());
     const { scale } = this.renderScale;
-    this.target.setSize(Math.round(x * scale), Math.round(y * scale));
-    this.towerTarget.setSize(this.target.width, this.target.height);
-    this.edgeBlur.setSize(
-      this.target.width,
-      this.target.height,
-      this.renderer.getPixelRatio() * scale,
-    );
-    this.bloom.setSize(this.target.width, this.target.height);
-    this.tower?.fit(this.camera.aspect, this.target.width, this.target.height);
-    this.logo.setPixelRatio(this.renderer.getPixelRatio() * scale);
+    this.target.setSize(x, y);
+    this.towerTarget.setSize(Math.round(x * scale), Math.round(y * scale));
+    this.edgeBlur.setSize(x, y, this.renderer.getPixelRatio(), scale);
+    this.bloom.setSize(x, y);
+    this.tower?.fit(this.camera.aspect, this.towerTarget.width, this.towerTarget.height);
+    this.logo.setPixelRatio(this.renderer.getPixelRatio());
   }
 }
 

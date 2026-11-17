@@ -1,16 +1,21 @@
 import {
   type Camera,
   Color,
+  ConstantAlphaFactor,
+  CustomBlending,
   Data3DTexture,
   DataTexture,
   DepthTexture,
   GLSL3,
   Group,
+  InstancedBufferAttribute,
   type InstancedBufferGeometry,
   type IUniform,
   MathUtils,
   Mesh,
   NearestFilter,
+  NoBlending,
+  OneMinusConstantAlphaFactor,
   type Object3D,
   PerspectiveCamera,
   RawShaderMaterial,
@@ -36,6 +41,7 @@ import { Spring } from '../core/Spring';
 import { palette } from '../core/palette';
 import { beneathGrain } from '../post/Film';
 import { PipeLayout } from './PipeLayout';
+import { resolveUniforms } from './programs';
 import { Presence, type Roll } from './Presence';
 import { Rebar } from './Rebar';
 import { RoomLight } from './RoomLight';
@@ -48,6 +54,7 @@ import { Drift, STILL } from './Drift';
 import { Mist } from './Mist';
 import { MAP_METERS, bakeConcreteMaps } from './concreteMaps';
 import { fbmTexture, noiseTexture } from './noise';
+import { glyphStrokeTexture } from './glyphStrokes';
 import { Veil } from './Veil';
 import type { BakeReply, TowerMaps } from './bake.worker';
 import BakeWorker from './bake.worker?worker';
@@ -59,12 +66,20 @@ import {
   OUTER_X,
   PLANT_EVERY,
   SIDE_X,
+  SURFACES,
   TILE_HEIGHT,
   TILE_ROWS,
   edgeVolume,
   occlusionTexture,
   unpackGeometry,
 } from './facade';
+
+type Draft = {
+  mesh: Mesh<InstancedBufferGeometry, RawShaderMaterial>;
+  overlay: Mesh<InstancedBufferGeometry, RawShaderMaterial>;
+  low: Mesh<InstancedBufferGeometry, RawShaderMaterial>;
+  finishedLow: Mesh<InstancedBufferGeometry, RawShaderMaterial>;
+};
 
 export const VIEW = { fov: 64, distance: 6.5, vanish: 0.82 };
 export const PITCH = Math.atan(1 / (VIEW.vanish * Math.tan(MathUtils.degToRad(VIEW.fov / 2))));
@@ -81,12 +96,19 @@ const BEACON_PERIOD = 2.4;
 const TIME_WRAP = 1200 * BEACON_PERIOD;
 const CLOCK_LIMIT = 2 ** 15;
 const COMPILES_AT_ONCE = 2;
+const FINISH_SECONDS = 2;
+const FINISH_GRACE_MS = 500;
+const FINISHED_KEY = 'finished-shaders';
 const VOLUMES: Record<Occlusion, { min: Vector3; size: Vector3 }> = {
   tiles: { min: OCCLUSION_MIN, size: OCCLUSION_SIZE },
   blockless: { min: OCCLUSION_MIN, size: OCCLUSION_SIZE },
   left: edgeVolume(-1),
   right: edgeVolume(1),
 };
+
+const finishedShaders = String(
+  [...fragmentShader, ...lowShader].reduce((hash, c) => (hash * 31 + c.charCodeAt(0)) | 0, 0),
+);
 
 export class Tower extends Scene {
   readonly camera = new PerspectiveCamera(VIEW.fov, 1, 0.1, 400);
@@ -145,6 +167,10 @@ export class Tower extends Scene {
   private pipeLayout: PipeLayout;
   private pipesClimbed = -1;
   private gatedMeshes: Mesh<InstancedBufferGeometry>[] = [];
+  private drafts: Draft[] = [];
+  private fading: Draft[] = [];
+  private finishing = 0;
+  private finished: Promise<void> | null = null;
   private ahead: Roll | null = null;
   private renderer!: WebGLRenderer;
   private occlusion: Record<Occlusion, { value: Data3DTexture }> = {
@@ -198,6 +224,7 @@ export class Tower extends Scene {
       uLow: { value: this.low.texture },
       uLowDepth: { value: this.low.depthTexture },
       uLowSize: { value: new Vector2(1, 1) },
+      uGlyphStrokes: { value: glyphStrokeTexture() },
       uDepthRange: { value: new Vector2(this.camera.near, this.camera.far) },
     };
     this.mist = new Mist(this.materialUniforms);
@@ -223,13 +250,20 @@ export class Tower extends Scene {
   async load(renderer: WebGLRenderer): Promise<void> {
     this.renderer = renderer;
     this.build(await this.baking.geometry);
-    const [maps, surface] = await Promise.all([
-      this.baking.maps,
-      bakeConcreteMaps(renderer),
-      compileInTurns(renderer, this, this.camera),
-      this.presence.compile(renderer),
-      this.pipeLayout.compile(renderer),
-    ]);
+    const surface = await bakeConcreteMaps(renderer);
+    const cached = localStorage.getItem(FINISHED_KEY) === finishedShaders;
+    if (cached) {
+      this.finished = this.compileFinished(renderer);
+      const ready = await Promise.race([
+        this.finished.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(resolve, FINISH_GRACE_MS, false)),
+      ]);
+      if (ready) this.adoptFinished();
+    }
+    await compileInTurns(renderer, this, this.camera);
+    await this.presence.compile(renderer);
+    await this.pipeLayout.compile(renderer);
+    const maps = await this.baking.maps;
     this.applyRoll(await this.presence.take(renderer, 0));
     this.takeAhead(1);
     this.uniforms.uFbm.value = fbmTexture(maps.fbm);
@@ -239,6 +273,55 @@ export class Tower extends Scene {
       this.occlusion[name].value = occlusionTexture(maps.occlusion[name]);
       renderer.initTexture(this.occlusion[name].value);
     }
+  }
+
+  async finish(): Promise<void> {
+    if (this.drafts.length === 0) return;
+    await (this.finished ??= this.compileFinished(this.renderer));
+    localStorage.setItem(FINISHED_KEY, finishedShaders);
+    for (const { mesh, overlay, low, finishedLow } of this.drafts) {
+      overlay.layers.mask = mesh.layers.mask;
+      low.material.dispose();
+      low.material = finishedLow.material;
+    }
+    this.building.add(...this.drafts.map(({ overlay }) => overlay));
+    this.fading = this.drafts;
+  }
+
+  private async compileFinished(renderer: WebGLRenderer): Promise<void> {
+    const compiled = new Set<RawShaderMaterial>();
+    for (const { overlay, finishedLow } of this.drafts) {
+      for (const [mesh, camera] of [
+        [overlay, this.camera],
+        [finishedLow, this.lowCamera],
+      ] as const) {
+        if (compiled.has(mesh.material)) continue;
+        compiled.add(mesh.material);
+        await renderer.compileAsync(mesh, camera, this);
+      }
+    }
+  }
+
+  private adoptFinished(): void {
+    for (const { mesh, overlay, low, finishedLow } of this.drafts) {
+      overlay.material.blending = NoBlending;
+      overlay.material.depthWrite = true;
+      mesh.material = overlay.material;
+      low.material = finishedLow.material;
+      this.building.remove(overlay);
+    }
+    this.drafts = this.fading = [];
+  }
+
+  private fadeInFinish(dt: number): void {
+    this.finishing = Math.min(this.finishing + dt / FINISH_SECONDS, 1);
+    for (const { mesh, overlay } of this.fading) {
+      overlay.visible = mesh.visible;
+      overlay.material.blendAlpha = MathUtils.smootherstep(this.finishing, 0, 1);
+    }
+    if (this.finishing < 1) return;
+    for (const { mesh } of this.fading) mesh.material.dispose();
+    this.adoptFinished();
   }
 
   private build({ facade, rebar, traces }: TowerGeometry): void {
@@ -261,11 +344,14 @@ export class Tower extends Scene {
       fragmentShader: censusShader,
       uniforms: this.materialUniforms,
     });
-    for (const { geometry: baked, surface, occlusion, census } of facade) {
+    const finishedMaterials = new Map<string, RawShaderMaterial>();
+    const finishedLowMaterial = this.lowMaterial(SURFACES.concrete, false);
+    for (const { geometry: baked, slots, surface, occlusion } of facade) {
       const key = `${occlusion} ${surface}`;
-      const material = materials.get(key) ?? this.facadeMaterial(surface, occlusion);
+      const drafted = surface === SURFACES.concrete;
+      const material = materials.get(key) ?? this.facadeMaterial(surface, occlusion, drafted);
       materials.set(key, material);
-      const lowMaterial = lowMaterials.get(surface) ?? this.lowMaterial(surface);
+      const lowMaterial = lowMaterials.get(surface) ?? this.lowMaterial(surface, drafted);
       lowMaterials.set(surface, lowMaterial);
       const geometry = unpackGeometry(baked);
       const mesh = new Mesh(geometry, material);
@@ -278,13 +364,27 @@ export class Tower extends Scene {
       for (const pass of passes) pass.frustumCulled = false;
       this.gatedMeshes.push(...passes);
       this.building.add(...passes);
-      if (census) {
-        this.presence.watch(mesh, {
-          material: censusMaterial,
-          vertex: [
-            { name: 'aRole', value: [census.role] },
-            { name: 'aMin', value: census.min },
-          ],
+      this.presence.watchRanges(
+        geometry,
+        slots.ranges,
+        {
+          aTile: new InstancedBufferAttribute(slots.tiles, 2),
+          aRole: new InstancedBufferAttribute(slots.roles, 1),
+          aMin: new InstancedBufferAttribute(slots.mins, 3),
+        },
+        censusMaterial,
+      );
+      if (drafted) {
+        const finished = finishedMaterials.get(key) ?? this.finishedMaterial(surface, occlusion);
+        finishedMaterials.set(key, finished);
+        const overlay = new Mesh(geometry, finished);
+        overlay.renderOrder = mesh.renderOrder;
+        overlay.frustumCulled = false;
+        this.drafts.push({
+          mesh,
+          overlay,
+          low,
+          finishedLow: new Mesh(geometry, finishedLowMaterial),
         });
       }
     }
@@ -322,10 +422,24 @@ export class Tower extends Scene {
     for (const mesh of this.gatedMeshes) mesh.visible = mesh.geometry.instanceCount > 0;
   }
 
-  private facadeMaterial(surface: number, occlusion: Occlusion): RawShaderMaterial {
+  private finishedMaterial(surface: number, occlusion: Occlusion): RawShaderMaterial {
+    return Object.assign(this.facadeMaterial(surface, occlusion, false), {
+      blending: CustomBlending,
+      blendSrc: ConstantAlphaFactor,
+      blendDst: OneMinusConstantAlphaFactor,
+      blendAlpha: 0,
+      depthWrite: false,
+    });
+  }
+
+  private facadeMaterial(
+    surface: number,
+    occlusion: Occlusion,
+    drafted: boolean,
+  ): RawShaderMaterial {
     const { min, size } = VOLUMES[occlusion];
     return new RawShaderMaterial({
-      defines: { SURFACE: surface },
+      defines: drafted ? { SURFACE: surface, DRAFT: true } : { SURFACE: surface },
       glslVersion: GLSL3,
       vertexShader,
       fragmentShader,
@@ -339,9 +453,9 @@ export class Tower extends Scene {
     });
   }
 
-  private lowMaterial(surface: number): RawShaderMaterial {
+  private lowMaterial(surface: number, drafted: boolean): RawShaderMaterial {
     return new RawShaderMaterial({
-      defines: { SURFACE: surface },
+      defines: drafted ? { SURFACE: surface, DRAFT: true } : { SURFACE: surface },
       glslVersion: GLSL3,
       vertexShader,
       fragmentShader: lowShader,
@@ -415,6 +529,7 @@ export class Tower extends Scene {
     const { reducedMotion } = this.input;
     const step = reducedMotion ? dt * REDUCED_MOTION_SPEED : dt;
     this.uniforms.uTime.value += step;
+    if (this.fading.length > 0) this.fadeInFinish(dt);
     const climb = this.followPointer(dt) * step;
     this.facadeUniforms.uClimb.value += climb;
     this.lift += climb;
@@ -500,24 +615,24 @@ async function compileInTurns(
   scene: Scene,
   camera: Camera,
 ): Promise<void> {
-  const seen = new Set<ShaderMaterial>();
-  const objects: { object: Object3D; shaderLength: number }[] = [];
+  const programs = new Map<string, { object: Object3D; material: ShaderMaterial }>();
   scene.traverse((object) => {
     if (!('material' in object)) return;
-    const materials = [object.material as ShaderMaterial | ShaderMaterial[]].flat();
-    if (materials.every((material) => seen.has(material))) return;
-    let shaderLength = 0;
-    for (const material of materials) {
-      seen.add(material);
-      shaderLength += material.vertexShader.length + material.fragmentShader.length;
-    }
-    objects.push({ object, shaderLength });
+    const material = object.material as ShaderMaterial;
+    const key = JSON.stringify(material.defines) + material.vertexShader + material.fragmentShader;
+    if (!programs.has(key)) programs.set(key, { object, material });
   });
-  objects.sort((a, b) => b.shaderLength - a.shaderLength);
+  const shaderLength = ({ vertexShader, fragmentShader }: ShaderMaterial) =>
+    vertexShader.length + fragmentShader.length;
+  const objects = [...programs.values()].sort(
+    (a, b) => shaderLength(b.material) - shaderLength(a.material),
+  );
   let next = 0;
   const compileNext = async (): Promise<void> => {
     while (next < objects.length) {
-      await renderer.compileAsync(objects[next++]!.object, camera, scene);
+      const { object, material } = objects[next++]!;
+      await renderer.compileAsync(object, camera, scene);
+      resolveUniforms(renderer, material);
     }
   };
   await Promise.all(Array.from({ length: COMPILES_AT_ONCE }, compileNext));

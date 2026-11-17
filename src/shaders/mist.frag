@@ -70,13 +70,12 @@ void main() {
   float reach = clamp(depth / -ray.z, MIST_RANGE.x * 1.5, MIST_RANGE.y);
   vec3 direction = mat3(uViewToWorld) * ray;
   float gaze = gazeGlow(uv);
-  float jitter = ign(gl_FragCoord.xy + mod(floor(uTime * 24.0), 64.0) * vec2(5.588, 3.17));
 
   vec3 light = vec3(0.0);
   float clear = 1.0;
   float near = MIST_RANGE.x;
   for (int i = 0; i < STEPS; i++) {
-    float far = MIST_RANGE.x * pow(reach / MIST_RANGE.x, (float(i) + 1.0 - 0.5 * jitter) / float(STEPS));
+    float far = MIST_RANGE.x * pow(reach / MIST_RANGE.x, (float(i) + 0.75) / float(STEPS));
     vec3 p = uViewer + direction * far;
     float absorbed = 1.0 - exp(-mistDensity(p) * (far - near));
     light += clear * absorbed * mistLight(p, direction, gaze, uv.y);

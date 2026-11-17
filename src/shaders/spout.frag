@@ -148,7 +148,7 @@ void main() {
   vec4 sky = skyAt(gl_FragCoord.xy, uResolution);
   vec3 haze = skyClear(sky);
   vec3 origin = vWorld - vLocal;
-  vec3 scatter = windowScatter(cameraPosition - origin, vLocal, vTile, origin, 0.5) * washed;
+  vec3 scatter = windowScatter(cameraPosition - origin, vLocal, vTile, origin) * washed;
   color = mix(color, haze, fog) + SCATTER * scatter * (1.0 - 0.5 * fog);
   vec3 climbed = vec3(0.0, uClimb, 0.0);
   float veil = clouds(cameraPosition + climbed, vWorld + climbed);

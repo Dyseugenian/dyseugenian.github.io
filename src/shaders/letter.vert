@@ -31,6 +31,7 @@ in float aIndex;
 out vec2 vGlyph;
 out vec2 vWall;
 flat out vec4 vShape;
+flat out vec2 vStrokes;
 flat out vec4 vHand;
 flat out vec3 vPaint;
 flat out float vFade;
@@ -252,6 +253,7 @@ void main() {
   vGlyph = glyph;
   vWall = wall;
   vShape = vec4(float(code), width, 0.045 * steady, 0.05 * steady);
+  vStrokes = GLYPHS[code].xy;
   vHand = vec4(hand, age, seed, drips);
   gl_Position = projectionMatrix * viewMatrix * world;
 }

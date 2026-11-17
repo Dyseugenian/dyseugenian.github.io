@@ -159,17 +159,20 @@ Fracture fractures(vec2 p, vec2 fromLow, vec2 extent, float upright, float footp
   Fracture fracture = Fracture(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
   vec2 home = floor(p / CRACK_CELL);
   vec2 toward = sign(fract(p / CRACK_CELL) - 0.5);
-  for (int n = 0; n < 13; n++) {
-    int slot = n / 3;
+  Crack crack;
+  for (int slot = 0; slot < 4; slot++) {
     vec2 cell = home + toward * vec2(slot % 2, slot / 2);
-    bool corner = n == 12;
-    if (corner ? upright < 0.5 : !crackNear(p, cell, upright)) continue;
-    Crack crack;
-    bool found = corner ? cornerCrack(p, fromLow, extent, crack) : cellCrack(cell, n % 3, upright, crack);
-    if (found) {
-      crackSegment(p, crack.start, crack.dir, crack.len, crack.peak, crack.widest, crack.key, upright, footprint,
-        fracture);
+    if (!crackNear(p, cell, upright)) continue;
+    for (int branch = 0; branch < 3; branch++) {
+      if (cellCrack(cell, branch, upright, crack)) {
+        crackSegment(p, crack.start, crack.dir, crack.len, crack.peak, crack.widest, crack.key, upright, footprint,
+          fracture);
+      }
     }
+  }
+  if (upright > 0.5 && cornerCrack(p, fromLow, extent, crack)) {
+    crackSegment(p, crack.start, crack.dir, crack.len, crack.peak, crack.widest, crack.key, upright, footprint,
+      fracture);
   }
   return fracture;
 }

@@ -2,13 +2,14 @@ precision highp float;
 precision highp int;
 
 #include "chunks/noise-texture.glsl"
-#include "chunks/glyphs.glsl"
 
 uniform float uPresence;
+uniform sampler2D uGlyphStrokes;
 
 in vec2 vGlyph;
 in vec2 vWall;
 flat in vec4 vShape;
+flat in vec2 vStrokes;
 flat in vec4 vHand;
 flat in vec3 vPaint;
 flat in float vFade;
@@ -32,7 +33,6 @@ void main() {
     outColor = vec4(1.0);
     return;
   }
-  int code = int(vShape.x + 0.5);
   float width = vShape.y;
   float hand = vHand.x;
   float age = vHand.y;
@@ -49,10 +49,10 @@ void main() {
 
   float cover = 0.0;
   float nearest = 1e3;
-  int first = int(GLYPHS[code].x);
-  int strokes = int(GLYPHS[code].y);
+  int first = int(vStrokes.x);
+  int strokes = int(vStrokes.y);
   for (int i = 0; i < strokes; i++) {
-    vec4 stroke = GLYPH_STROKES[first + i];
+    vec4 stroke = texelFetch(uGlyphStrokes, ivec2(first + i, 0), 0);
     float index = float(i) + seed;
     vec2 a = stroke.xy + shake(stroke.xy, seed, vShape.w);
     vec2 b = stroke.zw + shake(stroke.zw, seed, vShape.w);

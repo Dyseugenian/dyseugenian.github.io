@@ -258,6 +258,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
     albedo = mix(albedo, pale > 0.5 ? uSalt : uGrime, 0.6 * flecked);
   }
 
+#ifndef DRAFT
   float cracked = 1.0 - smoothstep(0.025, 0.05, footprint);
   if (cracked > 0.0 && low.mask.y > 0.5) {
     Fracture fracture = fractures(p, fromLow, extent, upright, footprint);
@@ -274,6 +275,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
     albedo *= 1.0 - 0.3 * craze;
     height -= 0.4 * craze;
   }
+#endif
 
   for (int layer = 0; layer < 2; layer++) {
     if (low.mask.x < 0.5) break;
@@ -287,9 +289,14 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
     vec2 heading = local / max(reach, 1e-3);
     float lobed = 1.0 + 0.7 * (valueNoise(heading * 1.5 + spot.key + 3.0) - 0.5)
       + 0.3 * (valueNoise(heading * 4.0 + spot.key + 11.0) - 0.5);
+    if ((reach - lobed) * spot.axes.y > footprint + 0.03 && (spot.kind != EXPOSED || upright < 0.5)) continue;
+#ifdef DRAFT
+    float outline = (reach - lobed) * spot.axes.y;
+#else
     float rough = min(0.15 * spot.axes.y, 0.02);
     float outline = (reach - lobed) * spot.axes.y + rough * (valueNoise(p * 13.0 + spot.key) - 0.5
       + 0.6 * (valueNoise(p * 40.0 + spot.key) - 0.5) * resolved(40.0, footprint));
+#endif
     float inside = 1.0 - smoothstep(-footprint, footprint + 0.002, outline);
     float rim = exp(-abs(outline) / max(0.008, footprint)) * inside;
     float terrace = outline + spot.axes.y * mix(0.2, 0.45, valueNoise(p * 4.0 + spot.key + 5.0));
@@ -312,6 +319,9 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
       albedo = mix(albedo, fractured, inside) * (1.0 + 0.35 * rim);
       height -= inside * (1.6 + lower * (1.6 - 0.7 * pebble));
       if (spot.kind == EXPOSED) {
+#ifdef DRAFT
+        albedo = mix(albedo, uRust * 0.45, 0.35 * lower);
+#else
         vec2 across = toBars(vec3(fromLow, 0.0), vec3(extent, 0.0)).xy / REBAR_RADIUS;
         float edge = footprint / REBAR_RADIUS;
         float alongU = (1.0 - smoothstep(1.0 - edge, 1.0 + edge, across.y))
@@ -330,6 +340,7 @@ Concrete concrete(mat3 frame, vec2 seed, float weathering, Low low) {
         vec3 scale = mix(uGrime * 1.6, uRust, mix(0.25, 0.65, valueNoise(p * 60.0 + spot.key))) * mix(0.5, 0.95, top);
         albedo = mix(albedo, scale * (1.0 + 0.15 * max(ribbed.x * alongU, ribbed.y * alongV)), bar);
         height += bar * (0.6 + REBAR_RADIUS / BUMP * top);
+#endif
         if (upright > 0.5) {
           vec2 span = vec2(length(spot.axes * spot.along), length(spot.axes * spot.along.yx));
           float drop = spot.center.y - 0.5 * span.y - p.y;
@@ -935,13 +946,17 @@ void main() {
   vec3 hit;
   vec3 hitNormal;
   float margin = 1e3;
-  int broken = CONCRETE && low.mask.w > 0.5
-    ? carve(vLocal, normal, vMin, vMax, seed, cameraPosition - origin, hit, hitNormal, margin) : 0;
+  int broken = 0;
   bool studded = CONCRETE && abs(vMax.z - STUD_HEIGHT) < 0.005;
   float damage = studded ? studDamage(tile, vLocal.y) : 1.0;
+#ifndef DRAFT
+  if (CONCRETE && low.mask.w > 0.5) {
+    broken = carve(vLocal, normal, vMin, vMax, seed, cameraPosition - origin, hit, hitNormal, margin);
+  }
   if (broken == 0 && studded && normal.z < 0.99 && damage < STUD_CHIPPED && damage >= STUD_MISSING) {
     broken = chipStud(vLocal, damage, cameraPosition - origin, hit, hitNormal);
   }
+#endif
   mat3 frame = faceFrame(normal);
   Concrete surface = Concrete(uConcrete, 0.0, vec3(0.0, 0.0, 1.0), vec3(0.0));
   if (CONCRETE) surface = concrete(frame, seed, weathering, low);

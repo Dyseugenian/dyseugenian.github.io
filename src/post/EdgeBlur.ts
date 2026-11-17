@@ -20,6 +20,7 @@ export class EdgeBlur extends Mesh<PlaneGeometry, RawShaderMaterial> {
       uSource: { value: source },
       uResolution: { value: new Vector2(1, 1) },
       uPixelRatio: { value: 1 },
+      uSourceScale: { value: 1 },
       uFrame: { value: 0 },
       uFocus: { value: new Vector2(0.5, 0.5) },
     };
@@ -40,7 +41,8 @@ export class EdgeBlur extends Mesh<PlaneGeometry, RawShaderMaterial> {
     this.frustumCulled = false;
   }
 
-  setSize(width: number, height: number, pixelRatio: number): void {
+  setSize(width: number, height: number, pixelRatio: number, sourceScale: number): void {
+    this.uniforms.uSourceScale.value = sourceScale;
     this.uniforms.uResolution.value.set(width, height);
     this.uniforms.uPixelRatio.value = pixelRatio;
   }

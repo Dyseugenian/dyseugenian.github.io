@@ -28,14 +28,13 @@ if (canvas && context) {
     }
 
     await app.logo.ready;
-    const logoCompiled = app.compile();
-    const towerLoaded = towerMade?.then(async (tower) => {
-      await app.loadTower(tower);
-      return tower;
-    });
-    await logoCompiled;
+    await app.compile();
     app.setStageLive(true);
-    if (towerLoaded) app.revealTower(await towerLoaded);
+    if (towerMade) {
+      const tower = await towerMade;
+      await app.loadTower(tower);
+      app.revealTower(tower);
+    }
   } catch (error) {
     setPageState('no-webgl', true);
     throw error;

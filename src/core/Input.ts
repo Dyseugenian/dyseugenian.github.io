@@ -89,7 +89,7 @@ export class Input {
     this.isUiHidden = hidden;
     this.uiFadeFrom = this.uiOpacity;
     this.uiFadeTime = 0;
-    this.uiSwitch.textContent = hidden ? 'show ui' : 'hide ui';
+    this.uiSwitch.textContent = hidden ? 'show UI' : 'hide UI';
     document.documentElement.classList.toggle('ui-hidden', hidden);
     if (hidden) {
       this.setActiveRole(null);

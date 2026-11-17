@@ -3,6 +3,8 @@ import {
   BufferGeometry,
   CylinderGeometry,
   Float32BufferAttribute,
+  InstancedBufferAttribute,
+  type InstancedBufferGeometry,
   PlaneGeometry,
   RingGeometry,
   Vector3,
@@ -23,7 +25,6 @@ import {
   edge,
   edgeVolume,
   facadeGeometry,
-  gated,
   inWindowBay,
   occluders,
   packGeometry,
@@ -94,12 +95,17 @@ const FACES = [
 ];
 
 export type Occlusion = 'tiles' | 'blockless' | 'left' | 'right';
-export type Census = { role: number; min: [number, number, number] };
+export type FacadeSlots = {
+  ranges: Uint32Array<ArrayBuffer>;
+  tiles: Float32Array<ArrayBuffer>;
+  roles: Float32Array<ArrayBuffer>;
+  mins: Float32Array<ArrayBuffer>;
+};
 export type FacadeMesh = {
   geometry: BakedGeometry;
+  slots: FacadeSlots;
   surface: number;
   occlusion: Occlusion;
-  census: Census | null;
 };
 export type TraceGeometry = { kind: TraceKind; geometry: BakedGeometry };
 export type TowerGeometry = { facade: FacadeMesh[]; rebar: RebarBlocks; traces: TraceGeometry[] };
@@ -152,7 +158,7 @@ export function towerGeometry(): {
   ];
   return {
     geometry: {
-      facade: partBands().flatMap(bandMeshes),
+      facade: facadeMeshes(),
       rebar: rebarBlocks(
         rebarGroups,
         TILE_ROWS.filter((row) => row >= -REBAR_ROWS.below && row < REBAR_ROWS.above),
@@ -174,7 +180,6 @@ const REACH = reach as {
   parts: Record<string, Record<string, Faces>>;
   traces: Record<string, Spans>;
 };
-const MESH_BUDGET = { fixed: 12, full: 8, reduced: 6, distant: 6, left: 3, right: 3 };
 
 export type PartBand = {
   name: Detail | 'fixed' | 'left' | 'right';
@@ -232,25 +237,13 @@ function spanTiles(spans: Spans | undefined, columns: number[], rows: number[]):
   });
 }
 
-type Group = {
-  gating: string;
-  tiles: Map<string, Tile>;
-  pieces: BufferGeometry[];
-  triangles: number;
-};
+type Group = { tiles: Map<string, Tile>; pieces: BufferGeometry[] };
 
 function tileKey(tiles: Tile[]): string {
   return tiles
     .map(([column, row]) => column + ',' + row)
     .sort()
     .join(' ');
-}
-
-function gatingKey(part: Part): string {
-  const storey = gated(part) ? Math.floor(part.min.y / STOREY + 0.01) : 0;
-  return [gated(part) ? part.role : 0, storey, surfaceOf(part), inWindowBay(part) ? 1 : 0].join(
-    ' ',
-  );
 }
 
 function variants(band: PartBand, tiles: Tile[]): [Occlusion, Tile[]][] {
@@ -287,78 +280,111 @@ function pieceGroups(band: PartBand): Group[] {
       sets.set(key, set);
     }
     for (const [key, { faces: kept, tiles }] of sets) {
-      const gating = gatingKey(part);
       const piece = pieceGeometry({ part, faces: kept.size > MIXED_FACE ? null : kept });
-      const group = groups.get(gating + ' ' + key) ?? {
-        gating,
+      const gating = [part.role ?? 0, Math.floor(part.min.y / STOREY + 0.01), surfaceOf(part)];
+      const group = groups.get(gating.join() + ' ' + key) ?? {
         tiles: new Map(tiles.map((tile) => [tile.join(), tile])),
         pieces: [],
-        triangles: 0,
       };
       group.pieces.push(piece);
-      group.triangles += piece.index!.count / 3;
-      groups.set(gating + ' ' + key, group);
+      groups.set(gating.join() + ' ' + key, group);
     }
   }
   return [...groups.values()];
 }
 
-function mergeGroups(groups: Group[], budget: number): Group[] {
-  const cost = (group: Group) => group.tiles.size * group.triangles;
-  while (groups.length > budget) {
-    let best: [number, number] | null = null;
-    let bestCost = Infinity;
-    for (let a = 0; a < groups.length; a++) {
-      for (let b = a + 1; b < groups.length; b++) {
-        const [one, other] = [groups[a]!, groups[b]!];
-        if (one.gating !== other.gating) continue;
-        const union = new Set([...one.tiles.keys(), ...other.tiles.keys()]).size;
-        const extra = union * (one.triangles + other.triangles) - cost(one) - cost(other);
-        if (extra < bestCost) {
-          bestCost = extra;
-          best = [a, b];
-        }
-      }
-    }
-    if (best === null) break;
-    const [a, b] = best;
-    const [one, other] = [groups[a]!, groups[b]!];
-    groups[a] = {
-      gating: one.gating,
-      tiles: new Map([...one.tiles, ...other.tiles]),
-      pieces: [...one.pieces, ...other.pieces],
-      triangles: one.triangles + other.triangles,
-    };
-    groups.splice(b, 1);
-  }
-  return groups;
-}
+type Drawn = { geometry: InstancedBufferGeometry; surface: number; occlusion: Occlusion };
 
-function bandMeshes(band: PartBand): FacadeMesh[] {
-  return mergeGroups(pieceGroups(band), MESH_BUDGET[band.name]).flatMap(({ pieces, tiles }) => {
+function bandGeometries(band: PartBand): Drawn[] {
+  return pieceGroups(band).flatMap(({ pieces, tiles }) => {
     const first = pieces[0]!;
-    const role = first.getAttribute('aRole').getX(0);
-    const min = first.getAttribute('aMin');
     const part: Part = {
       kind: first.getAttribute('aKind').getX(0),
-      role,
-      min: new Vector3(min.getX(0), min.getY(0), min.getZ(0)),
+      min: new Vector3(),
       max: new Vector3(),
     };
-    const census = gated(part) ? { role, min: part.min.toArray() } : null;
     return variants(band, [...tiles.values()]).flatMap(([occlusion, subset]) =>
       subset.length === 0
         ? []
-        : [
-            {
-              geometry: packGeometry(facadeGeometry(pieces, subset)),
-              surface: surfaceOf(part),
-              occlusion,
-              census,
-            },
-          ],
+        : [{ geometry: facadeGeometry(pieces, subset), surface: surfaceOf(part), occlusion }],
     );
   });
+}
+
+const FACADE_ATTRIBUTES = [
+  'position',
+  'normal',
+  'aKind',
+  'aMin',
+  'aMax',
+  'aProtrudes',
+  'aRole',
+  'aOffset',
+  'aTile',
+];
+
+function spread(geometries: InstancedBufferGeometry[]): Pick<FacadeMesh, 'geometry' | 'slots'> {
+  let vertices = 0;
+  let indices = 0;
+  let instances = 0;
+  for (const geometry of geometries) {
+    vertices += geometry.instanceCount * geometry.getAttribute('position').count;
+    indices += geometry.instanceCount * geometry.index!.count;
+    instances += geometry.instanceCount;
+  }
+  const index = new Uint32Array(indices);
+  const attributes = FACADE_ATTRIBUTES.map((name) => {
+    const { itemSize } = geometries[0]!.getAttribute(name);
+    return { name, itemSize, array: new Float32Array(vertices * itemSize), instanced: false };
+  });
+  const slots: FacadeSlots = {
+    ranges: new Uint32Array(2 * instances),
+    tiles: new Float32Array(2 * instances),
+    roles: new Float32Array(instances),
+    mins: new Float32Array(3 * instances),
+  };
+  let vertex = 0;
+  let filled = 0;
+  let slot = 0;
+  for (const geometry of geometries) {
+    const count = geometry.getAttribute('position').count;
+    const corners = geometry.index!.array;
+    const tiles = geometry.getAttribute('aTile');
+    const mins = geometry.getAttribute('aMin');
+    for (let instance = 0; instance < geometry.instanceCount; instance++) {
+      for (const { name, itemSize, array } of attributes) {
+        const source = geometry.getAttribute(name);
+        const values = source.array as Float32Array;
+        if (source instanceof InstancedBufferAttribute) {
+          const value = values.subarray(instance * itemSize, (instance + 1) * itemSize);
+          for (let i = 0; i < count; i++) array.set(value, (vertex + i) * itemSize);
+        } else {
+          array.set(values, vertex * itemSize);
+        }
+      }
+      slots.ranges.set([filled, corners.length], 2 * slot);
+      slots.tiles.set([tiles.getX(instance), tiles.getY(instance)], 2 * slot);
+      slots.roles[slot] = geometry.getAttribute('aRole').getX(0);
+      slots.mins.set([mins.getX(0), mins.getY(0), mins.getZ(0)], 3 * slot);
+      slot++;
+      for (let i = 0; i < corners.length; i++) index[filled++] = vertex + corners[i]!;
+      vertex += count;
+    }
+  }
+  return { geometry: { index, attributes, instanceCount: 1 }, slots };
+}
+
+function facadeMeshes(): FacadeMesh[] {
+  const sets = new Map<string, Drawn[]>();
+  for (const drawn of partBands().flatMap(bandGeometries)) {
+    const key = drawn.surface + ' ' + drawn.occlusion;
+    sets.set(key, [...(sets.get(key) ?? []), drawn]);
+  }
+  return [...sets.values()].map((set) => ({
+    ...spread(set.map(({ geometry }) => geometry)),
+    surface: set[0]!.surface,
+    occlusion: set[0]!.occlusion,
+  }));
 }
 
 function traceTiles(kind: TraceKind, columns: number[], rows: number[]): Tile[] {

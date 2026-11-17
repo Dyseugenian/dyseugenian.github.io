@@ -10,6 +10,9 @@ export type BakeReply = { geometry: TowerGeometry } | { maps: TowerMaps };
 
 function buffersOf({ facade, traces }: TowerGeometry): ArrayBuffer[] {
   const buffers = new Set<ArrayBuffer>();
+  for (const { slots } of facade) {
+    for (const array of Object.values(slots)) buffers.add(array.buffer);
+  }
   for (const { geometry } of [...facade, ...traces]) {
     if (geometry.index) buffers.add(geometry.index.buffer);
     for (const { array } of geometry.attributes) buffers.add(array.buffer);
